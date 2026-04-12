@@ -1,195 +1,213 @@
 import { useEffect, useState } from 'react'
-import { Edit2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import type { AppUser, Site } from '../lib/database.types'
-import Card from '../components/ui/Card'
-import Button from '../components/ui/Button'
+import type { AppUser, Booking, Site } from '../lib/database.types'
 import Modal from '../components/ui/Modal'
-import Input from '../components/ui/Input'
 
-type Role = 'admin' | 'manager' | 'regular'
-
-const ROLES: Role[] = ['admin', 'manager', 'regular']
-const ROLE_COLORS: Record<Role, string> = {
-  admin: 'bg-purple-50 text-purple-700 border-purple-200',
-  manager: 'bg-blue-50 text-blue-700 border-blue-200',
-  regular: 'bg-gray-100 text-gray-600 border-gray-200',
+function RoleBadge({ role }: { role: string }) {
+  const m: Record<string, [string, string]> = {
+    admin: ['role-admin', 'Admin'],
+    manager: ['role-manager', 'Manager'],
+    viewer: ['role-viewer', 'Viewer'],
+    regular: ['role-regular', 'Regular Booker'],
+  }
+  const [cls, lbl] = m[role] ?? ['role-viewer', role]
+  return <span className={`badge ${cls}`}>{lbl}</span>
 }
 
 export default function Users() {
   const [users, setUsers] = useState<AppUser[]>([])
   const [sites, setSites] = useState<Site[]>([])
+  const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState<AppUser | null>(null)
+  const [tab, setTab] = useState('all')
+  const [selUser, setSelUser] = useState<AppUser | null>(null)
+  const [showAdd, setShowAdd] = useState(false)
+  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'manager' })
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState<Partial<AppUser>>({})
 
   useEffect(() => { fetchData() }, [])
 
   async function fetchData() {
     setLoading(true)
-    const [userRes, siteRes] = await Promise.all([
-      supabase.from('users').select('*').order('role'),
+    const [uRes, sRes, bRes] = await Promise.all([
+      supabase.from('users').select('*'),
       supabase.from('sites').select('*'),
+      supabase.from('bookings').select('*'),
     ])
-    setUsers((userRes.data ?? []) as unknown as AppUser[])
-    setSites(siteRes.data ?? [])
+    setUsers((uRes.data ?? []) as unknown as AppUser[])
+    setSites(sRes.data ?? [])
+    setBookings(bRes.data ?? [])
     setLoading(false)
   }
 
-  function openEdit(u: AppUser) {
-    setEditing(u)
-    setForm({ ...u })
+  async function saveCustomRate(userId: string, siteId: string, rate: number) {
+    const user = users.find(u => u.id === userId)
+    if (!user) return
+    const custom_rates = { ...(user.custom_rates ?? {}), [siteId]: rate }
+    await supabase.from('users').update({ custom_rates }).eq('id', userId)
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, custom_rates } : u))
+    if (selUser?.id === userId) setSelUser(u => u ? { ...u, custom_rates } : null)
   }
 
-  async function saveUser() {
-    if (!editing) return
-    setSaving(true)
-    const { custom_rates, site_ids, role, name, email, color } = form
-    await supabase.from('users').update({ custom_rates, site_ids, role, name, email, color }).eq('id', editing.id)
-    setUsers(prev => prev.map(u => u.id === editing.id ? { ...u, ...form } as AppUser : u))
-    setEditing(null)
-    setSaving(false)
-  }
-
-  const byRole = (role: Role) => users.filter(u => u.role === role)
+  const filtered = tab === 'all' ? users : users.filter(u => u.role === tab)
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Users & Access</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{users.length} users across all roles</p>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 2, background: '#f4f4f6', padding: 3, borderRadius: 8 }}>
+          {['all', 'admin', 'manager', 'regular'].map(t => (
+            <button
+              key={t}
+              className="btn btn-sm"
+              style={{ background: tab === t ? '#fff' : 'transparent', color: tab === t ? 'var(--text)' : 'var(--text-muted)', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', border: 'none' }}
+              onClick={() => setTab(t)}
+            >
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
         </div>
+        <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(true)}>+ Add User</button>
       </div>
 
-      {loading ? (
-        <div className="text-center py-12 text-gray-400">Loading...</div>
-      ) : (
-        ROLES.map(role => (
-          <Card key={role}>
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
-              <h2 className="font-semibold text-gray-900 capitalize">{role}s</h2>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${ROLE_COLORS[role]}`}>
-                {byRole(role).length}
-              </span>
+      <div className="card">
+        {loading && <div className="empty"><div className="empty-title">Loading…</div></div>}
+        {filtered.map(u => {
+          const ub = bookings.filter(b => b.user_id === u.id)
+          return (
+            <div key={u.id} className="users-row" style={{ cursor: 'pointer' }} onClick={() => setSelUser(u)}>
+              <div style={{ width: 32, height: 32, background: (u.color ?? '#7c3aed') + '22', color: u.color ?? '#7c3aed', borderRadius: '50%', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {u.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{u.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                <RoleBadge role={u.role} />
+                {u.qf_client_id && <span className="badge badge-qf" style={{ fontSize: 10 }}>🔗 {u.qf_client_id}</span>}
+                {u.role === 'regular' && <span className="badge badge-accent">{ub.length} bookings</span>}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'right', minWidth: 110 }}>
+                {u.site_ids?.length === sites.length ? 'All sites' : sites.filter(s => u.site_ids?.includes(s.id)).map(s => s.name.split(' ')[0]).join(', ') || 'No sites'}
+              </div>
             </div>
-            <div className="divide-y divide-gray-50">
-              {byRole(role).length === 0 && (
-                <p className="px-5 py-6 text-sm text-gray-400">No {role}s yet</p>
-              )}
-              {byRole(role).map(u => (
-                <div key={u.id} className="px-5 py-4 flex items-center gap-4">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0"
-                    style={{ backgroundColor: u.color ?? '#7c3aed' }}
-                  >
-                    {u.name.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{u.name}</p>
-                    <p className="text-xs text-gray-500">{u.email}</p>
-                  </div>
-                  {role === 'regular' && u.site_ids && u.site_ids.length > 0 && (
-                    <div className="hidden md:flex gap-1.5">
-                      {u.site_ids.slice(0, 3).map(sId => {
-                        const site = sites.find(s => s.id === sId)
-                        return site ? (
-                          <span key={sId} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                            {site.emoji} {site.name}
-                          </span>
-                        ) : null
-                      })}
-                      {u.site_ids.length > 3 && <span className="text-xs text-gray-400">+{u.site_ids.length - 3}</span>}
-                    </div>
-                  )}
-                  {u.custom_rates && Object.keys(u.custom_rates).length > 0 && (
-                    <span className="hidden md:inline text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">Custom rates</span>
-                  )}
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
-                    <Edit2 size={13} />
-                  </Button>
+          )
+        })}
+      </div>
+
+      {/* Add user modal */}
+      <Modal
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
+        title="Add User"
+        footer={
+          <>
+            <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>Cancel</button>
+            <button className="btn btn-primary" onClick={async () => {
+              setSaving(true)
+              await supabase.from('users').insert({ ...newUser, site_ids: [], custom_rates: null })
+              await fetchData()
+              setShowAdd(false)
+              setSaving(false)
+            }} disabled={saving || !newUser.name || !newUser.email}>
+              {saving ? 'Adding…' : 'Add User'}
+            </button>
+          </>
+        }
+      >
+        <div className="form-grid-2">
+          <div><label className="form-label">Full Name</label><input className="form-input" value={newUser.name} onChange={e => setNewUser(u => ({ ...u, name: e.target.value }))} placeholder="Jane Smith" /></div>
+          <div><label className="form-label">Email</label><input className="form-input" type="email" value={newUser.email} onChange={e => setNewUser(u => ({ ...u, email: e.target.value }))} placeholder="jane@example.com" /></div>
+        </div>
+        <div className="form-row">
+          <label className="form-label">Role</label>
+          <select className="form-input" value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))}>
+            <option value="admin">Admin — full access to all sites</option>
+            <option value="manager">Manager — manage assigned sites</option>
+            <option value="regular">Regular Booker — portal access, extra slot requests</option>
+          </select>
+        </div>
+        <div className="notice notice-accent" style={{ marginTop: 4 }}>
+          Regular Bookers can log in to view bookings, invoices, pricing, and request extra one-off slots.
+        </div>
+      </Modal>
+
+      {/* User detail modal */}
+      <Modal
+        open={!!selUser}
+        onClose={() => setSelUser(null)}
+        title={selUser?.name ?? ''}
+        sub={selUser?.email}
+        wide
+      >
+        {selUser && (
+          <>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center' }}>
+              <div style={{ width: 42, height: 42, fontSize: 15, background: (selUser.color ?? '#7c3aed') + '22', color: selUser.color ?? '#7c3aed', borderRadius: '50%', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {selUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{selUser.name}</div>
+                <div style={{ marginTop: 3, display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  <RoleBadge role={selUser.role} />
+                  {selUser.qf_client_id && <span className="badge badge-qf">🔗 {selUser.qf_client_id}</span>}
                 </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+              {sites.filter(s => selUser.site_ids?.includes(s.id)).map(s => (
+                <span key={s.id} className="badge badge-accent">{s.emoji} {s.name}</span>
               ))}
-            </div>
-          </Card>
-        ))
-      )}
-
-      {/* Edit Modal */}
-      <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit User — ${editing?.name}`} size="lg">
-        {editing && (
-          <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-4">
-              <Input label="Name" value={form.name ?? ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-              <Input label="Email" type="email" value={form.email ?? ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-gray-700">Role</label>
-                <select
-                  value={form.role ?? 'regular'}
-                  onChange={e => setForm(f => ({ ...f, role: e.target.value as Role }))}
-                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-200"
-                >
-                  {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
-                </select>
-              </div>
-              <Input label="Accent colour" type="color" value={form.color ?? '#7c3aed'} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} />
+              {(!selUser.site_ids || selUser.site_ids.length === 0) && (
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No sites assigned</span>
+              )}
             </div>
 
-            <div>
-              <p className="text-xs font-medium text-gray-700 mb-2">Linked Sites</p>
-              <div className="flex flex-wrap gap-2">
-                {sites.map(s => {
-                  const linked = (form.site_ids ?? []).includes(s.id)
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => setForm(f => ({
-                        ...f,
-                        site_ids: linked
-                          ? (f.site_ids ?? []).filter(id => id !== s.id)
-                          : [...(f.site_ids ?? []), s.id]
-                      }))}
-                      className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${
-                        linked ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      {s.emoji} {s.name}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+            {selUser.role === 'regular' && (
+              <>
+                <div className="sec-label" style={{ marginBottom: 7 }}>Custom Rates per Site</div>
+                <div className="card" style={{ marginBottom: 14 }}>
+                  {sites.map((s, i) => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: i < sites.length - 1 ? '1px solid #f4f4f6' : 'none', fontSize: 13 }}>
+                      <span style={{ flex: 1 }}>{s.emoji} {s.name}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 4 }}>Standard £{s.rate}/hr</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-text)' }}>Custom:</span>
+                        <input
+                          className="form-input"
+                          type="number"
+                          defaultValue={selUser.custom_rates?.[s.id] ?? ''}
+                          placeholder={String(s.rate)}
+                          style={{ width: 65, padding: '4px 7px', fontSize: 12 }}
+                          onBlur={e => { if (e.target.value) saveCustomRate(selUser.id, s.id, Number(e.target.value)) }}
+                        />
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/hr</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-            <div>
-              <p className="text-xs font-medium text-gray-700 mb-2">Custom Rates (£/hr per site)</p>
-              <div className="space-y-2">
-                {sites.map(s => (
-                  <div key={s.id} className="flex items-center gap-3">
-                    <span className="text-sm text-gray-600 flex-1">{s.emoji} {s.name} <span className="text-gray-400">(default £{s.rate}/h)</span></span>
-                    <input
-                      type="number"
-                      placeholder={String(s.rate)}
-                      value={(form.custom_rates as Record<string, number>)?.[s.id] ?? ''}
-                      onChange={e => setForm(f => ({
-                        ...f,
-                        custom_rates: {
-                          ...(f.custom_rates as Record<string, number> ?? {}),
-                          [s.id]: Number(e.target.value)
-                        }
-                      }))}
-                      className="w-24 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-200"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button onClick={saveUser} loading={saving}>Save Changes</Button>
-              <Button variant="secondary" onClick={() => setEditing(null)}>Cancel</Button>
-            </div>
-          </div>
+                <div className="sec-label" style={{ marginBottom: 7 }}>Linked Bookings</div>
+                <div className="card">
+                  {bookings.filter(b => b.user_id === selUser.id).length === 0 && (
+                    <div className="empty" style={{ padding: 20 }}><div className="empty-title">No linked bookings</div></div>
+                  )}
+                  {bookings.filter(b => b.user_id === selUser.id).map(b => (
+                    <div key={b.id} style={{ padding: '9px 14px', borderBottom: '1px solid #f4f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{b.event}</div>
+                        <div style={{ color: 'var(--text-muted)', marginTop: 1 }}>{b.date} · {b.start_time}–{b.end_time}</div>
+                      </div>
+                      <span className={`badge ${b.status === 'confirmed' ? 'badge-approved' : b.status === 'denied' ? 'badge-denied' : 'badge-pending'}`}>
+                        {b.status === 'confirmed' ? '✓ Approved' : b.status === 'denied' ? '✗ Denied' : '⏳ Pending'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
         )}
       </Modal>
     </div>

@@ -1,211 +1,198 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Clock, DollarSign, Building2, Check, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { sendEmail } from '../lib/email'
 import type { Booking, ExtraSlot, Site } from '../lib/database.types'
-import Card from '../components/ui/Card'
 import Badge from '../components/ui/Badge'
 import { format } from 'date-fns'
 
-interface Stats {
-  pendingBookings: number
-  pendingSlots: number
-  revenue: number
-  activeSites: number
-}
+type BookingWithSite = Booking & { sites?: Site }
 
 export default function Dashboard() {
-  const [stats, setStats] = useState<Stats>({ pendingBookings: 0, pendingSlots: 0, revenue: 0, activeSites: 0 })
-  const [pendingBookings, setPendingBookings] = useState<Booking[]>([])
-  const [pendingSlots, setPendingSlots] = useState<ExtraSlot[]>([])
-  const [upcoming, setUpcoming] = useState<(Booking & { site?: Site })[]>([])
+  const [bookings, setBookings] = useState<BookingWithSite[]>([])
+  const [slots, setSlots] = useState<ExtraSlot[]>([])
+  const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    fetchAll()
-  }, [])
+  useEffect(() => { fetchAll() }, [])
 
   async function fetchAll() {
     setLoading(true)
-    const today = new Date().toISOString().split('T')[0]
-
-    const [bookingsRes, slotsRes, confirmedRes, sitesRes, revenueRes] = await Promise.all([
-      supabase.from('bookings').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(10),
-      supabase.from('extra_slots').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(10),
-      supabase.from('bookings').select('*, sites(*)').eq('status', 'confirmed').gte('date', today).order('date').limit(5),
+    const [bRes, sRes, sitesRes] = await Promise.all([
+      supabase.from('bookings').select('*, sites(*)').order('created_at', { ascending: false }),
+      supabase.from('extra_slots').select('*').order('created_at', { ascending: false }),
       supabase.from('sites').select('*'),
-      supabase.from('bookings').select('total').eq('status', 'confirmed'),
     ])
-
-    setPendingBookings(bookingsRes.data ?? [])
-    setPendingSlots(slotsRes.data ?? [])
-    setUpcoming((confirmedRes.data ?? []) as (Booking & { site?: Site })[])
-    const revenue = (revenueRes.data ?? []).reduce((sum, b) => sum + (b.total ?? 0), 0)
-
-    setStats({
-      pendingBookings: bookingsRes.data?.length ?? 0,
-      pendingSlots: slotsRes.data?.length ?? 0,
-      revenue,
-      activeSites: sitesRes.data?.length ?? 0,
-    })
+    setBookings((bRes.data ?? []) as BookingWithSite[])
+    setSlots(sRes.data ?? [])
+    setSites(sitesRes.data ?? [])
     setLoading(false)
   }
 
-  async function updateBooking(id: string, status: 'confirmed' | 'denied') {
-    await supabase.from('bookings').update({ status }).eq('id', id)
-    setPendingBookings(prev => prev.filter(b => b.id !== id))
-    setStats(s => ({ ...s, pendingBookings: s.pendingBookings - 1 }))
+  async function approveBooking(id: string) {
+    await supabase.from('bookings').update({ status: 'confirmed' }).eq('id', id)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed' } : b))
+    sendEmail('booking_approved', id)
   }
 
-  async function updateSlot(id: string, status: 'approved' | 'denied') {
-    await supabase.from('extra_slots').update({ status }).eq('id', id)
-    setPendingSlots(prev => prev.filter(s => s.id !== id))
-    setStats(s => ({ ...s, pendingSlots: s.pendingSlots - 1 }))
+  async function denyBooking(id: string) {
+    await supabase.from('bookings').update({ status: 'denied' }).eq('id', id)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'denied' } : b))
+    sendEmail('booking_denied', id)
   }
 
-  const statCards = [
-    { label: 'Pending Bookings', value: stats.pendingBookings, icon: BookOpen, color: 'bg-amber-50 text-amber-600' },
-    { label: 'Slot Requests', value: stats.pendingSlots, icon: Clock, color: 'bg-blue-50 text-blue-600' },
-    { label: 'Total Revenue', value: `£${stats.revenue.toLocaleString()}`, icon: DollarSign, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Active Sites', value: stats.activeSites, icon: Building2, color: 'bg-purple-50 text-purple-600' },
-  ]
+  async function approveSlot(id: string) {
+    await supabase.from('extra_slots').update({ status: 'approved' }).eq('id', id)
+    setSlots(prev => prev.map(s => s.id === id ? { ...s, status: 'approved' } : s))
+    sendEmail('slot_approved', id)
+  }
 
-  if (loading) return <div className="flex items-center justify-center h-48 text-gray-400">Loading...</div>
+  async function denySlot(id: string) {
+    await supabase.from('extra_slots').update({ status: 'denied' }).eq('id', id)
+    setSlots(prev => prev.map(s => s.id === id ? { ...s, status: 'denied' } : s))
+    sendEmail('slot_denied', id)
+  }
+
+  const pending = bookings.filter(b => b.status === 'pending')
+  const pendingSlots = slots.filter(s => s.status === 'pending')
+  const confirmed = bookings.filter(b => b.status === 'confirmed')
+  const revenue = confirmed.reduce((s, b) => s + (b.total ?? 0), 0)
+
+  if (loading) return <div className="empty"><div className="empty-icon">⏳</div><div className="empty-title">Loading…</div></div>
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Overview of your venue management</p>
+    <div>
+      {/* Stat cards */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-label">Pending Bookings</div>
+          <div className="stat-value" style={{ color: 'var(--amber)' }}>{pending.length}</div>
+          <div className="stat-sub">Awaiting decision</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Extra Slot Requests</div>
+          <div className="stat-value" style={{ color: 'var(--blue)' }}>{pendingSlots.length}</div>
+          <div className="stat-sub">From regular bookers</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Revenue</div>
+          <div className="stat-value">£{revenue.toLocaleString()}</div>
+          <div className="stat-sub">Confirmed bookings</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Active Sites</div>
+          <div className="stat-value">{sites.length}</div>
+          <div className="stat-sub">Under management</div>
+        </div>
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map(({ label, value, icon: Icon, color }) => (
-          <Card key={label} className="p-5">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
-                <Icon size={18} />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{value}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{label}</p>
-              </div>
+      {/* Extra slot requests */}
+      {pendingSlots.length > 0 && (
+        <>
+          <div className="sec-label">📅 Extra Slot Requests ({pendingSlots.length})</div>
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="tbl-header cols-slots">
+              <span>Booker</span><span>Venue</span><span>Date & Time</span><span>Hours</span><span>Status</span><span>Actions</span>
             </div>
-          </Card>
-        ))}
-      </div>
+            {pendingSlots.map(sl => {
+              const site = sites.find(s => s.id === sl.site_id)
+              return (
+                <div key={sl.id} className="tbl-row cols-slots">
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{sl.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{sl.reason.slice(0, 40)}{sl.reason.length > 40 ? '…' : ''}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name}</div>
+                  <div>
+                    <div>{format(new Date(sl.date), 'dd MMM yyyy')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{sl.start_time}–{sl.end_time}</div>
+                  </div>
+                  <div style={{ fontWeight: 600 }}>{sl.hours}h</div>
+                  <div><Badge status={sl.status} /></div>
+                  <div className="approve-deny" onClick={e => e.stopPropagation()}>
+                    <button className="icon-btn icon-btn-approve" onClick={() => approveSlot(sl.id)}>✓</button>
+                    <button className="icon-btn icon-btn-deny" onClick={() => denySlot(sl.id)}>✗</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Pending Bookings */}
-        <Card>
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Pending Bookings</h2>
-            <Badge status="pending" label={`${stats.pendingBookings} pending`} />
-          </div>
-          <div className="divide-y divide-gray-50">
-            {pendingBookings.length === 0 && (
-              <p className="px-5 py-8 text-sm text-gray-400 text-center">No pending bookings</p>
-            )}
-            {pendingBookings.map(b => (
-              <div key={b.id} className="px-5 py-3.5 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{b.name}</p>
-                  <p className="text-xs text-gray-500">{b.event} · {b.date}</p>
+      {/* Pending bookings */}
+      {pending.length > 0 && (
+        <>
+          <div className="sec-label">⏳ Booking Requests ({pending.length})</div>
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="tbl-header cols-bookings">
+              <span>Booking</span><span>Date & Time</span><span>Venue</span><span>Type</span><span>Status</span><span>Actions</span>
+            </div>
+            {pending.map(b => {
+              const site = (b as BookingWithSite).sites
+              return (
+                <div key={b.id} className="tbl-row cols-bookings">
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{b.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
+                  </div>
+                  <div>
+                    <div>{format(new Date(b.date), 'dd MMM yyyy')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name}</div>
+                  <div>
+                    <span className={`badge ${b.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>
+                      {b.type === 'recurring' ? `↻ ${b.recurrence ?? 'recurring'}` : 'One-off'}
+                    </span>
+                  </div>
+                  <div><Badge status={b.status} /></div>
+                  <div className="approve-deny" onClick={e => e.stopPropagation()}>
+                    <button className="icon-btn icon-btn-approve" onClick={() => approveBooking(b.id)}>✓</button>
+                    <button className="icon-btn icon-btn-deny" onClick={() => denyBooking(b.id)}>✗</button>
+                  </div>
                 </div>
-                <span className="text-sm font-semibold text-gray-700">£{b.total}</span>
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => updateBooking(b.id, 'confirmed')}
-                    className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"
-                    title="Approve"
-                  >
-                    <Check size={14} />
-                  </button>
-                  <button
-                    onClick={() => updateBooking(b.id, 'denied')}
-                    className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"
-                    title="Deny"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
-        </Card>
-
-        {/* Pending Extra Slots */}
-        <Card>
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Extra Slot Requests</h2>
-            <Badge status="pending" label={`${stats.pendingSlots} pending`} />
-          </div>
-          <div className="divide-y divide-gray-50">
-            {pendingSlots.length === 0 && (
-              <p className="px-5 py-8 text-sm text-gray-400 text-center">No pending requests</p>
-            )}
-            {pendingSlots.map(s => (
-              <div key={s.id} className="px-5 py-3.5 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{s.name}</p>
-                  <p className="text-xs text-gray-500">{s.date} · {s.reason}</p>
-                </div>
-                <span className="text-sm font-semibold text-gray-700">£{s.total}</span>
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => updateSlot(s.id, 'approved')}
-                    className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"
-                  >
-                    <Check size={14} />
-                  </button>
-                  <button
-                    onClick={() => updateSlot(s.id, 'denied')}
-                    className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+        </>
+      )}
 
       {/* Upcoming confirmed */}
-      <Card>
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-900">Upcoming Confirmed Bookings</h2>
+      <div className="sec-label">Upcoming confirmed</div>
+      <div className="card">
+        <div className="tbl-header cols-bookings">
+          <span>Booking</span><span>Date & Time</span><span>Venue</span><span>Type</span><span>Status</span><span></span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100">
-                {['Name', 'Event', 'Date', 'Time', 'Site', 'Total', 'Status'].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {upcoming.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-5 py-8 text-center text-gray-400">No upcoming bookings</td>
-                </tr>
-              )}
-              {upcoming.map(b => (
-                <tr key={b.id} className="hover:bg-gray-50">
-                  <td className="px-5 py-3 font-medium text-gray-900">{b.name}</td>
-                  <td className="px-5 py-3 text-gray-600">{b.event}</td>
-                  <td className="px-5 py-3 text-gray-600">{format(new Date(b.date), 'dd MMM yyyy')}</td>
-                  <td className="px-5 py-3 text-gray-600">{b.start_time} – {b.end_time}</td>
-                  <td className="px-5 py-3 text-gray-600">{(b as Booking & { sites?: { name: string } }).sites?.name ?? b.site_id}</td>
-                  <td className="px-5 py-3 font-semibold text-gray-900">£{b.total}</td>
-                  <td className="px-5 py-3"><Badge status="confirmed" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+        {confirmed.length === 0 && (
+          <div className="empty">
+            <div className="empty-icon">✅</div>
+            <div className="empty-title">No confirmed bookings yet</div>
+          </div>
+        )}
+        {confirmed.slice(0, 5).map(b => {
+          const site = (b as BookingWithSite).sites
+          return (
+            <div key={b.id} className="tbl-row cols-bookings">
+              <div>
+                <div style={{ fontWeight: 600 }}>{b.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
+              </div>
+              <div>
+                <div>{format(new Date(b.date), 'dd MMM yyyy')}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name}</div>
+              <div>
+                <span className={`badge ${b.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>
+                  {b.type === 'recurring' ? `↻ ${b.recurrence ?? 'recurring'}` : 'One-off'}
+                </span>
+              </div>
+              <div><Badge status={b.status} /></div>
+              <div></div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

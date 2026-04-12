@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, MapPin } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Site } from '../lib/database.types'
-import Card from '../components/ui/Card'
-import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
-import Input from '../components/ui/Input'
-import { useTheme } from '../context/ThemeContext'
 
 const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿']
 
@@ -20,7 +15,6 @@ const DEFAULT_FORM = {
 }
 
 export default function Sites() {
-  const { accent } = useTheme()
   const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -62,105 +56,107 @@ export default function Sites() {
     setSaving(false)
   }
 
-  const f = (key: keyof typeof form) => ({
-    value: form[key] as string | number,
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm(prev => ({ ...prev, [key]: key === 'capacity' || key === 'rate' || key === 'deposit' ? Number(e.target.value) : e.target.value }))
-  })
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Sites & Venues</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{sites.length} venues in your portfolio</p>
-        </div>
-        <Button onClick={openAdd}>
-          <Plus size={15} />
-          Add Site
-        </Button>
-      </div>
+    <div>
+      {loading && <div className="empty"><div className="empty-title">Loading…</div></div>}
 
-      {loading ? (
-        <div className="text-center py-12 text-gray-400">Loading...</div>
-      ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+      {!loading && (
+        <div className="sites-grid">
           {sites.map(site => (
-            <Card key={site.id} className="overflow-hidden group">
-              <div className="h-16 flex items-center justify-center text-4xl" style={{ background: `linear-gradient(135deg, ${accent}20, ${accent}08)` }}>
-                {site.emoji}
+            <div key={site.id} className="site-card" onClick={() => openEdit(site)}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                <span style={{ fontSize: 28 }}>{site.emoji}</span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ padding: '3px 8px', fontSize: 11 }}
+                  onClick={e => { e.stopPropagation(); openEdit(site) }}
+                >
+                  Edit
+                </button>
               </div>
-              <div className="p-5">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-semibold text-gray-900 text-lg">{site.name}</h3>
-                    <div className="flex items-center gap-1.5 text-gray-500 text-xs mt-1">
-                      <MapPin size={11} />
-                      <span>{site.address}</span>
-                    </div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{site.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>{site.address}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+                {[
+                  { label: 'per hour', value: `£${site.rate}` },
+                  { label: 'deposit', value: `£${site.deposit}` },
+                  { label: 'capacity', value: String(site.capacity) },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ background: 'var(--surface2)', borderRadius: 7, padding: '8px 6px', textAlign: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{value}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{label}</div>
                   </div>
-                  <button
-                    onClick={() => openEdit(site)}
-                    className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                  >
-                    <Edit2 size={14} />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 mt-4">
-                  <div className="text-center p-3 bg-gray-50 rounded-xl">
-                    <p className="text-sm font-bold text-gray-900">£{site.rate}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">per hour</p>
-                  </div>
-                  <div className="text-center p-3 bg-gray-50 rounded-xl">
-                    <p className="text-sm font-bold text-gray-900">£{site.deposit}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">deposit</p>
-                  </div>
-                  <div className="text-center p-3 bg-gray-50 rounded-xl">
-                    <p className="text-sm font-bold text-gray-900">{site.capacity}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">capacity</p>
-                  </div>
-                </div>
+                ))}
               </div>
-            </Card>
+            </div>
           ))}
 
           {/* Add site card */}
           <button
+            className="site-card"
+            style={{ border: '2px dashed var(--border)', background: 'transparent', boxShadow: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 160, color: 'var(--text-muted)' }}
             onClick={openAdd}
-            className="rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-3 p-8 text-gray-400 hover:border-purple-300 hover:text-purple-600 transition-all min-h-48"
           >
-            <Plus size={24} />
-            <span className="text-sm font-medium">Add new site</span>
+            <span style={{ fontSize: 24 }}>+</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Add new site</span>
           </button>
         </div>
       )}
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? `Edit ${editing.name}` : 'Add New Site'}>
-        <div className="space-y-4">
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title={editing ? `Edit ${editing.name}` : 'Add New Site'}
+        footer={
+          <>
+            <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
+            <button className="btn btn-primary" onClick={saveSite} disabled={saving || !form.name}>
+              {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Site'}
+            </button>
+          </>
+        }
+      >
+        <div className="form-row" style={{ marginBottom: 12 }}>
+          <label className="form-label">Emoji</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+            {EMOJI_OPTIONS.map(e => (
+              <button
+                key={e}
+                onClick={() => setForm(f => ({ ...f, emoji: e }))}
+                style={{
+                  width: 38, height: 38, fontSize: 18, borderRadius: 8,
+                  border: `2px solid ${form.emoji === e ? 'var(--accent)' : 'var(--border)'}`,
+                  background: form.emoji === e ? 'var(--accent-light)' : '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="form-grid-2">
           <div>
-            <p className="text-xs font-medium text-gray-700 mb-2">Emoji</p>
-            <div className="flex flex-wrap gap-2">
-              {EMOJI_OPTIONS.map(e => (
-                <button
-                  key={e}
-                  onClick={() => setForm(f => ({ ...f, emoji: e }))}
-                  className={`w-10 h-10 text-xl rounded-xl border-2 transition-all ${form.emoji === e ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
+            <label className="form-label">Site name</label>
+            <input className="form-input" placeholder="e.g. The Grand Hall" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           </div>
-          <Input label="Site name" placeholder="e.g. The Grand Hall" {...f('name')} />
-          <Input label="Address" placeholder="123 Example St, City" {...f('address')} />
-          <div className="grid grid-cols-3 gap-3">
-            <Input label="Capacity" type="number" min="1" {...f('capacity')} />
-            <Input label="Rate (£/hr)" type="number" min="0" {...f('rate')} />
-            <Input label="Deposit (£)" type="number" min="0" {...f('deposit')} />
+          <div>
+            <label className="form-label">Address</label>
+            <input className="form-input" placeholder="123 Example St, City" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
           </div>
-          <div className="flex gap-3 pt-2">
-            <Button onClick={saveSite} loading={saving} disabled={!form.name}>{editing ? 'Save Changes' : 'Add Site'}</Button>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
+        </div>
+        <div className="form-grid-3">
+          <div>
+            <label className="form-label">Capacity</label>
+            <input className="form-input" type="number" min="1" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: Number(e.target.value) }))} />
+          </div>
+          <div>
+            <label className="form-label">Rate (£/hr)</label>
+            <input className="form-input" type="number" min="0" value={form.rate} onChange={e => setForm(f => ({ ...f, rate: Number(e.target.value) }))} />
+          </div>
+          <div>
+            <label className="form-label">Deposit (£)</label>
+            <input className="form-input" type="number" min="0" value={form.deposit} onChange={e => setForm(f => ({ ...f, deposit: Number(e.target.value) }))} />
           </div>
         </div>
       </Modal>

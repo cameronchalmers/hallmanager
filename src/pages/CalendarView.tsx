@@ -1,137 +1,131 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isSameDay, addMonths, subMonths, getDay } from 'date-fns'
 import { supabase } from '../lib/supabase'
-import type { Booking } from '../lib/database.types'
-import Card from '../components/ui/Card'
-import Badge from '../components/ui/Badge'
-import { useTheme } from '../context/ThemeContext'
+import type { Booking, Site } from '../lib/database.types'
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+function getDays(year: number, month: number) {
+  const days: { date: Date; curr: boolean }[] = []
+  const first = new Date(year, month, 1).getDay()
+  const total = new Date(year, month + 1, 0).getDate()
+  for (let i = 0; i < first; i++) days.push({ date: new Date(year, month, -first + i + 1), curr: false })
+  for (let i = 1; i <= total; i++) days.push({ date: new Date(year, month, i), curr: true })
+  while (days.length % 7 !== 0) days.push({ date: new Date(year, month + 1, days.length - total - first + 1), curr: false })
+  return days
+}
 
 export default function CalendarView() {
-  const { accent } = useTheme()
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const today = new Date()
+  const [cal, setCal] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const [bookings, setBookings] = useState<Booking[]>([])
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [sites, setSites] = useState<Site[]>([])
+  const [siteFilter, setSiteFilter] = useState('all')
+  const [selDay, setSelDay] = useState<Date | null>(null)
 
-  useEffect(() => { fetchMonth() }, [currentDate])
+  useEffect(() => { fetchMonth() }, [cal])
 
   async function fetchMonth() {
-    const start = format(startOfMonth(currentDate), 'yyyy-MM-dd')
-    const end = format(endOfMonth(currentDate), 'yyyy-MM-dd')
-    const { data } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('status', 'confirmed')
-      .gte('date', start)
-      .lte('date', end)
-    setBookings(data ?? [])
+    const start = `${cal.year}-${String(cal.month + 1).padStart(2, '0')}-01`
+    const end = `${cal.year}-${String(cal.month + 1).padStart(2, '0')}-31`
+    const [bRes, sRes] = await Promise.all([
+      supabase.from('bookings').select('*').eq('status', 'confirmed').gte('date', start).lte('date', end),
+      supabase.from('sites').select('*'),
+    ])
+    setBookings(bRes.data ?? [])
+    setSites(sRes.data ?? [])
   }
 
-  const days = eachDayOfInterval({ start: startOfMonth(currentDate), end: endOfMonth(currentDate) })
-  const startPad = getDay(startOfMonth(currentDate)) // 0=Sun
-  const paddedStart = startPad === 0 ? 6 : startPad - 1 // Mon-first
+  const days = getDays(cal.year, cal.month)
+  const filteredBookings = bookings.filter(b => siteFilter === 'all' || b.site_id === siteFilter)
 
-  const bookingsForDate = (date: Date) => bookings.filter(b => isSameDay(new Date(b.date), date))
-  const selectedBookings = selectedDate ? bookingsForDate(selectedDate) : []
+  const getForDay = (d: Date) => {
+    const ds = d.toISOString().split('T')[0]
+    return filteredBookings.filter(b => b.date === ds)
+  }
+
+  const selBookings = selDay ? getForDay(selDay) : []
+
+  function prevMonth() {
+    setCal(c => { const d = new Date(c.year, c.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })
+  }
+  function nextMonth() {
+    setCal(c => { const d = new Date(c.year, c.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Calendar</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Confirmed bookings at a glance</p>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 2px' }}>
+          <button className="btn btn-ghost btn-sm" onClick={prevMonth}>‹</button>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{MONTHS[cal.month]} {cal.year}</span>
+          <button className="btn btn-ghost btn-sm" onClick={nextMonth}>›</button>
+        </div>
+        <div style={{ padding: '4px 14px 2px', display: 'flex', gap: 5, alignItems: 'center' }}>
+          <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Venue:</span>
+          <select className="form-input" style={{ width: 'auto', padding: '3px 6px', fontSize: 11 }} value={siteFilter} onChange={e => setSiteFilter(e.target.value)}>
+            <option value="all">All</option>
+            {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+        <div className="cal-grid">
+          {DAYS.map(d => <div key={d} className="cal-dh">{d}</div>)}
+          {days.map((d, i) => {
+            const bs = getForDay(d.date)
+            const isToday = d.date.toDateString() === today.toDateString()
+            const isSel = selDay && d.date.toDateString() === selDay.toDateString()
+            return (
+              <button
+                key={i}
+                className={[
+                  'cal-day',
+                  !d.curr ? 'other' : '',
+                  isToday ? 'today' : '',
+                  bs.length > 0 && !isToday ? 'booked' : '',
+                  isSel && !isToday ? 'sel' : '',
+                ].join(' ')}
+                onClick={() => setSelDay(d.date)}
+              >
+                {d.date.getDate()}
+                {bs.length > 0 && <span className="cal-dot" />}
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ padding: '4px 14px 12px', display: 'flex', gap: 12 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} />
+            Booked
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--accent)', display: 'inline-block' }} />
+            Today
+          </span>
+        </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          {/* Header */}
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">{format(currentDate, 'MMMM yyyy')}</h2>
-            <div className="flex gap-1">
-              <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
-                <ChevronLeft size={16} />
-              </button>
-              <button onClick={() => setCurrentDate(new Date())} className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                Today
-              </button>
-              <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-
-          <div className="p-4">
-            {/* Day headers */}
-            <div className="grid grid-cols-7 mb-2">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-                <div key={d} className="text-center text-xs font-semibold text-gray-400 py-2">{d}</div>
-              ))}
-            </div>
-
-            {/* Days grid */}
-            <div className="grid grid-cols-7 gap-1">
-              {Array.from({ length: paddedStart }).map((_, i) => (
-                <div key={`pad-${i}`} className="aspect-square" />
-              ))}
-              {days.map(day => {
-                const dayBookings = bookingsForDate(day)
-                const isSelected = selectedDate && isSameDay(day, selectedDate)
-                const todayDay = isToday(day)
-
-                return (
-                  <button
-                    key={day.toISOString()}
-                    onClick={() => setSelectedDate(isSelected ? null : day)}
-                    className={`aspect-square rounded-xl flex flex-col items-center justify-start pt-2 text-sm transition-all hover:bg-gray-50 ${
-                      isSelected ? 'ring-2 ring-offset-1 ring-purple-500' : ''
-                    }`}
-                  >
-                    <span className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-medium ${
-                      todayDay ? 'text-white' : 'text-gray-700'
-                    }`} style={todayDay ? { backgroundColor: accent } : undefined}>
-                      {format(day, 'd')}
-                    </span>
-                    {dayBookings.length > 0 && (
-                      <div className="flex gap-0.5 mt-1">
-                        {dayBookings.slice(0, 3).map((_, i) => (
-                          <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: accent }} />
-                        ))}
-                        {dayBookings.length > 3 && <span className="text-xs" style={{ color: accent }}>+</span>}
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </Card>
-
-        {/* Sidebar */}
-        <Card>
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900">
-              {selectedDate ? format(selectedDate, 'EEEE, d MMMM') : 'Select a date'}
-            </h2>
-          </div>
-          <div className="p-4 space-y-3">
-            {!selectedDate && (
-              <p className="text-sm text-gray-400 text-center py-8">Click a date to see its bookings</p>
-            )}
-            {selectedDate && selectedBookings.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-8">No confirmed bookings on this date</p>
-            )}
-            {selectedBookings.map(b => (
-              <div key={b.id} className="rounded-xl border border-gray-100 p-4 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-semibold text-gray-900">{b.name}</p>
-                  <Badge status="confirmed" />
-                </div>
-                <p className="text-xs text-gray-600 font-medium">{b.event}</p>
-                <p className="text-xs text-gray-500">{b.start_time} – {b.end_time} · {b.hours}h</p>
-                <p className="text-xs font-semibold text-gray-700">£{b.total}</p>
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">
+            {selDay ? selDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Select a date'}
+          </span>
+        </div>
+        {!selDay && <div className="empty"><div className="empty-icon">📅</div><div className="empty-title">Click a date</div></div>}
+        {selDay && selBookings.length === 0 && (
+          <div className="empty"><div className="empty-icon">✅</div><div className="empty-title">Free</div><div style={{ fontSize: 12 }}>No bookings this day</div></div>
+        )}
+        {selBookings.map(b => {
+          const site = sites.find(s => s.id === b.site_id)
+          return (
+            <div key={b.id} style={{ padding: '11px 16px', borderBottom: '1px solid #f4f4f6' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{b.event}</div>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{b.start_time}–{b.end_time}</span>
               </div>
-            ))}
-          </div>
-        </Card>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.name} · {site?.name}</div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

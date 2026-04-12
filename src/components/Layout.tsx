@@ -1,25 +1,43 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import {
-  LayoutDashboard, Calendar, BookOpen, Clock, FileText,
-  Users, Building2, Settings, LogOut, Menu, X, ChevronRight
-} from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 
-const nav = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/bookings', label: 'Bookings', icon: BookOpen },
-  { to: '/extra-slots', label: 'Extra Slots', icon: Clock },
-  { to: '/calendar', label: 'Calendar', icon: Calendar },
-  { to: '/quickfile', label: 'QuickFile', icon: FileText },
-  { to: '/users', label: 'Users & Access', icon: Users },
-  { to: '/portal', label: 'Booker Portal', icon: ChevronRight },
-  { to: '/sites', label: 'Sites & Venues', icon: Building2 },
-  { to: '/settings', label: 'Settings', icon: Settings },
-]
 
-export default function Layout({ children }: { children: React.ReactNode }) {
+function HouseIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+      <polyline points="9 22 9 12 15 12 15 22"/>
+    </svg>
+  )
+}
+
+function NavIcon({ path, size = 14 }: { path: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {path.split('M').filter(Boolean).map((d, i) => <path key={i} d={'M' + d} />)}
+    </svg>
+  )
+}
+
+const ICONS = {
+  grid: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
+  cal: 'M3 4a1 1 0 011-1h16a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm5-2v3m8-3v3M3 10h18',
+  list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
+  bld: 'M4 22V4a1 1 0 011-1h14a1 1 0 011 1v18M9 22v-6h6v6M9 7h.01M12 7h.01M15 7h.01M9 11h.01M12 11h.01M15 11h.01',
+  users: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
+  cog: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z',
+  rep: 'M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3',
+  inv: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H9H8',
+  extra: 'M8 7v8M12 7v4M16 7v6M3 3h18v4H3zM3 21l3-6h12l3 6H3z',
+}
+
+export default function Layout({ children, pageTitle, actions }: {
+  children: React.ReactNode
+  pageTitle?: string
+  actions?: React.ReactNode
+}) {
   const { pathname } = useLocation()
   const { profile, signOut } = useAuth()
   const { accent } = useTheme()
@@ -31,58 +49,107 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     navigate('/login')
   }
 
-  const Sidebar = () => (
-    <aside className="flex flex-col h-full w-64 bg-white border-r border-gray-100">
+  const titles: Record<string, string> = {
+    '/': 'Dashboard',
+    '/bookings': 'All Bookings',
+    '/extra-slots': 'Extra Slot Requests',
+    '/calendar': 'Calendar',
+    '/quickfile': 'QuickFile Integration',
+    '/users': 'Users & Access',
+    '/portal': 'Regular Booker Portal',
+    '/sites': 'Sites & Venues',
+    '/settings': 'Settings',
+  }
+
+  const currentTitle = pageTitle ?? titles[pathname] ?? 'HallManager'
+
+  const navSections = [
+    [
+      { to: '/', icon: 'grid', label: 'Dashboard' },
+      { to: '/bookings', icon: 'list', label: 'Bookings' },
+      { to: '/extra-slots', icon: 'extra', label: 'Extra Slot Requests' },
+      { to: '/calendar', icon: 'cal', label: 'Calendar' },
+    ],
+    [
+      { to: '/quickfile', icon: 'inv', label: 'QuickFile' },
+    ],
+    [
+      { to: '/users', icon: 'users', label: 'Users & Access' },
+      { to: '/portal', icon: 'rep', label: 'Regular Booker Portal' },
+      { to: '/sites', icon: 'bld', label: 'Sites & Venues' },
+    ],
+    [
+      { to: '/settings', icon: 'cog', label: 'Settings' },
+    ],
+  ]
+
+  const isActive = (to: string) => to === '/' ? pathname === '/' : pathname.startsWith(to)
+
+  const SidebarContent = () => (
+    <aside style={{ width: 224, background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)', display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       {/* Logo */}
-      <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-100">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold" style={{ backgroundColor: accent }}>
-          H
+      <div style={{ padding: '18px 16px 14px', display: 'flex', alignItems: 'center', gap: 9, borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ width: 30, height: 30, background: accent, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'white' }}>
+          <HouseIcon />
         </div>
-        <span className="font-bold text-gray-900 text-lg tracking-tight">HallManager</span>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.3px' }}>HallManager</div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.3px' }}>Venue Booking</div>
+        </div>
+      </div>
+
+      {/* Site switcher */}
+      <div style={{ margin: '10px 10px 6px', padding: '8px 11px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 1 }}>All sites</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Overview</div>
+        </div>
+        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>▾</span>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {nav.map(({ to, label, icon: Icon }) => {
-          const active = pathname === to || (to !== '/' && pathname.startsWith(to))
-          return (
-            <Link
-              key={to}
-              to={to}
-              onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                active
-                  ? 'text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-              style={active ? { backgroundColor: accent } : undefined}
-            >
-              <Icon size={17} />
-              {label}
-            </Link>
-          )
-        })}
+      <nav style={{ flex: 1, padding: '4px 10px', display: 'flex', flexDirection: 'column', gap: 1, overflowY: 'auto' }}>
+        {navSections.map((section, si) => (
+          <div key={si}>
+            {si > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '6px 8px' }} />}
+            {section.map(({ to, icon, label }) => {
+              const active = isActive(to)
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  onClick={() => setMobileOpen(false)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+                    borderRadius: 8, fontSize: 13, fontWeight: active ? 600 : 500,
+                    color: active ? 'var(--accent-text)' : 'var(--text-muted)',
+                    background: active ? 'var(--accent-light)' : 'transparent',
+                    textDecoration: 'none', transition: 'all 0.12s',
+                  }}
+                >
+                  <span style={{ opacity: active ? 1 : 0.6, color: active ? accent : undefined, flexShrink: 0 }}>
+                    <NavIcon path={ICONS[icon as keyof typeof ICONS]} />
+                  </span>
+                  {label}
+                </Link>
+              )
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* User */}
-      <div className="px-4 py-4 border-t border-gray-100">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
-            style={{ backgroundColor: profile?.color ?? accent }}
-          >
-            {profile?.name?.charAt(0) ?? '?'}
+      <div style={{ padding: 10, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, cursor: 'pointer' }}>
+          <div style={{ width: 27, height: 27, borderRadius: '50%', background: (profile?.color ?? accent) + '22', color: profile?.color ?? accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+            {profile?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() ?? 'U'}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">{profile?.name ?? 'User'}</p>
-            <p className="text-xs text-gray-500 truncate capitalize">{profile?.role ?? 'admin'}</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{profile?.name ?? 'User'}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{profile?.role ?? 'admin'}</div>
           </div>
-          <button
-            onClick={handleSignOut}
-            className="p-1.5 text-gray-400 hover:text-gray-700 rounded-md hover:bg-gray-100 transition-colors"
-            title="Sign out"
-          >
-            <LogOut size={15} />
+          <button onClick={handleSignOut} title="Sign out" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1 }}>
+            ↩
           </button>
         </div>
       </div>
@@ -90,33 +157,39 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
       {/* Desktop sidebar */}
-      <div className="hidden md:flex flex-col flex-shrink-0">
-        <Sidebar />
+      <div className="hidden md:block flex-shrink-0">
+        <SidebarContent />
       </div>
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile sidebar */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 flex md:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <div className="relative flex flex-col w-64 h-full">
-            <Sidebar />
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex' }} className="md:hidden">
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)' }} onClick={() => setMobileOpen(false)} />
+          <div style={{ position: 'relative' }}>
+            <SidebarContent />
           </div>
         </div>
       )}
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Mobile topbar */}
-        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100">
-          <button onClick={() => setMobileOpen(true)} className="p-1.5 text-gray-600">
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
-          <span className="font-bold text-gray-900">HallManager</span>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {/* Topbar */}
+        <div style={{ background: '#fff', borderBottom: '1px solid var(--border)', padding: '0 24px', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 40, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button className="md:hidden" onClick={() => setMobileOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text)' }}>☰</button>
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.2px' }}>{currentTitle}</span>
+          </div>
+          {actions && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              {actions}
+            </div>
+          )}
         </div>
 
-        <main className="flex-1 overflow-y-auto p-6">
+        {/* Page content */}
+        <main style={{ flex: 1, padding: 22, overflowY: 'auto' }}>
           {children}
         </main>
       </div>
