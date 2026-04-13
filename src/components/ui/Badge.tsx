@@ -1,7 +1,7 @@
 const variants: Record<string, { cls: string; label: string }> = {
   pending:   { cls: 'badge-pending',  label: '⏳ Pending' },
-  confirmed: { cls: 'badge-approved', label: '✓ Approved' },
-  approved:  { cls: 'badge-approved', label: '✓ Approved' },
+  approved:  { cls: 'badge-accent',   label: '✓ Approved' },
+  confirmed: { cls: 'badge-approved', label: '✓ Confirmed' },
   denied:    { cls: 'badge-denied',   label: '✗ Denied' },
   cancelled: { cls: 'badge-denied',   label: '✗ Cancelled' },
   paid:      { cls: 'badge-approved', label: '✓ Paid' },

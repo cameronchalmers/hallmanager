@@ -29,7 +29,7 @@ export default function CalendarView() {
     const start = `${cal.year}-${String(cal.month + 1).padStart(2, '0')}-01`
     const end = `${cal.year}-${String(cal.month + 1).padStart(2, '0')}-31`
     const [bRes, sRes] = await Promise.all([
-      supabase.from('bookings').select('*').neq('status', 'denied').gte('date', start).lte('date', end),
+      supabase.from('bookings').select('*').in('status', ['pending', 'approved', 'confirmed']).gte('date', start).lte('date', end),
       supabase.from('sites').select('*'),
     ])
     setBookings(bRes.data ?? [])

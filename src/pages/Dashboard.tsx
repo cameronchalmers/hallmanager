@@ -45,8 +45,8 @@ export default function Dashboard() {
       }
     } catch (e) { console.error('Stripe action error:', e) }
 
-    await supabase.from('bookings').update({ status: 'confirmed' }).eq('id', id)
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed' } : b))
+    await supabase.from('bookings').update({ status: 'approved' }).eq('id', id)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'approved' } : b))
     sendEmail('booking_approved', id)
   }
 
@@ -70,7 +70,7 @@ export default function Dashboard() {
 
   const pending = bookings.filter(b => b.status === 'pending')
   const pendingSlots = slots.filter(s => s.status === 'pending')
-  const confirmed = bookings.filter(b => b.status === 'confirmed')
+  const confirmed = bookings.filter(b => b.status === 'confirmed' || b.status === 'approved')
   const revenue = confirmed.reduce((s, b) => s + (b.total ?? 0), 0)
 
   if (loading) return <div className="empty"><div className="empty-icon">⏳</div><div className="empty-title">Loading…</div></div>

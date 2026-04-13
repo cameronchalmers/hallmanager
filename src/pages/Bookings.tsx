@@ -34,7 +34,7 @@ export default function Bookings() {
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
   const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState('active')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<BookingWithSite | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -80,9 +80,9 @@ export default function Bookings() {
       else stripeUrl = data?.url ?? null
     } catch (e) { console.error('Stripe action error:', e) }
 
-    await supabase.from('bookings').update({ status: 'confirmed' }).eq('id', id)
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed', stripe_payment_url: stripeUrl } : b))
-    if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'confirmed', stripe_payment_url: stripeUrl } : null)
+    await supabase.from('bookings').update({ status: 'approved' }).eq('id', id)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'approved', stripe_payment_url: stripeUrl } : b))
+    if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'approved', stripe_payment_url: stripeUrl } : null)
     sendEmail('booking_approved', id)
     setActionLoading(null)
   }
@@ -99,9 +99,9 @@ export default function Bookings() {
 
   async function markAsPaid(id: string) {
     setActionLoading('paid')
-    await supabase.from('bookings').update({ stripe_payment_status: 'paid' }).eq('id', id)
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_status: 'paid' } : b))
-    if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_status: 'paid' } : null)
+    await supabase.from('bookings').update({ status: 'confirmed', stripe_payment_status: 'paid' }).eq('id', id)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed', stripe_payment_status: 'paid' } : b))
+    if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'confirmed', stripe_payment_status: 'paid' } : null)
     setActionLoading(null)
   }
 
@@ -146,14 +146,15 @@ export default function Bookings() {
   }
 
   const filtered = bookings.filter(b => {
-    const ms = filter === 'all' || b.status === filter ||
-      (filter === 'recurring' && b.type === 'recurring') ||
-      (filter === 'oneoff' && b.type === 'oneoff')
+    const ms = filter === 'active' ? !['cancelled', 'denied'].includes(b.status)
+      : filter === 'recurring' ? b.type === 'recurring'
+      : filter === 'oneoff' ? b.type === 'oneoff'
+      : b.status === filter
     const mq = !search || b.name.toLowerCase().includes(search.toLowerCase()) || b.event.toLowerCase().includes(search.toLowerCase())
     return ms && mq
   })
 
-  const FILTERS = ['all', 'pending', 'confirmed', 'denied', 'recurring', 'oneoff']
+  const FILTERS = ['active', 'pending', 'approved', 'confirmed', 'cancelled', 'denied', 'recurring', 'oneoff']
   const formSite = sites.find(s => s.id === form.site_id)
   const formHours = calcHours(form.start_time, form.end_time)
 
@@ -345,7 +346,7 @@ export default function Bookings() {
                 {actionLoading === 'approve' ? 'Approving…' : '✓ Approve & Send Payment'}
               </button>
             </div>
-          ) : selected?.status === 'confirmed' ? (
+          ) : selected?.status === 'approved' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
               {selected.stripe_payment_url && (
                 <div style={{ display: 'flex', gap: 7 }}>
@@ -361,10 +362,6 @@ export default function Bookings() {
                 </button>
                 {selected.stripe_payment_status === 'deposit_refunded' ? (
                   <span className="badge badge-neutral" style={{ alignSelf: 'center' }}>Deposit refunded</span>
-                ) : selected.stripe_payment_status === 'paid' ? (
-                  <button className="btn btn-primary btn-sm" onClick={() => refundDeposit(selected.id)} disabled={!!actionLoading}>
-                    {actionLoading === 'refund' ? 'Refunding…' : `Refund Deposit (£${selected.deposit})`}
-                  </button>
                 ) : (
                   <button className="btn btn-ghost btn-sm" onClick={() => markAsPaid(selected.id)} disabled={!!actionLoading}>
                     {actionLoading === 'paid' ? 'Saving…' : '✓ Mark as Paid'}
@@ -372,6 +369,20 @@ export default function Bookings() {
                 )}
                 <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>Close</button>
               </div>
+            </div>
+          ) : selected?.status === 'confirmed' ? (
+            <div style={{ display: 'flex', gap: 7, width: '100%' }}>
+              <button className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={() => cancelBooking(selected.id)} disabled={!!actionLoading}>
+                {actionLoading === 'cancel' ? 'Cancelling…' : 'Cancel Booking'}
+              </button>
+              {selected.stripe_payment_status === 'deposit_refunded' ? (
+                <span className="badge badge-neutral" style={{ alignSelf: 'center' }}>Deposit refunded</span>
+              ) : (
+                <button className="btn btn-primary btn-sm" onClick={() => refundDeposit(selected.id)} disabled={!!actionLoading}>
+                  {actionLoading === 'refund' ? 'Refunding…' : `Refund Deposit (£${selected.deposit})`}
+                </button>
+              )}
+              <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>Close</button>
             </div>
           ) : (
             <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setSelected(null)}>Close</button>
