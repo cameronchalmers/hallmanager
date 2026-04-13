@@ -18,7 +18,9 @@ async function updateUser(userId: string, updates: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('update-user', {
     body: { user_id: userId, updates },
   })
-  if (error || data?.error) throw new Error(data?.error ?? error?.message ?? 'Save failed')
+  // Function always returns 200 now, so error only fires on network failure
+  if (error) throw new Error(error.message ?? 'Save failed')
+  if (data?.ok === false) throw new Error(data.error ?? 'Save failed')
 }
 
 export default function Users() {

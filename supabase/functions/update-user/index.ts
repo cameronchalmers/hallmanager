@@ -16,14 +16,24 @@ Deno.serve(async (req) => {
 
   const { user_id, updates } = await req.json()
   if (!user_id || !updates) {
-    return new Response(JSON.stringify({ error: 'user_id and updates required' }), { status: 400, headers: corsHeaders })
+    return new Response(JSON.stringify({ ok: false, error: 'user_id and updates required' }), { headers: corsHeaders })
   }
 
-  const { error } = await supabase.from('users').update(updates).eq('id', user_id)
+  // site_ids is a Postgres array — PostgREST needs it sent as a plain array (no special casting needed,
+  // but we make sure nulls are stripped and it's a real array)
+  const payload: Record<string, unknown> = { ...updates }
+  if ('site_ids' in payload && !Array.isArray(payload.site_ids)) {
+    payload.site_ids = []
+  }
+
+  console.log('update-user payload:', JSON.stringify(payload))
+
+  const { error } = await supabase.from('users').update(payload).eq('id', user_id)
 
   if (error) {
-    console.error('update-user error:', error)
-    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders })
+    console.error('update-user error:', JSON.stringify(error))
+    // Always return 200 so the client can read the error body
+    return new Response(JSON.stringify({ ok: false, error: error.message, details: error.details, hint: error.hint }), { headers: corsHeaders })
   }
 
   return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders })
