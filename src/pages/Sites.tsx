@@ -37,7 +37,8 @@ export default function Sites() {
   const [availability, setAvailability] = useState<WeekAvailability>({ ...DEFAULT_AVAILABILITY })
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [copied, setCopied] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState('')
+  const [copied, setCopied] = useState<string | null>(null) // stores slug, not id
 
   useEffect(() => { fetchSites() }, [])
 
@@ -91,8 +92,11 @@ export default function Sites() {
     const siteId = editing?.id
     if (!siteId) return
     setSaving(true)
+    setDeleteError('')
     const { error } = await supabase.from('sites').delete().eq('id', siteId)
-    if (!error) {
+    if (error) {
+      setDeleteError(error.message)
+    } else {
       setSites(prev => prev.filter(s => s.id !== siteId))
       setShowModal(false)
       setConfirmDelete(false)
@@ -105,8 +109,9 @@ export default function Sites() {
   }
 
   function copyLink(site: Site) {
-    navigator.clipboard.writeText(`${window.location.origin}/book/${toSlug(site.name)}`)
-    setCopied(site.id)
+    const slug = toSlug(site.name)
+    navigator.clipboard.writeText(`${window.location.origin}/book/${slug}`)
+    setCopied(slug)
     setTimeout(() => setCopied(null), 2000)
   }
 
@@ -152,7 +157,7 @@ export default function Sites() {
                   </span>
                   <button className="btn btn-ghost btn-sm" style={{ padding: '2px 8px', fontSize: 10, flexShrink: 0 }}
                     onClick={e => { e.stopPropagation(); copyLink(site) }}>
-                    {copied === site.id ? '✓ Copied' : 'Copy link'}
+                    {copied === toSlug(site.name) ? '✓ Copied' : 'Copy link'}
                   </button>
                 </div>
               </div>
@@ -177,12 +182,19 @@ export default function Sites() {
         wide
         footer={
           confirmDelete ? (
-            <div style={{ display: 'flex', gap: 7, width: '100%', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>This cannot be undone.</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
-              <button className="btn btn-danger btn-sm" onClick={deleteSite} disabled={saving}>
-                {saving ? 'Deleting…' : 'Yes, delete site'}
-              </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+              {deleteError && (
+                <div className="notice notice-warn" style={{ fontSize: 11 }}>
+                  ✗ {deleteError} — you may need to run the DELETE policy SQL in Supabase first.
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>This cannot be undone.</span>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setConfirmDelete(false); setDeleteError('') }}>Cancel</button>
+                <button className="btn btn-danger btn-sm" onClick={deleteSite} disabled={saving}>
+                  {saving ? 'Deleting…' : 'Yes, delete site'}
+                </button>
+              </div>
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 7, width: '100%' }}>
@@ -291,8 +303,8 @@ export default function Sites() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface2)', borderRadius: 8, padding: '10px 12px' }}>
               <span style={{ flex: 1, fontSize: 12, fontFamily: 'monospace', color: 'var(--accent-text)', wordBreak: 'break-all' }}>{bookingUrl}</span>
               <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}
-                onClick={() => { navigator.clipboard.writeText(bookingUrl); setCopied(editing.id); setTimeout(() => setCopied(null), 2000) }}>
-                {copied === editing.id ? '✓ Copied' : 'Copy'}
+                onClick={() => { navigator.clipboard.writeText(bookingUrl); setCopied(toSlug(form.name || editing.name)); setTimeout(() => setCopied(null), 2000) }}>
+                {copied === toSlug(form.name || editing.name) ? '✓ Copied' : 'Copy'}
               </button>
             </div>
           </>

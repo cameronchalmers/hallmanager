@@ -18,7 +18,7 @@ interface NotifToggle {
 }
 
 export default function Settings() {
-  const { accentKey, setAccentKey, accentColors } = useTheme()
+  const { accentKey, setAccentKey, accentColors, darkMode, setDarkMode } = useTheme()
 
   const [notifications, setNotifications] = useState<NotifToggle[]>([
     { key: 'new_booking', label: 'New booking requests', description: 'Email me when a new booking is submitted', value: true },
@@ -42,6 +42,26 @@ export default function Settings() {
 
   return (
     <div style={{ maxWidth: 680 }}>
+
+      {/* Appearance */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-header">
+          <span className="card-title">Appearance</span>
+        </div>
+        <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Dark mode</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Switch between light and dark interface</div>
+          </div>
+          <button
+            className="toggle"
+            style={{ background: darkMode ? 'var(--accent)' : '#d1d5db' }}
+            onClick={() => setDarkMode(!darkMode)}
+          >
+            <span className="toggle-thumb" style={{ left: darkMode ? 18 : 3 }} />
+          </button>
+        </div>
+      </div>
 
       {/* Accent colour */}
       <div className="card" style={{ marginBottom: 16 }}>

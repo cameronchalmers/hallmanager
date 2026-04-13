@@ -242,3 +242,50 @@ body {
 .ph-stat-lbl { font-size: 10px; opacity: 0.8; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Dark mode ── */
+.dark {
+  --sidebar-bg: #17171f;
+  --sidebar-border: #2a2a36;
+  --text: #f0f0f4;
+  --text-muted: #8a8a9a;
+  --text-light: #6a6a7a;
+  --bg: #0f0f14;
+  --surface: #1c1c26;
+  --surface2: #22222e;
+  --border: #2a2a36;
+  --border-strong: #38384a;
+  --accent-light: #2d1f5e;
+  --accent-text: #a78bfa;
+  --shadow: 0 1px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2);
+  --shadow-lg: 0 4px 24px rgba(0,0,0,0.5);
+  --green-light: #14532d;
+  --green: #4ade80;
+  --red-light: #450a0a;
+  --red: #f87171;
+  --amber-light: #451a03;
+  --amber: #fbbf24;
+  --blue-light: #1e3a5f;
+  --blue: #60a5fa;
+  --qf-light: #0f2a45;
+}
+
+/* Surface overrides — replace hard-coded #fff */
+.dark body { background: var(--bg); }
+.dark .card,
+.dark .stat-card,
+.dark .site-card { background: var(--surface); }
+.dark .modal { background: var(--surface); }
+.dark .form-input { background: var(--surface2); color: var(--text); border-color: var(--border); }
+.dark .form-input::placeholder { color: var(--text-light); }
+.dark select.form-input option { background: var(--surface2); color: var(--text); }
+.dark .portal-tabs { background: var(--surface); }
+.dark .tbl-row:hover { background: var(--surface2); }
+.dark .tbl-row { border-bottom-color: var(--border); }
+.dark .users-row { border-bottom-color: var(--border); }
+.dark .sync-row { border-bottom-color: var(--border); }
+.dark .inv-row { border-bottom-color: var(--border); }
+.dark .badge-neutral { background: #2a2a36; color: #a1a1b0; }
+.dark .badge-recurring { background: #2d1f5e; color: #a78bfa; }
+.dark .cal-day.other { color: #3a3a4a; }
+.dark .cal-day:hover { background: var(--surface2); }
