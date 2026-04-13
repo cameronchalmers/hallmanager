@@ -68,28 +68,50 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    // Generate invite link without sending Supabase's own email
-    const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+    // Try invite link first; fall back to recovery link if user already exists in auth
+    let linkData, isNewUser = true
+    const { data: inviteData, error: inviteError } = await supabase.auth.admin.generateLink({
       type: 'invite',
       email,
       options: { redirectTo: `${SITE_URL}/login` },
     })
 
-    if (linkError || !linkData) {
-      return new Response(JSON.stringify({ error: linkError?.message ?? 'Failed to generate invite link' }), {
+    if (inviteError) {
+      // User likely already exists — generate a password reset link instead
+      isNewUser = false
+      const { data: recoveryData, error: recoveryError } = await supabase.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${SITE_URL}/login` },
+      })
+      if (recoveryError || !recoveryData) {
+        return new Response(JSON.stringify({ error: recoveryError?.message ?? 'Failed to generate link' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      linkData = recoveryData
+    } else {
+      linkData = inviteData
+    }
+
+    if (!linkData) {
+      return new Response(JSON.stringify({ error: 'Failed to generate link' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // Create the public.users row with the new auth user's ID
-    await supabase.from('users').upsert({
-      id: linkData.user.id,
-      email,
-      name: name ?? email,
-      role: role ?? 'manager',
-      site_ids: [],
-    })
+    // Only create the public.users row for genuinely new users (name + role provided)
+    if (isNewUser && name && role) {
+      await supabase.from('users').upsert({
+        id: linkData.user.id,
+        email,
+        name,
+        role,
+        site_ids: [],
+      })
+    }
 
     // Send our own branded email via Resend
     const inviteUrl = linkData.properties.action_link
