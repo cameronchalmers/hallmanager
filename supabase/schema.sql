@@ -13,13 +13,20 @@ create extension if not exists "uuid-ossp";
 
 -- Sites / Venues
 create table if not exists public.sites (
-  id         uuid primary key default uuid_generate_v4(),
-  name       text not null,
-  address    text not null default '',
-  capacity   int  not null default 0,
-  rate       numeric(10,2) not null default 0,
-  deposit    numeric(10,2) not null default 0,
-  emoji      text not null default '🏛️'
+  id               uuid primary key default uuid_generate_v4(),
+  name             text not null,
+  address          text not null default '',
+  capacity         int  not null default 0,
+  rate             numeric(10,2) not null default 0,
+  deposit          numeric(10,2) not null default 0,
+  emoji            text not null default '🏛️',
+  min_hours        numeric(5,2),
+  available_from   time,
+  available_until  time,
+  availability     jsonb,
+  description      text,
+  amenities        text[],
+  photos           text[]
 );
 
 -- App users (mirrors auth.users, extended with role + prefs)
@@ -33,29 +40,37 @@ create table if not exists public.users (
   color        text,
   qf_client_id text,
   custom_rates jsonb,
+  group_name   text,
   created_at   timestamptz not null default now()
 );
 
 -- Bookings
 create table if not exists public.bookings (
-  id          uuid primary key default uuid_generate_v4(),
-  name        text not null,
-  email       text not null default '',
-  phone       text not null default '',
-  type        text not null default '',
-  event       text not null default '',
-  date        date not null,
-  start_time  time not null,
-  end_time    time not null,
-  hours       numeric(5,2) not null default 0,
-  site_id     uuid not null references public.sites(id) on delete restrict,
-  status      text not null default 'pending' check (status in ('pending','confirmed','denied','cancelled')),
-  notes       text,
-  deposit     numeric(10,2) not null default 0,
-  total       numeric(10,2) not null default 0,
-  user_id     uuid references public.users(id) on delete set null,
-  recurrence  text,
-  created_at  timestamptz not null default now()
+  id                   uuid primary key default uuid_generate_v4(),
+  name                 text not null,
+  email                text not null default '',
+  phone                text not null default '',
+  type                 text not null default '',
+  event                text not null default '',
+  date                 date not null,
+  start_time           time not null,
+  end_time             time not null,
+  hours                numeric(5,2) not null default 0,
+  site_id              uuid not null references public.sites(id) on delete restrict,
+  status               text not null default 'pending'
+                         check (status in ('pending','approved','confirmed','denied','cancelled')),
+  notes                text,
+  deposit              numeric(10,2) not null default 0,
+  total                numeric(10,2) not null default 0,
+  user_id              uuid references public.users(id) on delete set null,
+  recurrence           text,
+  stripe_session_id    text,
+  stripe_payment_url   text,
+  stripe_payment_status text,
+  attended             boolean,
+  session_attendance   jsonb,
+  cancelled_sessions   text[] default '{}',
+  created_at           timestamptz not null default now()
 );
 
 -- Invoices
@@ -83,7 +98,8 @@ create table if not exists public.extra_slots (
   end_time    time not null,
   hours       numeric(5,2) not null default 0,
   reason      text not null default '',
-  status      text not null default 'pending' check (status in ('pending','approved','denied')),
+  status      text not null default 'pending'
+                check (status in ('pending','approved','denied','cancelled')),
   rate        numeric(10,2) not null default 0,
   total       numeric(10,2) not null default 0,
   created_at  timestamptz not null default now()
@@ -159,12 +175,18 @@ create policy "sites: admin/manager delete"
   to authenticated
   using (public.is_admin_or_manager());
 
+-- Public booking form needs to read sites (anon)
+create policy "sites: anon read"
+  on public.sites for select
+  to anon
+  using (true);
+
 
 -- ============================================================
 -- RLS POLICIES — USERS
 -- Users can read their own row.
 -- Admins/managers can read all users.
--- Only admins can update other users.
+-- Only admins/managers can update other users.
 -- ============================================================
 
 create policy "users: read own row"
@@ -188,6 +210,7 @@ create policy "users: admin insert"
 -- RLS POLICIES — BOOKINGS
 -- Regular bookers can read their own bookings.
 -- Admins/managers can read and write all bookings.
+-- Anon can insert (public booking form).
 -- ============================================================
 
 create policy "bookings: read own or admin"
@@ -199,6 +222,12 @@ create policy "bookings: insert own or admin"
   on public.bookings for insert
   to authenticated
   with check (user_id = auth.uid() or public.is_admin_or_manager());
+
+-- Public booking form submits as anon
+create policy "bookings: anon insert"
+  on public.bookings for insert
+  to anon
+  with check (true);
 
 create policy "bookings: update admin/manager only"
   on public.bookings for update
@@ -238,7 +267,7 @@ create policy "invoices: update admin/manager"
 -- ============================================================
 -- RLS POLICIES — EXTRA SLOTS
 -- Regular bookers can read and insert their own requests.
--- Admins/managers can read and update all (approve/deny).
+-- Admins/managers can read and update all (approve/deny/cancel).
 -- ============================================================
 
 create policy "extra_slots: read own or admin"
