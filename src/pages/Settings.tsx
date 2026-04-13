@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
 const ACCENT_LABELS: Record<string, string> = {
   purple: 'Purple',
@@ -33,6 +34,18 @@ export default function Settings() {
 
   const [stripeConnected] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [testSending, setTestSending] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<Record<string, 'ok' | 'error'>>({})
+
+  async function sendTestEmail(template: string) {
+    setTestSending(template)
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: { type: 'test', template },
+    })
+    setTestResult(prev => ({ ...prev, [template]: error ? 'error' : 'ok' }))
+    setTestSending(null)
+    setTimeout(() => setTestResult(prev => { const n = { ...prev }; delete n[template]; return n }), 3000)
+  }
 
   function toggleNotification(key: string) {
     setNotifications(prev => prev.map(n => n.key === key ? { ...n, value: !n.value } : n))
@@ -177,6 +190,40 @@ export default function Settings() {
             </button>
           </div>
         </div>
+
+        {/* Test emails — admin only */}
+        {!isRegular && (
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Email Previews</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sends to your admin address</span>
+            </div>
+            {[
+              { key: 'booking_submitted',       label: 'Booking received (to booker)',   desc: 'Sent when a new booking is submitted' },
+              { key: 'booking_submitted_admin', label: 'New booking (to admin)',          desc: 'Admin notification for new requests' },
+              { key: 'booking_approved',        label: 'Booking approved',               desc: 'Approval + payment request to booker' },
+              { key: 'booking_denied',          label: 'Booking denied',                 desc: 'Denial notice to booker' },
+              { key: 'booking_cancelled',       label: 'Booking cancelled',              desc: 'Cancellation notice to booker' },
+              { key: 'slot_approved',           label: 'Extra slot approved',            desc: 'Extra slot approval to booker' },
+              { key: 'slot_denied',             label: 'Extra slot denied',              desc: 'Extra slot denial to booker' },
+            ].map((t, i, arr) => (
+              <div key={t.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '11px 18px', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{t.desc}</div>
+                </div>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ flexShrink: 0, color: testResult[t.key] === 'ok' ? 'var(--green)' : testResult[t.key] === 'error' ? '#ef4444' : undefined }}
+                  disabled={testSending === t.key}
+                  onClick={() => sendTestEmail(t.key)}
+                >
+                  {testSending === t.key ? 'Sending…' : testResult[t.key] === 'ok' ? '✓ Sent!' : testResult[t.key] === 'error' ? '✗ Failed' : 'Send test'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
       </div>
 

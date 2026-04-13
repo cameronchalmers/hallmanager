@@ -48,7 +48,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    const { type, id, data: inlineData } = await req.json() as { type: string; id?: string; data?: BookingData }
+    const { type, id, data: inlineData, template } = await req.json() as { type: string; id?: string; data?: BookingData; template?: string }
 
     // ── Booking emails ────────────────────────────────────────────────────────
 
@@ -152,6 +152,51 @@ serve(async (req) => {
 
       const email = type === 'slot_approved' ? extraSlotApproved(s) : extraSlotDenied(s)
       await sendEmail(to, email.subject, email.html)
+    }
+
+    // ── Test emails (send dummy version to admin) ─────────────────────────────
+
+    else if (type === 'test') {
+      if (!ADMIN_EMAIL) throw new Error('ADMIN_EMAIL not configured')
+
+      const dummyBooking: BookingData = {
+        name: 'Jane Smith',
+        email: ADMIN_EMAIL,
+        event: 'Community Yoga',
+        date: 'Wednesday, 30 July 2025',
+        start_time: '09:00',
+        end_time: '11:00',
+        hours: 2,
+        site_name: 'The Old Town Hall',
+        deposit: 50,
+        total: 130,
+        notes: 'Please ensure the mats are set out in advance.',
+        payment_url: null,
+      }
+
+      const dummySlot: ExtraSlotData = {
+        name: 'Jane Smith',
+        email: ADMIN_EMAIL,
+        site_name: 'The Old Town Hall',
+        date: 'Wednesday, 30 July 2025',
+        start_time: '09:00',
+        end_time: '11:00',
+        hours: 2,
+        reason: 'We have a visiting instructor and need an extra session this week.',
+        total: 80,
+      }
+
+      let email: { subject: string; html: string }
+      if (template === 'booking_submitted')       email = bookingSubmitted(dummyBooking)
+      else if (template === 'booking_submitted_admin') email = bookingSubmittedAdmin(dummyBooking)
+      else if (template === 'booking_approved')   email = bookingApproved(dummyBooking)
+      else if (template === 'booking_denied')     email = bookingDenied(dummyBooking)
+      else if (template === 'booking_cancelled')  email = bookingCancelled(dummyBooking)
+      else if (template === 'slot_approved')      email = extraSlotApproved(dummySlot)
+      else if (template === 'slot_denied')        email = extraSlotDenied(dummySlot)
+      else throw new Error(`Unknown template: ${template}`)
+
+      await sendEmail(ADMIN_EMAIL, `[TEST] ${email.subject}`, email.html)
     }
 
     else {
