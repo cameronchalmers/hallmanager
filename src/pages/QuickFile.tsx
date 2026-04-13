@@ -83,7 +83,13 @@ export default function QuickFile() {
   }
 
   async function linkClient(userId: string, qfClientId: string, qfClientName: string) {
-    await supabase.from('users').update({ qf_client_id: qfClientId }).eq('id', userId)
+    const { data, error } = await supabase.functions.invoke('quickfile', {
+      body: { action: 'link_client', user_id: userId, qf_client_id: qfClientId },
+    })
+    if (error || !data?.ok) {
+      addLog(`Failed to link client: ${data?.error ?? error?.message}`, false)
+      return
+    }
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, qf_client_id: qfClientId } : u))
     setFindResults(prev => ({ ...prev, [userId]: { ...prev[userId], open: false } }))
     addLog(`Linked ${qfClientName} to QF client #${qfClientId}`, true)
