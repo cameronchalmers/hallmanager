@@ -53,6 +53,7 @@ export default function BookingForm() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
   const [notFound, setNotFound] = useState(false)
+  const [photoIndex, setPhotoIndex] = useState(0)
 
   useEffect(() => {
     supabase.from('sites').select('*').then(({ data }) => {
@@ -214,10 +215,33 @@ export default function BookingForm() {
                 </div>
 
                 {lockedSite.photos && lockedSite.photos.length > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: lockedSite.photos.length === 1 ? '1fr' : lockedSite.photos.length === 2 ? '1fr 1fr' : '2fr 1fr', gap: 6, borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
-                    {lockedSite.photos.slice(0, 3).map((url, i) => (
-                      <img key={i} src={url} alt="" style={{ width: '100%', height: lockedSite.photos!.length === 1 ? 220 : 260, objectFit: 'cover', display: 'block', gridRow: i === 0 && lockedSite.photos!.length >= 3 ? 'span 2' : undefined }} />
-                    ))}
+                  <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', marginBottom: 16, background: '#000' }}>
+                    <img
+                      src={lockedSite.photos[photoIndex]}
+                      alt=""
+                      style={{ width: '100%', height: 260, objectFit: 'cover', display: 'block', transition: 'opacity 0.2s' }}
+                    />
+                    {lockedSite.photos.length > 1 && (
+                      <>
+                        <button
+                          onClick={() => setPhotoIndex(i => (i - 1 + lockedSite.photos!.length) % lockedSite.photos!.length)}
+                          style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 32, height: 32, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >‹</button>
+                        <button
+                          onClick={() => setPhotoIndex(i => (i + 1) % lockedSite.photos!.length)}
+                          style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', width: 32, height: 32, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >›</button>
+                        <div style={{ position: 'absolute', bottom: 10, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 5 }}>
+                          {lockedSite.photos.map((_, i) => (
+                            <button
+                              key={i}
+                              onClick={() => setPhotoIndex(i)}
+                              style={{ width: i === photoIndex ? 18 : 6, height: 6, borderRadius: 99, background: i === photoIndex ? '#fff' : 'rgba(255,255,255,0.5)', border: 'none', cursor: 'pointer', padding: 0, transition: 'width 0.2s' }}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
