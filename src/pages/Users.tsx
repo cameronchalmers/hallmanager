@@ -14,6 +14,13 @@ function RoleBadge({ role }: { role: string }) {
   return <span className={`badge ${cls}`}>{lbl}</span>
 }
 
+async function updateUser(userId: string, updates: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke('update-user', {
+    body: { user_id: userId, updates },
+  })
+  if (error || data?.error) throw new Error(data?.error ?? error?.message ?? 'Save failed')
+}
+
 export default function Users() {
   const [users, setUsers] = useState<AppUser[]>([])
   const [sites, setSites] = useState<Site[]>([])
@@ -24,8 +31,12 @@ export default function Users() {
   const [showAdd, setShowAdd] = useState(false)
   const [newUser, setNewUser] = useState({ name: '', email: '', role: 'manager' })
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [inviteStatus, setInviteStatus] = useState<Record<string, 'idle' | 'sending' | 'sent' | 'error'>>({})
   const [resetStatus, setResetStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [addError, setAddError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => { fetchData() }, [])
 
@@ -42,31 +53,62 @@ export default function Users() {
     setLoading(false)
   }
 
+  function applyLocal(userId: string, patch: Partial<AppUser>) {
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...patch } : u))
+    setSelUser(u => u?.id === userId ? { ...u, ...patch } : u)
+  }
+
   async function toggleSite(userId: string, siteId: string) {
     const user = users.find(u => u.id === userId)
     if (!user) return
     const site_ids = user.site_ids?.includes(siteId)
       ? user.site_ids.filter(id => id !== siteId)
       : [...(user.site_ids ?? []), siteId]
-    await supabase.from('users').update({ site_ids }).eq('id', userId)
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, site_ids } : u))
-    setSelUser(u => u?.id === userId ? { ...u, site_ids } : u)
+    applyLocal(userId, { site_ids })
+    try {
+      await updateUser(userId, { site_ids })
+      setSaveError(null)
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'Save failed')
+      applyLocal(userId, { site_ids: user.site_ids }) // revert
+    }
+  }
+
+  async function saveRole(userId: string, role: string) {
+    const user = users.find(u => u.id === userId)
+    if (!user) return
+    applyLocal(userId, { role: role as AppUser['role'] })
+    try {
+      await updateUser(userId, { role })
+      setSaveError(null)
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'Save failed')
+      applyLocal(userId, { role: user.role }) // revert
+    }
   }
 
   async function saveGroupName(userId: string, group_name: string) {
     const val = group_name.trim() || null
-    await supabase.from('users').update({ group_name: val }).eq('id', userId)
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, group_name: val } : u))
-    setSelUser(u => u ? { ...u, group_name: val } : null)
+    applyLocal(userId, { group_name: val })
+    try {
+      await updateUser(userId, { group_name: val })
+      setSaveError(null)
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'Save failed')
+    }
   }
 
   async function saveCustomRate(userId: string, siteId: string, rate: number) {
     const user = users.find(u => u.id === userId)
     if (!user) return
     const custom_rates = { ...(user.custom_rates ?? {}), [siteId]: rate }
-    await supabase.from('users').update({ custom_rates }).eq('id', userId)
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, custom_rates } : u))
-    if (selUser?.id === userId) setSelUser(u => u ? { ...u, custom_rates } : null)
+    applyLocal(userId, { custom_rates })
+    try {
+      await updateUser(userId, { custom_rates })
+      setSaveError(null)
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'Save failed')
+    }
   }
 
   async function sendInvite(email: string, userId: string) {
@@ -82,10 +124,6 @@ export default function Users() {
     })
     setResetStatus(error ? 'error' : 'sent')
   }
-
-  const [addError, setAddError] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleting, setDeleting] = useState(false)
 
   async function deleteUser(userId: string) {
     setDeleting(true)
@@ -138,7 +176,7 @@ export default function Users() {
         {filtered.map(u => {
           const ub = bookings.filter(b => b.user_id === u.id)
           return (
-            <div key={u.id} className="users-row" style={{ cursor: 'pointer' }} onClick={() => { setSelUser(u); setResetStatus('idle') }}>
+            <div key={u.id} className="users-row" style={{ cursor: 'pointer' }} onClick={() => { setSelUser(u); setResetStatus('idle'); setSaveError(null); setConfirmDelete(false) }}>
               <div style={{ width: 32, height: 32, background: (u.color ?? '#7c3aed') + '22', color: u.color ?? '#7c3aed', borderRadius: '50%', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 {u.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
               </div>
@@ -186,7 +224,7 @@ export default function Users() {
             <option value="regular">Regular Booker — portal access, extra slot requests</option>
           </select>
         </div>
-        {addError && <div className="notice notice-denied" style={{ marginTop: 4 }}>✗ {addError}</div>}
+        {addError && <div className="notice notice-warn" style={{ marginTop: 4 }}>✗ {addError}</div>}
         <div className="notice notice-accent" style={{ marginTop: 4 }}>
           An invite email will be sent immediately so they can set a password and access the portal.
         </div>
@@ -195,7 +233,7 @@ export default function Users() {
       {/* User detail modal */}
       <Modal
         open={!!selUser}
-        onClose={() => { setSelUser(null); setConfirmDelete(false) }}
+        onClose={() => { setSelUser(null); setConfirmDelete(false); setSaveError(null) }}
         title={selUser?.name ?? ''}
         sub={selUser?.email}
         wide
@@ -241,6 +279,7 @@ export default function Users() {
                 }
               </div>
             </div>
+
             {confirmDelete && (
               <div className="notice notice-warn" style={{ marginBottom: 12 }}>
                 This will permanently delete <strong>{selUser.name}</strong> and remove their login access. Their bookings will remain.{' '}
@@ -248,10 +287,37 @@ export default function Users() {
               </div>
             )}
 
+            {saveError && (
+              <div className="notice notice-warn" style={{ marginBottom: 12 }}>✗ {saveError}</div>
+            )}
+
+            {/* Role */}
+            <div style={{ marginBottom: 14 }}>
+              <div className="sec-label" style={{ marginBottom: 6 }}>Role</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {(['admin', 'manager', 'regular'] as const).map(r => (
+                  <button
+                    key={r}
+                    onClick={() => saveRole(selUser.id, r)}
+                    style={{
+                      padding: '5px 14px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      border: `1.5px solid ${selUser.role === r ? 'var(--accent)' : 'var(--border)'}`,
+                      background: selUser.role === r ? 'var(--accent-light)' : 'var(--surface2)',
+                      color: selUser.role === r ? 'var(--accent-text)' : 'var(--text-muted)',
+                    }}
+                  >
+                    {r === 'admin' ? 'Admin' : r === 'manager' ? 'Manager' : 'Regular Booker'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Group name — regular bookers only */}
             {selUser.role === 'regular' && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', marginBottom: 6 }}>Group Name <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(shown in portal instead of personal name)</span></div>
+                <div className="sec-label" style={{ marginBottom: 6 }}>Group Name <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(shown in portal instead of personal name)</span></div>
                 <input
+                  key={selUser.id}
                   className="form-input"
                   defaultValue={selUser.group_name ?? ''}
                   placeholder="e.g. Westside Yoga, Newcastle FC U12s…"
@@ -261,8 +327,9 @@ export default function Users() {
               </div>
             )}
 
+            {/* Sites */}
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', marginBottom: 6 }}>Sites</div>
+              <div className="sec-label" style={{ marginBottom: 6 }}>Sites</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {sites.map(s => {
                   const assigned = selUser.site_ids?.includes(s.id)
@@ -282,12 +349,13 @@ export default function Users() {
                 <div className="sec-label" style={{ marginBottom: 7 }}>Custom Rates per Site</div>
                 <div className="card" style={{ marginBottom: 14 }}>
                   {sites.map((s, i) => (
-                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: i < sites.length - 1 ? '1px solid #f4f4f6' : 'none', fontSize: 13 }}>
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: i < sites.length - 1 ? '1px solid var(--border)' : 'none', fontSize: 13 }}>
                       <span style={{ flex: 1 }}>{s.emoji} {s.name}</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 4 }}>Standard £{s.rate}/hr</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-text)' }}>Custom:</span>
                         <input
+                          key={selUser.id + s.id}
                           className="form-input"
                           type="number"
                           defaultValue={selUser.custom_rates?.[s.id] ?? ''}
@@ -307,7 +375,7 @@ export default function Users() {
                     <div className="empty" style={{ padding: 20 }}><div className="empty-title">No linked bookings</div></div>
                   )}
                   {bookings.filter(b => b.user_id === selUser.id).map(b => (
-                    <div key={b.id} style={{ padding: '9px 14px', borderBottom: '1px solid #f4f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                    <div key={b.id} style={{ padding: '9px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
                       <div>
                         <div style={{ fontWeight: 600 }}>{b.event}</div>
                         <div style={{ color: 'var(--text-muted)', marginTop: 1 }}>{b.date} · {b.start_time}–{b.end_time}</div>
