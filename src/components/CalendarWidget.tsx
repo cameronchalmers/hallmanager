@@ -2,16 +2,17 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Booking, Site } from '../lib/database.types'
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 function getDays(year: number, month: number) {
   const days: { date: Date; curr: boolean }[] = []
-  const first = new Date(year, month, 1).getDay()
+  const firstDow = new Date(year, month, 1).getDay()
+  const offset = (firstDow + 6) % 7 // Mon=0 … Sun=6
   const total = new Date(year, month + 1, 0).getDate()
-  for (let i = 0; i < first; i++) days.push({ date: new Date(year, month, -first + i + 1), curr: false })
+  for (let i = 0; i < offset; i++) days.push({ date: new Date(year, month, i - offset + 1), curr: false })
   for (let i = 1; i <= total; i++) days.push({ date: new Date(year, month, i), curr: true })
-  while (days.length % 7 !== 0) days.push({ date: new Date(year, month + 1, days.length - total - first + 1), curr: false })
+  while (days.length % 7 !== 0) days.push({ date: new Date(year, month + 1, days.length - total - offset + 1), curr: false })
   return days
 }
 
@@ -109,6 +110,8 @@ export default function CalendarWidget({ showSiteFilter = true, compact = false 
         {DAYS.map(d => <div key={d} className="cal-dh">{d}</div>)}
         {days.map((d, i) => {
           const bs = getForDay(d.date)
+          const hasOneoff = bs.some(b => b.type !== 'recurring')
+          const hasRecurring = bs.some(b => b.type === 'recurring')
           const isToday = d.date.toDateString() === today.toDateString()
           const isSel = selDay && d.date.toDateString() === selDay.toDateString()
           return (
@@ -118,17 +121,25 @@ export default function CalendarWidget({ showSiteFilter = true, compact = false 
               onClick={() => setSelDay(prev => prev?.toDateString() === d.date.toDateString() ? null : d.date)}
             >
               {d.date.getDate()}
-              {bs.length > 0 && <span className="cal-dot" />}
+              {(hasOneoff || hasRecurring) && (
+                <span style={{ position: 'absolute', bottom: 2, display: 'flex', gap: 2 }}>
+                  {hasOneoff && <span style={{ width: 4, height: 4, borderRadius: '50%', background: isToday ? 'rgba(255,255,255,0.8)' : 'var(--accent)', display: 'inline-block' }} />}
+                  {hasRecurring && <span style={{ width: 4, height: 4, borderRadius: '50%', background: isToday ? 'rgba(255,255,255,0.8)' : 'var(--blue)', display: 'inline-block' }} />}
+                </span>
+              )}
             </button>
           )
         })}
       </div>
-      <div style={{ padding: '4px 14px 12px', display: 'flex', gap: 12 }}>
+      <div style={{ padding: '4px 14px 12px', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} /> Booked
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} /> One-off
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--accent)', display: 'inline-block' }} /> Today
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--blue)', display: 'inline-block' }} /> Recurring
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+          <span style={{ width: 7, height: 7, borderRadius: 2, background: 'var(--accent)', display: 'inline-block' }} /> Today
         </span>
       </div>
 
