@@ -120,7 +120,7 @@ export default function BookingForm() {
     })
     if (err) { setError(err.message); setSubmitting(false); return }
     // Pass booking data directly — anon can't SELECT back their own insert
-    supabase.functions.invoke('send-email', {
+    const { error: emailErr } = await supabase.functions.invoke('send-email', {
       body: {
         type: 'booking_submitted',
         data: {
@@ -138,6 +138,7 @@ export default function BookingForm() {
         },
       },
     })
+    if (emailErr) console.error('Email invoke error:', emailErr)
     setSubmitted(true)
     setSubmitting(false)
   }
