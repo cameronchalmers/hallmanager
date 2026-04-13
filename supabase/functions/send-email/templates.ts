@@ -83,6 +83,7 @@ export interface BookingData {
   deposit: number
   total: number
   notes?: string | null
+  payment_url?: string | null
 }
 
 export interface ExtraSlotData {
@@ -153,9 +154,16 @@ export function bookingApproved(b: BookingData): { subject: string; html: string
       <div style="padding:24px 32px;">
         ${pill('Confirmed', '#065f46', '#ecfdf5')}
         ${bookingTable(b)}
+        ${b.payment_url ? `
+        <div style="margin-top:24px;text-align:center;">
+          <a href="${b.payment_url}" style="display:inline-block;background:${ACCENT};color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">Pay now — £${b.total}</a>
+          <p style="margin:10px 0 0;font-size:12px;color:#9ca3af;">Secure payment powered by Stripe</p>
+        </div>
+        ` : `
         <div style="margin-top:24px;padding:16px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;">
           <p style="margin:0;font-size:14px;color:#166534;font-weight:500;">💳 A deposit of <strong>£${b.deposit}</strong> is due to secure your booking. Please arrange payment at your earliest convenience.</p>
         </div>
+        `}
         <p style="margin:20px 0 0;font-size:13px;color:#9ca3af;">Please keep this email as your booking confirmation. We look forward to seeing you!</p>
       </div>
     `),
@@ -246,6 +254,28 @@ export function extraSlotDenied(s: ExtraSlotData): { subject: string; html: stri
         </table>
         <div style="margin-top:24px;padding:16px;background:#fef2f2;border-radius:10px;border:1px solid #fecaca;">
           <p style="margin:0;font-size:14px;color:#991b1b;">Please contact us if you'd like to discuss alternative arrangements.</p>
+        </div>
+      </div>
+    `),
+  }
+}
+
+// ── Booking cancelled ─────────────────────────────────────────────────────────
+
+export function bookingCancelled(b: BookingData): { subject: string; html: string } {
+  return {
+    subject: `Booking cancelled — ${b.event}`,
+    html: layout(`
+      <div style="padding:32px 32px 0;border-bottom:3px solid #6b7280;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#6b7280;letter-spacing:0.5px;text-transform:uppercase;">Booking Cancelled</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Your booking has been cancelled</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${b.name}, your booking has been cancelled. Please see the details below.</p>
+      </div>
+      <div style="padding:24px 32px;">
+        ${pill('Cancelled', '#374151', '#f3f4f6')}
+        ${bookingTable(b)}
+        <div style="margin-top:24px;padding:16px;background:#f9fafb;border-radius:10px;border:1px solid #e5e7eb;">
+          <p style="margin:0;font-size:14px;color:#374151;">If you believe this is a mistake or would like to rebook, please get in touch and we'll be happy to help.</p>
         </div>
       </div>
     `),

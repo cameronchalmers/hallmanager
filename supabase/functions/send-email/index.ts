@@ -4,6 +4,7 @@ import {
   bookingSubmitted,
   bookingApproved,
   bookingDenied,
+  bookingCancelled,
   extraSlotApproved,
   extraSlotDenied,
   bookingSubmittedAdmin,
@@ -51,7 +52,7 @@ serve(async (req) => {
 
     // ── Booking emails ────────────────────────────────────────────────────────
 
-    if (['booking_submitted', 'booking_approved', 'booking_denied'].includes(type)) {
+    if (['booking_submitted', 'booking_approved', 'booking_denied', 'booking_cancelled'].includes(type)) {
       let b: BookingData
 
       if (type === 'booking_submitted' && inlineData) {
@@ -88,6 +89,7 @@ serve(async (req) => {
           deposit: booking.deposit,
           total: booking.total,
           notes: booking.notes,
+          payment_url: booking.stripe_payment_url ?? null,
         }
       }
 
@@ -100,6 +102,9 @@ serve(async (req) => {
         }
       } else if (type === 'booking_approved') {
         const email = bookingApproved(b)
+        await sendEmail(b.email, email.subject, email.html)
+      } else if (type === 'booking_cancelled') {
+        const email = bookingCancelled(b)
         await sendEmail(b.email, email.subject, email.html)
       } else {
         const email = bookingDenied(b)

@@ -1,0 +1,98 @@
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Stripe from 'https://esm.sh/stripe@13.11.0?target=deno'
+
+const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY')!
+const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://hallmanager.vercel.app'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  try {
+    const stripe = new Stripe(STRIPE_SECRET_KEY, {
+      apiVersion: '2023-10-16',
+      httpClient: Stripe.createFetchHttpClient(),
+    })
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+
+    const { action, booking_id } = await req.json()
+
+    // ── Create payment link ───────────────────────────────────────────────────
+
+    if (action === 'create_payment') {
+      const { data: booking } = await supabase.from('bookings').select('*').eq('id', booking_id).single()
+      if (!booking) throw new Error('Booking not found')
+
+      const { data: site } = await supabase.from('sites').select('name').eq('id', booking.site_id).single()
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [{
+          price_data: {
+            currency: 'gbp',
+            product_data: {
+              name: booking.event,
+              description: `${booking.hours} hour${booking.hours !== 1 ? 's' : ''} at ${site?.name ?? 'venue'} · ${booking.date}`,
+            },
+            unit_amount: Math.round(booking.total * 100),
+          },
+          quantity: 1,
+        }],
+        mode: 'payment',
+        customer_email: booking.email,
+        success_url: `${SITE_URL}/booking-paid`,
+        cancel_url: `${SITE_URL}`,
+        metadata: { booking_id },
+      })
+
+      await supabase.from('bookings').update({
+        stripe_session_id: session.id,
+        stripe_payment_url: session.url,
+        stripe_payment_status: 'unpaid',
+      }).eq('id', booking_id)
+
+      return new Response(JSON.stringify({ url: session.url }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── Refund deposit ────────────────────────────────────────────────────────
+
+    if (action === 'refund_deposit') {
+      const { data: booking } = await supabase.from('bookings').select('*').eq('id', booking_id).single()
+      if (!booking?.stripe_session_id) throw new Error('No Stripe session found for this booking')
+
+      const session = await stripe.checkout.sessions.retrieve(booking.stripe_session_id)
+      const paymentIntentId = session.payment_intent as string
+      if (!paymentIntentId) throw new Error('Payment has not been completed yet')
+
+      await stripe.refunds.create({
+        payment_intent: paymentIntentId,
+        amount: Math.round(booking.deposit * 100),
+        reason: 'requested_by_customer',
+      })
+
+      await supabase.from('bookings').update({ stripe_payment_status: 'deposit_refunded' }).eq('id', booking_id)
+
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    throw new Error(`Unknown action: ${action}`)
+  } catch (err) {
+    return new Response(JSON.stringify({ error: (err as Error).message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+})

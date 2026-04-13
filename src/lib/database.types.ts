@@ -65,6 +65,9 @@ export interface Database {
           user_id: string | null
           recurrence: string | null
           created_at: string
+          stripe_session_id: string | null
+          stripe_payment_url: string | null
+          stripe_payment_status: string | null
         }
         Insert: {
           id?: string
@@ -85,6 +88,9 @@ export interface Database {
           user_id?: string | null
           recurrence?: string | null
           created_at?: string
+          stripe_session_id?: string | null
+          stripe_payment_url?: string | null
+          stripe_payment_status?: string | null
         }
         Update: {
           id?: string
@@ -105,6 +111,9 @@ export interface Database {
           user_id?: string | null
           recurrence?: string | null
           created_at?: string
+          stripe_session_id?: string | null
+          stripe_payment_url?: string | null
+          stripe_payment_status?: string | null
         }
         Relationships: []
       }

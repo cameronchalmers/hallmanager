@@ -40,6 +40,8 @@ export default function Bookings() {
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState(DEFAULT_FORM)
   const [saving, setSaving] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [copiedPayment, setCopiedPayment] = useState(false)
 
   useEffect(() => { fetchBookings() }, [])
 
@@ -63,8 +65,55 @@ export default function Bookings() {
     await supabase.from('bookings').update({ status }).eq('id', id)
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b))
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status } : null)
-    if (status === 'confirmed') sendEmail('booking_approved', id)
     if (status === 'denied') sendEmail('booking_denied', id)
+  }
+
+  async function approveBooking(id: string) {
+    setActionLoading('approve')
+    // Create Stripe payment link first
+    let stripeUrl: string | null = null
+    try {
+      const { data } = await supabase.functions.invoke('stripe-action', {
+        body: { action: 'create_payment', booking_id: id },
+      })
+      stripeUrl = data?.url ?? null
+    } catch (_) { /* Stripe not configured — approve without payment link */ }
+
+    await supabase.from('bookings').update({ status: 'confirmed' }).eq('id', id)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed', stripe_payment_url: stripeUrl } : b))
+    if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'confirmed', stripe_payment_url: stripeUrl } : null)
+    sendEmail('booking_approved', id)
+    setActionLoading(null)
+  }
+
+  async function cancelBooking(id: string) {
+    setActionLoading('cancel')
+    await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', id)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b))
+    if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'cancelled' } : null)
+    sendEmail('booking_cancelled', id)
+    setSelected(null)
+    setActionLoading(null)
+  }
+
+  async function markAsPaid(id: string) {
+    setActionLoading('paid')
+    await supabase.from('bookings').update({ stripe_payment_status: 'paid' }).eq('id', id)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_status: 'paid' } : b))
+    if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_status: 'paid' } : null)
+    setActionLoading(null)
+  }
+
+  async function refundDeposit(id: string) {
+    setActionLoading('refund')
+    const { error } = await supabase.functions.invoke('stripe-action', {
+      body: { action: 'refund_deposit', booking_id: id },
+    })
+    if (!error) {
+      setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_status: 'deposit_refunded' } : b))
+      if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_status: 'deposit_refunded' } : null)
+    }
+    setActionLoading(null)
   }
 
   async function createBooking() {
@@ -165,9 +214,11 @@ export default function Bookings() {
               <div className="approve-deny" onClick={e => e.stopPropagation()}>
                 {b.status === 'pending' ? (
                   <>
-                    <button className="icon-btn icon-btn-approve" onClick={() => updateStatus(b.id, 'confirmed')}>✓</button>
+                    <button className="icon-btn icon-btn-approve" onClick={() => approveBooking(b.id)}>✓</button>
                     <button className="icon-btn icon-btn-deny" onClick={() => updateStatus(b.id, 'denied')}>✗</button>
                   </>
+                ) : b.status === 'confirmed' ? (
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => { setSelected(b); }}>View</button>
                 ) : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>}
               </div>
             </div>
@@ -288,8 +339,38 @@ export default function Bookings() {
         footer={
           selected?.status === 'pending' ? (
             <div style={{ display: 'flex', gap: 7, width: '100%' }}>
-              <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { updateStatus(selected.id, 'denied'); setSelected(null) }}>✗ Deny</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { updateStatus(selected.id, 'confirmed'); setSelected(null) }}>✓ Approve & Notify</button>
+              <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { updateStatus(selected.id, 'denied'); setSelected(null) }} disabled={!!actionLoading}>✗ Deny</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => approveBooking(selected.id)} disabled={!!actionLoading}>
+                {actionLoading === 'approve' ? 'Approving…' : '✓ Approve & Send Payment'}
+              </button>
+            </div>
+          ) : selected?.status === 'confirmed' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+              {selected.stripe_payment_url && (
+                <div style={{ display: 'flex', gap: 7 }}>
+                  <input readOnly className="form-input" value={selected.stripe_payment_url} style={{ flex: 1, fontSize: 11 }} />
+                  <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(selected.stripe_payment_url!); setCopiedPayment(true); setTimeout(() => setCopiedPayment(false), 2000) }}>
+                    {copiedPayment ? '✓ Copied' : 'Copy link'}
+                  </button>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 7 }}>
+                <button className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={() => cancelBooking(selected.id)} disabled={!!actionLoading}>
+                  {actionLoading === 'cancel' ? 'Cancelling…' : 'Cancel Booking'}
+                </button>
+                {selected.stripe_payment_status === 'deposit_refunded' ? (
+                  <span className="badge badge-neutral" style={{ alignSelf: 'center' }}>Deposit refunded</span>
+                ) : selected.stripe_payment_status === 'paid' ? (
+                  <button className="btn btn-primary btn-sm" onClick={() => refundDeposit(selected.id)} disabled={!!actionLoading}>
+                    {actionLoading === 'refund' ? 'Refunding…' : `Refund Deposit (£${selected.deposit})`}
+                  </button>
+                ) : (
+                  <button className="btn btn-ghost btn-sm" onClick={() => markAsPaid(selected.id)} disabled={!!actionLoading}>
+                    {actionLoading === 'paid' ? 'Saving…' : '✓ Mark as Paid'}
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>Close</button>
+              </div>
             </div>
           ) : (
             <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setSelected(null)}>Close</button>
