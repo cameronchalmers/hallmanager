@@ -50,7 +50,7 @@ function buildSessionMap(bookings: Booking[], year: number, month: number): Map<
   return map
 }
 
-export default function CalendarWidget({ showSiteFilter = true }: { showSiteFilter?: boolean }) {
+export default function CalendarWidget({ showSiteFilter = true, compact = false }: { showSiteFilter?: boolean; compact?: boolean }) {
   const today = new Date()
   const [cal, setCal] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const [bookings, setBookings] = useState<Booking[]>([])
@@ -89,82 +89,113 @@ export default function CalendarWidget({ showSiteFilter = true }: { showSiteFilt
   const getForDay = (d: Date) => sessionMap.get(d.toISOString().split('T')[0]) ?? []
   const selBookings = selDay ? getForDay(selDay) : []
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-      {/* Grid */}
-      <div className="card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 2px' }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => setCal(c => { const d = new Date(c.year, c.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹</button>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>{MONTHS[cal.month]} {cal.year}</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => setCal(c => { const d = new Date(c.year, c.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>›</button>
-        </div>
-        {showSiteFilter && (
-          <div style={{ padding: '4px 14px 2px', display: 'flex', gap: 5, alignItems: 'center' }}>
-            <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Venue:</span>
-            <select className="form-input" style={{ width: 'auto', padding: '3px 6px', fontSize: 11 }} value={siteFilter} onChange={e => setSiteFilter(e.target.value)}>
-              <option value="all">All</option>
-              {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-        )}
-        <div className="cal-grid">
-          {DAYS.map(d => <div key={d} className="cal-dh">{d}</div>)}
-          {days.map((d, i) => {
-            const bs = getForDay(d.date)
-            const isToday = d.date.toDateString() === today.toDateString()
-            const isSel = selDay && d.date.toDateString() === selDay.toDateString()
-            return (
-              <button
-                key={i}
-                className={['cal-day', !d.curr ? 'other' : '', isToday ? 'today' : '', bs.length > 0 && !isToday ? 'booked' : '', isSel && !isToday ? 'sel' : ''].join(' ')}
-                onClick={() => setSelDay(d.date)}
-              >
-                {d.date.getDate()}
-                {bs.length > 0 && <span className="cal-dot" />}
-              </button>
-            )
-          })}
-        </div>
-        <div style={{ padding: '4px 14px 12px', display: 'flex', gap: 12 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} /> Booked
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--accent)', display: 'inline-block' }} /> Today
-          </span>
-        </div>
+  const gridCard = (
+    <div className="card" style={{ flex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 2px' }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => setCal(c => { const d = new Date(c.year, c.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹</button>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>{MONTHS[cal.month]} {cal.year}</span>
+        <button className="btn btn-ghost btn-sm" onClick={() => setCal(c => { const d = new Date(c.year, c.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>›</button>
       </div>
-
-      {/* Day detail */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">
-            {selDay ? selDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Select a date'}
-          </span>
+      {showSiteFilter && (
+        <div style={{ padding: '4px 14px 2px', display: 'flex', gap: 5, alignItems: 'center' }}>
+          <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Venue:</span>
+          <select className="form-input" style={{ width: 'auto', padding: '3px 6px', fontSize: 11 }} value={siteFilter} onChange={e => setSiteFilter(e.target.value)}>
+            <option value="all">All</option>
+            {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
         </div>
-        {!selDay && <div className="empty"><div className="empty-icon">📅</div><div className="empty-title">Click a date</div></div>}
-        {selDay && selBookings.length === 0 && (
-          <div className="empty"><div className="empty-icon">✅</div><div className="empty-title">Free</div><div style={{ fontSize: 12 }}>No bookings this day</div></div>
-        )}
-        {selBookings.map((b, i) => {
-          const site = sites.find(s => s.id === b.site_id)
+      )}
+      <div className="cal-grid">
+        {DAYS.map(d => <div key={d} className="cal-dh">{d}</div>)}
+        {days.map((d, i) => {
+          const bs = getForDay(d.date)
+          const isToday = d.date.toDateString() === today.toDateString()
+          const isSel = selDay && d.date.toDateString() === selDay.toDateString()
           return (
-            <div key={b.id + i} style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{b.event}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</span>
-                  {b.status === 'pending' && <span className="badge badge-pending" style={{ fontSize: 10 }}>Pending</span>}
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.name} · {site?.name}</div>
-              {b.type === 'recurring' && (
-                <span className="badge badge-recurring" style={{ fontSize: 10, marginTop: 4, display: 'inline-block' }}>↻ {b.recurrence}</span>
-              )}
-            </div>
+            <button
+              key={i}
+              className={['cal-day', !d.curr ? 'other' : '', isToday ? 'today' : '', bs.length > 0 && !isToday ? 'booked' : '', isSel && !isToday ? 'sel' : ''].join(' ')}
+              onClick={() => setSelDay(prev => prev?.toDateString() === d.date.toDateString() ? null : d.date)}
+            >
+              {d.date.getDate()}
+              {bs.length > 0 && <span className="cal-dot" />}
+            </button>
           )
         })}
       </div>
+      <div style={{ padding: '4px 14px 12px', display: 'flex', gap: 12 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} /> Booked
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)' }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--accent)', display: 'inline-block' }} /> Today
+        </span>
+      </div>
+
+      {/* Compact: inline day detail below grid */}
+      {compact && selDay && (
+        <div style={{ borderTop: '1px solid var(--border)' }}>
+          <div style={{ padding: '8px 14px 4px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
+            {selDay.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+          </div>
+          {selBookings.length === 0 && (
+            <div style={{ padding: '6px 14px 10px', fontSize: 12, color: 'var(--text-muted)' }}>No bookings</div>
+          )}
+          {selBookings.map((b, i) => {
+            const site = sites.find(s => s.id === b.site_id)
+            return (
+              <div key={b.id + i} style={{ padding: '6px 14px', borderTop: i > 0 ? '1px solid var(--border)' : undefined, paddingBottom: i === selBookings.length - 1 ? 12 : 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 12 }}>{b.event}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{b.start_time}–{b.end_time}</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.name} · {site?.name}</div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+
+  const detailCard = (
+    <div className="card">
+      <div className="card-header">
+        <span className="card-title">
+          {selDay ? selDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Select a date'}
+        </span>
+      </div>
+      {!selDay && <div className="empty"><div className="empty-icon">📅</div><div className="empty-title">Click a date</div></div>}
+      {selDay && selBookings.length === 0 && (
+        <div className="empty"><div className="empty-icon">✅</div><div className="empty-title">Free</div><div style={{ fontSize: 12 }}>No bookings this day</div></div>
+      )}
+      {selBookings.map((b, i) => {
+        const site = sites.find(s => s.id === b.site_id)
+        return (
+          <div key={b.id + i} style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{b.event}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</span>
+                {b.status === 'pending' && <span className="badge badge-pending" style={{ fontSize: 10 }}>Pending</span>}
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.name} · {site?.name}</div>
+            {b.type === 'recurring' && (
+              <span className="badge badge-recurring" style={{ fontSize: 10, marginTop: 4, display: 'inline-block' }}>↻ {b.recurrence}</span>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  if (compact) return gridCard
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      {gridCard}
+      {detailCard}
     </div>
   )
 }

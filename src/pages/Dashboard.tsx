@@ -178,47 +178,38 @@ export default function Dashboard() {
         </>
       )}
 
-      {/* Calendar */}
-      <div className="sec-label">Calendar</div>
-      <div style={{ marginBottom: 20 }}>
-        <CalendarWidget showSiteFilter />
-      </div>
-
-      {/* Upcoming confirmed */}
-      <div className="sec-label">Upcoming confirmed</div>
-      <div className="card">
-        <div className="tbl-header cols-bookings">
-          <span>Booking</span><span>Date & Time</span><span>Venue</span><span>Type</span><span>Status</span><span></span>
+      {/* Calendar + Upcoming side by side */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+        <div>
+          <div className="sec-label">Calendar</div>
+          <CalendarWidget compact showSiteFilter={false} />
         </div>
-        {confirmed.length === 0 && (
-          <div className="empty">
-            <div className="empty-icon">✅</div>
-            <div className="empty-title">No confirmed bookings yet</div>
+        <div>
+          <div className="sec-label">Upcoming confirmed</div>
+          <div className="card">
+            {confirmed.length === 0 && (
+              <div className="empty">
+                <div className="empty-icon">✅</div>
+                <div className="empty-title">No confirmed bookings yet</div>
+              </div>
+            )}
+            {confirmed.slice(0, 8).map(b => {
+              const site = (b as BookingWithSite).sites
+              return (
+                <div key={b.id} className="tbl-row" style={{ cursor: 'pointer', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }} onClick={() => setPreview(b as BookingWithSite)}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{b.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event} · {site?.name}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{format(new Date(b.date), 'dd MMM')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        )}
-        {confirmed.slice(0, 5).map(b => {
-          const site = (b as BookingWithSite).sites
-          return (
-            <div key={b.id} className="tbl-row cols-bookings" style={{ cursor: 'pointer' }} onClick={() => setPreview(b as BookingWithSite)}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{b.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
-              </div>
-              <div>
-                <div>{format(new Date(b.date), 'dd MMM yyyy')}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name}</div>
-              <div>
-                <span className={`badge ${b.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>
-                  {b.type === 'recurring' ? `↻ ${b.recurrence ?? 'recurring'}` : 'One-off'}
-                </span>
-              </div>
-              <div><Badge status={b.status} /></div>
-              <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--text-muted)' }}>View →</div>
-            </div>
-          )
-        })}
+        </div>
       </div>
 
       {/* Quick-view modal */}
