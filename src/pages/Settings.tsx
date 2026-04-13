@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTheme } from '../context/ThemeContext'
+import { useAuth } from '../context/AuthContext'
 
 const ACCENT_LABELS: Record<string, string> = {
   purple: 'Purple',
@@ -19,6 +20,8 @@ interface NotifToggle {
 
 export default function Settings() {
   const { accentKey, setAccentKey, accentColors, darkMode, setDarkMode } = useTheme()
+  const { profile } = useAuth()
+  const isRegular = profile?.role === 'regular'
 
   const [notifications, setNotifications] = useState<NotifToggle[]>([
     { key: 'new_booking', label: 'New booking requests', description: 'Email me when a new booking is submitted', value: true },
@@ -113,8 +116,8 @@ export default function Settings() {
       {/* Right column */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-        {/* Stripe */}
-        <div className="card">
+        {/* Stripe — admin/manager only */}
+        {!isRegular && <div className="card">
           <div className="card-header">
             <span className="card-title">Stripe Connect</span>
             {stripeConnected
@@ -136,7 +139,7 @@ export default function Settings() {
               ? <button className="btn btn-ghost btn-sm">Manage →</button>
               : <button className="btn btn-primary btn-sm">Connect Stripe</button>}
           </div>
-        </div>
+        </div>}
 
         {/* Notifications */}
         <div className="card">

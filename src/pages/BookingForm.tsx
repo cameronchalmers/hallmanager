@@ -362,22 +362,33 @@ export default function BookingForm() {
                   }
                   return <div className="notice notice-accent" style={{ marginBottom: 8 }}>🕐 Available {sched.from}–{sched.until} on this day</div>
                 })()}
-                <div className="form-grid-2">
-                  <div>
-                    <label className="form-label">Start time</label>
-                    <select className="form-input" required value={form.start_time} onChange={e => set('start_time', e.target.value)}>
-                      <option value="">Select…</option>
-                      {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="form-label">End time</label>
-                    <select className="form-input" required value={form.end_time} onChange={e => set('end_time', e.target.value)}>
-                      <option value="">Select…</option>
-                      {TIME_SLOTS.filter(t => !form.start_time || t > form.start_time).map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                </div>
+                {(() => {
+                  const sched = activeSite && form.date ? getSiteSchedule(activeSite, form.date) : null
+                  const openFrom = sched?.open ? sched.from : null
+                  const openUntil = sched?.open ? sched.until : null
+                  return (
+                    <div className="form-grid-2">
+                      <div>
+                        <label className="form-label">Start time</label>
+                        <select className="form-input" required value={form.start_time} onChange={e => { set('start_time', e.target.value); set('end_time', '') }}>
+                          <option value="">Select…</option>
+                          {TIME_SLOTS
+                            .filter(t => (!openFrom || t >= openFrom) && (!openUntil || t < openUntil))
+                            .map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="form-label">End time</label>
+                        <select className="form-input" required value={form.end_time} onChange={e => set('end_time', e.target.value)}>
+                          <option value="">Select…</option>
+                          {TIME_SLOTS
+                            .filter(t => (!form.start_time || t > form.start_time) && (!openUntil || t <= openUntil))
+                            .map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  )
+                })()}
                 <div className="form-row">
                   <label className="form-label">Additional notes <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(optional)</span></label>
                   <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Any special requirements…" value={form.notes} onChange={e => set('notes', e.target.value)} />
