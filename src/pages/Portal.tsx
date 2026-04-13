@@ -72,6 +72,22 @@ export default function Portal() {
   const mySites = sites.filter(s => (profile?.site_ids ?? []).includes(s.id))
   const confirmedBookings = bookings.filter(b => b.status === 'confirmed').length
   const totalSpend = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount, 0)
+  const customRates = profile?.custom_rates as Record<string, number> | null
+
+  function sessionTotal(b: Booking) {
+    const site = sites.find(s => s.id === b.site_id)
+    const rate = customRates?.[b.site_id] ?? site?.rate ?? 0
+    return b.hours * rate
+  }
+
+  const today = new Date().toISOString().split('T')[0]
+  const upcoming = bookings.filter(b => b.date >= today && !['cancelled', 'denied'].includes(b.status)).sort((a, b) => a.date.localeCompare(b.date))
+  const past = bookings.filter(b => b.date < today || ['cancelled', 'denied'].includes(b.status)).sort((a, b) => b.date.localeCompare(a.date))
+
+  async function markAttendance(bookingId: string, attended: boolean | null) {
+    await supabase.from('bookings').update({ attended }).eq('id', bookingId)
+    setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, attended } : b))
+  }
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'bookings', label: 'My Bookings' },
@@ -132,35 +148,79 @@ export default function Portal() {
 
         {!loading && tab === 'bookings' && (
           <>
-            <div className="tbl-header cols-bookings">
-              <span>Event</span><span>Date & Time</span><span>Venue</span><span>Type</span><span>Status</span><span>Total</span>
-            </div>
             {bookings.length === 0 && (
               <div className="empty"><div className="empty-icon">📋</div><div className="empty-title">No bookings yet</div></div>
             )}
-            {bookings.map(b => {
-              const site = sites.find(s => s.id === b.site_id)
-              return (
-                <div key={b.id} className="tbl-row cols-bookings">
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{b.event}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.name}</div>
-                  </div>
-                  <div>
-                    <div>{format(new Date(b.date), 'dd MMM yyyy')}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name ?? '—'}</div>
-                  <div>
-                    <span className={`badge ${b.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>
-                      {b.type === 'recurring' ? `↻ ${b.recurrence ?? ''}` : 'One-off'}
-                    </span>
-                  </div>
-                  <div><Badge status={b.status} /></div>
-                  <div style={{ fontWeight: 700 }}>£{b.total}</div>
+
+            {/* Upcoming */}
+            {upcoming.length > 0 && (
+              <>
+                <div style={{ padding: '10px 18px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+                  Upcoming sessions
                 </div>
-              )
-            })}
+                {upcoming.map(b => {
+                  const site = sites.find(s => s.id === b.site_id)
+                  return (
+                    <div key={b.id} className="tbl-row" style={{ display: 'grid', gridTemplateColumns: '1fr 130px 120px 80px 70px', gap: 12, alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{b.event}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{site?.name ?? '—'} · {b.start_time}–{b.end_time}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{format(new Date(b.date), 'dd MMM yyyy')}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.hours}h</div>
+                      </div>
+                      <div>
+                        <span className={`badge ${b.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>
+                          {b.type === 'recurring' ? `↻ ${b.recurrence ?? ''}` : 'One-off'}
+                        </span>
+                      </div>
+                      <div><Badge status={b.status} /></div>
+                      <div style={{ fontWeight: 700, textAlign: 'right' }}>£{sessionTotal(b)}</div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+            {/* Past */}
+            {past.length > 0 && (
+              <>
+                <div style={{ padding: '10px 18px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', borderTop: upcoming.length > 0 ? '1px solid var(--border)' : 'none', marginTop: upcoming.length > 0 ? 8 : 0 }}>
+                  Past sessions
+                </div>
+                {past.map(b => {
+                  const site = sites.find(s => s.id === b.site_id)
+                  return (
+                    <div key={b.id} className="tbl-row" style={{ display: 'grid', gridTemplateColumns: '1fr 130px 80px 140px', gap: 12, alignItems: 'center', opacity: ['cancelled', 'denied'].includes(b.status) ? 0.5 : 1 }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{b.event}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{site?.name ?? '—'} · {b.start_time}–{b.end_time}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{format(new Date(b.date), 'dd MMM yyyy')}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.hours}h · £{sessionTotal(b)}</div>
+                      </div>
+                      <div><Badge status={b.status} /></div>
+                      <div style={{ display: 'flex', gap: 5 }}>
+                        {!['cancelled', 'denied'].includes(b.status) && (
+                          <>
+                            <button
+                              onClick={() => markAttendance(b.id, b.attended === true ? null : true)}
+                              style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${b.attended === true ? '#16a34a' : 'var(--border)'}`, background: b.attended === true ? '#dcfce7' : 'var(--surface2)', color: b.attended === true ? '#16a34a' : 'var(--text-muted)' }}
+                            >✓ Attended</button>
+                            <button
+                              onClick={() => markAttendance(b.id, b.attended === false ? null : false)}
+                              style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${b.attended === false ? '#dc2626' : 'var(--border)'}`, background: b.attended === false ? '#fee2e2' : 'var(--surface2)', color: b.attended === false ? '#dc2626' : 'var(--text-muted)' }}
+                            >✗ Missed</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
           </>
         )}
 
@@ -219,25 +279,19 @@ export default function Portal() {
             )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 12 }}>
               {mySites.map(s => {
-                const customRate = (profile?.custom_rates as Record<string, number>)?.[s.id]
+                const rate = customRates?.[s.id] ?? s.rate
                 return (
                   <div key={s.id} className="card" style={{ margin: 0, padding: 16 }}>
                     <div style={{ fontSize: 22, marginBottom: 8 }}>{s.emoji}</div>
                     <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>{s.name}</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Standard rate</span>
-                        <span style={{ fontWeight: 600 }}>£{s.rate}/hr</span>
+                        <span style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Your rate</span>
+                        <span style={{ fontWeight: 700, color: 'var(--accent-text)' }}>£{rate}/hr</span>
                       </div>
-                      {customRate && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Your rate</span>
-                          <span style={{ fontWeight: 700, color: 'var(--accent-text)' }}>£{customRate}/hr</span>
-                        </div>
-                      )}
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Deposit</span>
-                        <span style={{ fontWeight: 600 }}>£{s.deposit}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>No deposit</span>
+                        <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>—</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-muted)' }}>Capacity</span>
