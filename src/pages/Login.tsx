@@ -1,18 +1,42 @@
 import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 
+function getHashType() {
+  const hash = window.location.hash
+  if (hash.includes('type=invite')) return 'invite'
+  if (hash.includes('type=recovery')) return 'recovery'
+  return null
+}
+
 export default function Login() {
   const { user, signIn } = useAuth()
+  const navigate = useNavigate()
+  const hashType = getHashType()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [mode, setMode] = useState<'login' | 'forgot'>('login')
+  const [mode, setMode] = useState<'login' | 'forgot' | 'set-password'>(
+    hashType ? 'set-password' : 'login'
+  )
   const [resetSent, setResetSent] = useState(false)
 
-  if (user) return <Navigate to="/" replace />
+  // Allow set-password to render even when user session exists (invite/recovery flow)
+  if (user && mode !== 'set-password') return <Navigate to="/" replace />
+
+  async function handleSetPassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (password !== confirmPassword) { setError('Passwords do not match'); return }
+    if (password.length < 8) { setError('Password must be at least 8 characters'); return }
+    setLoading(true)
+    setError('')
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) { setError(error.message); setLoading(false); return }
+    navigate('/', { replace: true })
+  }
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault()
@@ -43,12 +67,44 @@ export default function Login() {
           <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>H</div>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>HallManager</div>
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            {mode === 'login' ? 'Sign in to your account' : 'Reset your password'}
+            {mode === 'set-password' ? (hashType === 'invite' ? 'Set a password to activate your account' : 'Choose a new password') : mode === 'login' ? 'Sign in to your account' : 'Reset your password'}
           </div>
         </div>
 
         <div className="card" style={{ padding: '24px 22px' }}>
-          {mode === 'login' ? (
+          {mode === 'set-password' ? (
+            <form onSubmit={handleSetPassword}>
+              <div className="notice notice-accent" style={{ marginBottom: 14 }}>
+                {hashType === 'invite' ? 'Welcome! Choose a password to complete your account setup.' : 'Enter your new password below.'}
+              </div>
+              <div className="form-row">
+                <label className="form-label">New password</label>
+                <input
+                  className="form-input"
+                  type="password"
+                  required
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                />
+              </div>
+              <div className="form-row">
+                <label className="form-label">Confirm password</label>
+                <input
+                  className="form-input"
+                  type="password"
+                  required
+                  placeholder="Repeat password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                />
+              </div>
+              {error && <div className="notice notice-warn" style={{ marginBottom: 12 }}>{error}</div>}
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+                {loading ? 'Saving…' : hashType === 'invite' ? 'Set password & continue' : 'Set new password'}
+              </button>
+            </form>
+          ) : mode === 'login' ? (
             <form onSubmit={handleSignIn}>
               <div className="form-row">
                 <label className="form-label">Email</label>
