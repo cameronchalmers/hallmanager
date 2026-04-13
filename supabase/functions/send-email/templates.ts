@@ -97,6 +97,27 @@ export interface ExtraSlotData {
   total: number
 }
 
+// ── Booking submitted (admin notification) ────────────────────────────────────
+
+export function bookingSubmittedAdmin(b: BookingData): { subject: string; html: string } {
+  return {
+    subject: `New booking request — ${b.event} at ${b.site_name}`,
+    html: layout(`
+      <div style="padding:32px 32px 0;border-bottom:3px solid ${ACCENT};">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:${ACCENT};letter-spacing:0.5px;text-transform:uppercase;">New Booking Request</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Action required</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">A new booking request has been submitted and is awaiting your review.</p>
+      </div>
+      <div style="padding:24px 32px;">
+        ${pill('Pending Review', '#92400e', '#fffbeb')}
+        ${bookingTable(b)}
+        ${b.notes ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-radius:8px;border-left:3px solid #e5e7eb;"><p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Notes from booker</p><p style="margin:4px 0 0;font-size:14px;color:#374151;">${b.notes}</p></div>` : ''}
+        <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;">Log in to HallManager to approve or deny this request.</p>
+      </div>
+    `),
+  }
+}
+
 // ── Booking submitted ─────────────────────────────────────────────────────────
 
 export function bookingSubmitted(b: BookingData): { subject: string; html: string } {

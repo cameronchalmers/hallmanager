@@ -29,7 +29,7 @@ export default function CalendarView() {
     const start = `${cal.year}-${String(cal.month + 1).padStart(2, '0')}-01`
     const end = `${cal.year}-${String(cal.month + 1).padStart(2, '0')}-31`
     const [bRes, sRes] = await Promise.all([
-      supabase.from('bookings').select('*').eq('status', 'confirmed').gte('date', start).lte('date', end),
+      supabase.from('bookings').select('*').neq('status', 'denied').gte('date', start).lte('date', end),
       supabase.from('sites').select('*'),
     ])
     setBookings(bRes.data ?? [])
@@ -117,10 +117,13 @@ export default function CalendarView() {
         {selBookings.map(b => {
           const site = sites.find(s => s.id === b.site_id)
           return (
-            <div key={b.id} style={{ padding: '11px 16px', borderBottom: '1px solid #f4f4f6' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+            <div key={b.id} style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{b.event}</div>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{b.start_time}–{b.end_time}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</span>
+                  {b.status === 'pending' && <span className="badge badge-pending" style={{ fontSize: 10 }}>Pending</span>}
+                </div>
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.name} · {site?.name}</div>
             </div>

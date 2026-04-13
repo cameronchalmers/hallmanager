@@ -101,7 +101,7 @@ export default function BookingForm() {
 
     setSubmitting(true)
     setError('')
-    const { error: err } = await supabase.from('bookings').insert({
+    const { data: inserted, error: err } = await supabase.from('bookings').insert({
       name: form.name,
       email: form.email,
       phone: form.phone,
@@ -117,8 +117,12 @@ export default function BookingForm() {
       status: 'pending',
       deposit,
       total,
-    })
+    }).select().single()
     if (err) { setError(err.message); setSubmitting(false); return }
+    // Send confirmation email to booker + notification to admin (best-effort)
+    if (inserted?.id) {
+      supabase.functions.invoke('send-email', { body: { type: 'booking_submitted', id: inserted.id } })
+    }
     setSubmitted(true)
     setSubmitting(false)
   }

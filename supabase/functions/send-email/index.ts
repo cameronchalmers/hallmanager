@@ -6,12 +6,14 @@ import {
   bookingDenied,
   extraSlotApproved,
   extraSlotDenied,
+  bookingSubmittedAdmin,
   type BookingData,
   type ExtraSlotData,
 } from './templates.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
-const FROM = 'HallManager <no-reply@hallmanager.co.uk>'
+const FROM = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
+const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL') ?? ''
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,39 +49,54 @@ serve(async (req) => {
 
     const { type, id } = await req.json() as { type: string; id: string }
 
-    let email: { subject: string; html: string }
-    let to: string
-
     // ── Booking emails ────────────────────────────────────────────────────────
 
     if (['booking_submitted', 'booking_approved', 'booking_denied'].includes(type)) {
       const { data: booking, error } = await supabase
         .from('bookings')
-        .select('*, sites(name)')
+        .select('*')
         .eq('id', id)
         .single()
 
       if (error || !booking) throw new Error(`Booking not found: ${id}`)
 
+      // Fetch site separately (no FK constraint yet)
+      const { data: site } = await supabase
+        .from('sites')
+        .select('name, address')
+        .eq('id', booking.site_id)
+        .single()
+
       const b: BookingData = {
         name: booking.name,
         email: booking.email,
         event: booking.event,
-        date: new Date(booking.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
         start_time: booking.start_time,
         end_time: booking.end_time,
         hours: booking.hours,
-        site_name: booking.sites?.name ?? 'Unknown venue',
+        site_name: site?.name ?? 'Unknown venue',
         deposit: booking.deposit,
         total: booking.total,
         notes: booking.notes,
       }
 
-      to = booking.email
-
-      if (type === 'booking_submitted') email = bookingSubmitted(b)
-      else if (type === 'booking_approved') email = bookingApproved(b)
-      else email = bookingDenied(b)
+      if (type === 'booking_submitted') {
+        // Email the booker
+        const bookerEmail = bookingSubmitted(b)
+        await sendEmail(b.email, bookerEmail.subject, bookerEmail.html)
+        // Email the admin
+        if (ADMIN_EMAIL) {
+          const adminEmail = bookingSubmittedAdmin(b)
+          await sendEmail(ADMIN_EMAIL, adminEmail.subject, adminEmail.html)
+        }
+      } else if (type === 'booking_approved') {
+        const email = bookingApproved(b)
+        await sendEmail(b.email, email.subject, email.html)
+      } else {
+        const email = bookingDenied(b)
+        await sendEmail(b.email, email.subject, email.html)
+      }
     }
 
     // ── Extra slot emails ─────────────────────────────────────────────────────
@@ -87,17 +104,32 @@ serve(async (req) => {
     else if (['slot_approved', 'slot_denied'].includes(type)) {
       const { data: slot, error } = await supabase
         .from('extra_slots')
-        .select('*, sites(name), users(email)')
+        .select('*')
         .eq('id', id)
         .single()
 
       if (error || !slot) throw new Error(`Extra slot not found: ${id}`)
 
+      const { data: slotSite } = await supabase
+        .from('sites')
+        .select('name')
+        .eq('id', slot.site_id)
+        .single()
+
+      const { data: slotUser } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', slot.user_id)
+        .single()
+
+      const to = slotUser?.email ?? ''
+      if (!to) throw new Error('No email found for user')
+
       const s: ExtraSlotData = {
         name: slot.name,
-        email: slot.users?.email ?? '',
-        site_name: slot.sites?.name ?? 'Unknown venue',
-        date: new Date(slot.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        email: to,
+        site_name: slotSite?.name ?? 'Unknown venue',
+        date: new Date(slot.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
         start_time: slot.start_time,
         end_time: slot.end_time,
         hours: slot.hours,
@@ -105,18 +137,13 @@ serve(async (req) => {
         total: slot.total,
       }
 
-      to = slot.users?.email ?? ''
-      if (!to) throw new Error('No email found for user')
-
-      if (type === 'slot_approved') email = extraSlotApproved(s)
-      else email = extraSlotDenied(s)
+      const email = type === 'slot_approved' ? extraSlotApproved(s) : extraSlotDenied(s)
+      await sendEmail(to, email.subject, email.html)
     }
 
     else {
       throw new Error(`Unknown email type: ${type}`)
     }
-
-    await sendEmail(to!, email!.subject, email!.html)
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
