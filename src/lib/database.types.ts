@@ -15,6 +15,7 @@ export interface Database {
           min_hours: number | null
           available_from: string | null
           available_until: string | null
+          availability: Json | null
         }
         Insert: {
           id?: string
@@ -27,6 +28,7 @@ export interface Database {
           min_hours?: number | null
           available_from?: string | null
           available_until?: string | null
+          availability?: Json | null
         }
         Update: {
           id?: string
@@ -39,6 +41,7 @@ export interface Database {
           min_hours?: number | null
           available_from?: string | null
           available_until?: string | null
+          availability?: Json | null
         }
         Relationships: []
       }
@@ -243,6 +246,32 @@ export type Site = Database['public']['Tables']['sites']['Row']
 export type Booking = Database['public']['Tables']['bookings']['Row']
 export type Invoice = Database['public']['Tables']['invoices']['Row']
 export type ExtraSlot = Database['public']['Tables']['extra_slots']['Row']
+
+export interface DaySchedule {
+  open: boolean
+  from: string
+  until: string
+}
+
+export type WeekAvailability = {
+  monday: DaySchedule
+  tuesday: DaySchedule
+  wednesday: DaySchedule
+  thursday: DaySchedule
+  friday: DaySchedule
+  saturday: DaySchedule
+  sunday: DaySchedule
+}
+
+export const DEFAULT_AVAILABILITY: WeekAvailability = {
+  monday:    { open: true,  from: '09:00', until: '22:00' },
+  tuesday:   { open: true,  from: '09:00', until: '22:00' },
+  wednesday: { open: true,  from: '09:00', until: '22:00' },
+  thursday:  { open: true,  from: '09:00', until: '22:00' },
+  friday:    { open: true,  from: '09:00', until: '22:00' },
+  saturday:  { open: true,  from: '09:00', until: '17:00' },
+  sunday:    { open: false, from: '10:00', until: '16:00' },
+}
 
 export interface AppUser {
   id: string

@@ -63,7 +63,16 @@ export default function Layout({ children, pageTitle, actions }: {
 
   const currentTitle = pageTitle ?? titles[pathname] ?? 'HallManager'
 
-  const navSections = [
+  const isRegular = profile?.role === 'regular'
+
+  const navSections = isRegular ? [
+    [
+      { to: '/portal', icon: 'rep', label: 'My Portal' },
+    ],
+    [
+      { to: '/settings', icon: 'cog', label: 'Settings' },
+    ],
+  ] : [
     [
       { to: '/', icon: 'grid', label: 'Dashboard' },
       { to: '/bookings', icon: 'list', label: 'Bookings' },
@@ -98,14 +107,16 @@ export default function Layout({ children, pageTitle, actions }: {
         </div>
       </div>
 
-      {/* Site switcher */}
-      <div style={{ margin: '10px 10px 6px', padding: '8px 11px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 1 }}>All sites</div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Overview</div>
+      {/* Site switcher — admins/managers only */}
+      {!isRegular && (
+        <div style={{ margin: '10px 10px 6px', padding: '8px 11px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 1 }}>All sites</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Overview</div>
+          </div>
+          <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>▾</span>
         </div>
-        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>▾</span>
-      </div>
+      )}
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '4px 10px', display: 'flex', flexDirection: 'column', gap: 1, overflowY: 'auto' }}>

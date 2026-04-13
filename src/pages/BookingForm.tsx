@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { Site } from '../lib/database.types'
+import type { Site, WeekAvailability } from '../lib/database.types'
+
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
+
+function getSiteSchedule(site: Site, date: string): { open: boolean; from: string; until: string } | null {
+  if (!site.availability || typeof site.availability !== 'object' || Array.isArray(site.availability)) return null
+  const av = site.availability as unknown as WeekAvailability
+  if (!date) return null
+  const dayName = DAY_NAMES[new Date(date + 'T12:00:00').getDay()]
+  return av[dayName] ?? null
+}
 
 const DEFAULT_FORM = {
   site_id: '',
@@ -72,13 +82,21 @@ export default function BookingForm() {
       setError(`Minimum booking at ${activeSite.name} is ${activeSite.min_hours} hour${activeSite.min_hours !== 1 ? 's' : ''}.`)
       return
     }
-    if (activeSite.available_from && form.start_time < activeSite.available_from) {
-      setError(`${activeSite.name} is not available before ${activeSite.available_from}.`)
-      return
-    }
-    if (activeSite.available_until && form.end_time > activeSite.available_until) {
-      setError(`${activeSite.name} is not available after ${activeSite.available_until}.`)
-      return
+    const sched = getSiteSchedule(activeSite, form.date)
+    if (sched) {
+      if (!sched.open) {
+        const dayName = DAY_NAMES[new Date(form.date + 'T12:00:00').getDay()]
+        setError(`${activeSite.name} is closed on ${dayName.charAt(0).toUpperCase() + dayName.slice(1)}s.`)
+        return
+      }
+      if (form.start_time < sched.from) {
+        setError(`${activeSite.name} doesn't open until ${sched.from} on this day.`)
+        return
+      }
+      if (form.end_time > sched.until) {
+        setError(`${activeSite.name} closes at ${sched.until} on this day.`)
+        return
+      }
     }
 
     setSubmitting(true)
@@ -247,6 +265,15 @@ export default function BookingForm() {
                 </select>
               </div>
             )}
+            {(() => {
+              const sched = activeSite && form.date ? getSiteSchedule(activeSite, form.date) : null
+              if (!sched) return null
+              if (!sched.open) {
+                const dayName = DAY_NAMES[new Date(form.date + 'T12:00:00').getDay()]
+                return <div className="notice notice-warn" style={{ marginBottom: 8 }}>⚠️ {activeSite!.name} is closed on {dayName.charAt(0).toUpperCase() + dayName.slice(1)}s. Please choose a different date.</div>
+              }
+              return <div className="notice notice-accent" style={{ marginBottom: 8 }}>🕐 Available {sched.from}–{sched.until} on this day</div>
+            })()}
             <div className="form-grid-2">
               <div>
                 <label className="form-label">Start time</label>
