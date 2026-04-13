@@ -215,7 +215,7 @@ export default function Sites() {
               <button key={e} onClick={() => setForm(f => ({ ...f, emoji: e }))}
                 style={{ width: 38, height: 38, fontSize: 18, borderRadius: 8, cursor: 'pointer',
                   border: `2px solid ${form.emoji === e ? 'var(--accent)' : 'var(--border)'}`,
-                  background: form.emoji === e ? 'var(--accent-light)' : '#fff' }}>
+                  background: form.emoji === e ? 'var(--accent-light)' : 'var(--surface2)' }}>
                 {e}
               </button>
             ))}
@@ -268,7 +268,7 @@ export default function Sites() {
           {DAYS.map((day, i) => {
             const sched = availability[day]
             return (
-              <div key={day} style={{ display: 'grid', gridTemplateColumns: '110px 60px 1fr 1fr', gap: 0, alignItems: 'center', padding: '8px 12px', borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: sched.open ? '#fff' : 'var(--surface2)' }}>
+              <div key={day} style={{ display: 'grid', gridTemplateColumns: '110px 60px 1fr 1fr', gap: 0, alignItems: 'center', padding: '8px 12px', borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: sched.open ? 'var(--surface)' : 'var(--surface2)' }}>
                 <span style={{ fontSize: 13, fontWeight: 600, textTransform: 'capitalize' }}>{day}</span>
                 <div>
                   <button

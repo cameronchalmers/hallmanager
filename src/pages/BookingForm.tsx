@@ -125,11 +125,11 @@ export default function BookingForm() {
 
   if (notFound) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f4f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Figtree', sans-serif" }}>
+      <div style={{ minHeight: '100vh', background: 'var(--bg,#f4f4f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Figtree', sans-serif" }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>🏛️</div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Venue not found</div>
-          <div style={{ fontSize: 13, color: '#71717a' }}>This booking link doesn't match any venue.</div>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6, color: 'var(--text,#111)' }}>Venue not found</div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)' }}>This booking link doesn't match any venue.</div>
         </div>
       </div>
     )
@@ -137,17 +137,17 @@ export default function BookingForm() {
 
   if (submitted) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f4f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Figtree', sans-serif" }}>
-        <div style={{ background: '#fff', borderRadius: 16, padding: 40, maxWidth: 420, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
+      <div style={{ minHeight: '100vh', background: 'var(--bg,#f4f4f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Figtree', sans-serif" }}>
+        <div style={{ background: 'var(--surface,#fff)', borderRadius: 16, padding: 40, maxWidth: 420, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Request submitted!</div>
-          <div style={{ fontSize: 14, color: '#71717a', marginBottom: 24 }}>
+          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8, color: 'var(--text,#111)' }}>Request submitted!</div>
+          <div style={{ fontSize: 14, color: 'var(--text-muted,#71717a)', marginBottom: 24 }}>
             Thanks, {form.name.split(' ')[0]}. We'll review your booking and be in touch at <strong>{form.email}</strong> shortly.
           </div>
-          <div style={{ background: '#f4f4f6', borderRadius: 10, padding: '12px 16px', fontSize: 13, textAlign: 'left', marginBottom: 24 }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>{form.event}</div>
-            <div style={{ color: '#71717a' }}>{activeSite?.name} · {form.date} · {form.start_time}–{form.end_time}</div>
-            <div style={{ marginTop: 6, fontWeight: 700 }}>Total: £{total} <span style={{ fontWeight: 400, color: '#71717a' }}>(deposit: £{deposit})</span></div>
+          <div style={{ background: 'var(--surface2,#f4f4f6)', borderRadius: 10, padding: '12px 16px', fontSize: 13, textAlign: 'left', marginBottom: 24 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4, color: 'var(--text,#111)' }}>{form.event}</div>
+            <div style={{ color: 'var(--text-muted,#71717a)' }}>{activeSite?.name} · {form.date} · {form.start_time}–{form.end_time}</div>
+            <div style={{ marginTop: 6, fontWeight: 700, color: 'var(--text,#111)' }}>Total: £{total} <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(deposit: £{deposit})</span></div>
           </div>
           <button
             style={{ background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
@@ -161,7 +161,7 @@ export default function BookingForm() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f4f6', padding: '32px 16px', fontFamily: "'Figtree', sans-serif" }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg,#f4f4f6)', padding: '32px 16px', fontFamily: "'Figtree', sans-serif" }}>
       <div style={{ maxWidth: 560, margin: '0 auto' }}>
 
         {/* Header */}
@@ -172,7 +172,7 @@ export default function BookingForm() {
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>
             {lockedSite ? `Book ${lockedSite.name}` : 'Request a Booking'}
           </div>
-          <div style={{ fontSize: 13, color: '#71717a', marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 4 }}>
             {lockedSite ? lockedSite.address : 'Fill in the details below and we\'ll be in touch to confirm'}
           </div>
           {lockedSite && (
@@ -192,7 +192,7 @@ export default function BookingForm() {
           {/* Venue selector — only shown when no slug */}
           {!lockedSite && (
             <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#71717a', marginBottom: 10 }}>Venue</div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Venue</div>
               <div className="form-row">
                 <label className="form-label">Select a venue</label>
                 <select className="form-input" required value={form.site_id} onChange={e => set('site_id', e.target.value)}>
@@ -209,7 +209,7 @@ export default function BookingForm() {
                   {activeSite.available_from && activeSite.available_until && (
                     <span className="badge badge-neutral">{activeSite.available_from}–{activeSite.available_until}</span>
                   )}
-                  <span style={{ fontSize: 11, color: '#71717a' }}>{activeSite.address}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted,#71717a)' }}>{activeSite.address}</span>
                 </div>
               )}
             </div>
@@ -217,7 +217,7 @@ export default function BookingForm() {
 
           {/* Contact */}
           <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#71717a', marginBottom: 10 }}>Your details</div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Your details</div>
             <div className="form-grid-2">
               <div>
                 <label className="form-label">Full name</label>
@@ -236,7 +236,7 @@ export default function BookingForm() {
 
           {/* Event */}
           <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#71717a', marginBottom: 10 }}>Event details</div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Event details</div>
             <div className="form-row">
               <label className="form-label">Event / purpose</label>
               <input className="form-input" required placeholder="e.g. Birthday party, Dance class…" value={form.event} onChange={e => set('event', e.target.value)} />
@@ -285,7 +285,7 @@ export default function BookingForm() {
               </div>
             </div>
             <div className="form-row">
-              <label className="form-label">Additional notes <span style={{ fontWeight: 400, color: '#71717a' }}>(optional)</span></label>
+              <label className="form-label">Additional notes <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(optional)</span></label>
               <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Any special requirements…" value={form.notes} onChange={e => set('notes', e.target.value)} />
             </div>
           </div>
@@ -309,7 +309,7 @@ export default function BookingForm() {
           >
             {submitting ? 'Submitting…' : 'Submit Booking Request'}
           </button>
-          <div style={{ textAlign: 'center', fontSize: 11, color: '#71717a', marginTop: 10 }}>
+          <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted,#71717a)', marginTop: 10 }}>
             Your request will be reviewed and you'll receive a confirmation email
           </div>
         </form>

@@ -79,12 +79,12 @@ export default function Users() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ display: 'flex', gap: 2, background: '#f4f4f6', padding: 3, borderRadius: 8 }}>
+        <div style={{ display: 'flex', gap: 2, background: 'var(--surface2)', padding: 3, borderRadius: 8 }}>
           {['all', 'admin', 'manager', 'regular'].map(t => (
             <button
               key={t}
               className="btn btn-sm"
-              style={{ background: tab === t ? '#fff' : 'transparent', color: tab === t ? 'var(--text)' : 'var(--text-muted)', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', border: 'none' }}
+              style={{ background: tab === t ? 'var(--surface)' : 'transparent', color: tab === t ? 'var(--text)' : 'var(--text-muted)', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', border: 'none' }}
               onClick={() => setTab(t)}
             >
               {t.charAt(0).toUpperCase() + t.slice(1)}
