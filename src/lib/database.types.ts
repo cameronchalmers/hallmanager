@@ -16,6 +16,9 @@ export interface Database {
           available_from: string | null
           available_until: string | null
           availability: Json | null
+          description: string | null
+          amenities: string[] | null
+          photos: string[] | null
         }
         Insert: {
           id?: string
@@ -29,6 +32,9 @@ export interface Database {
           available_from?: string | null
           available_until?: string | null
           availability?: Json | null
+          description?: string | null
+          amenities?: string[] | null
+          photos?: string[] | null
         }
         Update: {
           id?: string
@@ -42,6 +48,9 @@ export interface Database {
           available_from?: string | null
           available_until?: string | null
           availability?: Json | null
+          description?: string | null
+          amenities?: string[] | null
+          photos?: string[] | null
         }
         Relationships: []
       }

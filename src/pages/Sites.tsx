@@ -5,6 +5,7 @@ import { DEFAULT_AVAILABILITY, type WeekAvailability } from '../lib/database.typ
 import Modal from '../components/ui/Modal'
 
 const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿']
+const AMENITY_OPTIONS = ['WiFi', 'Parking', 'Kitchen', 'Toilets', 'Disabled Access', 'PA System', 'Stage', 'Projector & Screen', 'Tables & Chairs', 'Outdoor Space', 'Bar', 'Air Conditioning', 'Changing Rooms', 'CCTV']
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 
 function toSlug(name: string) {
@@ -35,6 +36,10 @@ export default function Sites() {
   const [editing, setEditing] = useState<Site | null>(null)
   const [form, setForm] = useState(DEFAULT_FORM)
   const [availability, setAvailability] = useState<WeekAvailability>({ ...DEFAULT_AVAILABILITY })
+  const [amenities, setAmenities] = useState<string[]>([])
+  const [description, setDescription] = useState('')
+  const [photos, setPhotos] = useState<string[]>([])
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -54,6 +59,9 @@ export default function Sites() {
     setEditing(null)
     setForm(DEFAULT_FORM)
     setAvailability({ ...DEFAULT_AVAILABILITY })
+    setAmenities([])
+    setDescription('')
+    setPhotos([])
     setConfirmDelete(false)
     setSaveError('')
     setShowModal(true)
@@ -71,6 +79,9 @@ export default function Sites() {
       min_hours: site.min_hours ?? 1,
     })
     setAvailability(getAvailability(site))
+    setAmenities(site.amenities ?? [])
+    setDescription(site.description ?? '')
+    setPhotos(site.photos ?? [])
     setConfirmDelete(false)
     setSaveError('')
     setShowModal(true)
@@ -80,7 +91,7 @@ export default function Sites() {
     setSaving(true)
     setSaveError('')
     // Cast WeekAvailability to Json for the Supabase client
-    const payload = { ...form, availability: availability as unknown as import('../lib/database.types').Json }
+    const payload = { ...form, availability: availability as unknown as import('../lib/database.types').Json, amenities, description: description || null, photos }
     if (editing) {
       const { error } = await supabase.from('sites').update(payload).eq('id', editing.id)
       if (error) { setSaveError(error.message); setSaving(false); return }
@@ -108,6 +119,27 @@ export default function Sites() {
       setConfirmDelete(false)
     }
     setSaving(false)
+  }
+
+  function toggleAmenity(a: string) {
+    setAmenities(prev => prev.includes(a) ? prev.filter(x => x !== a) : [...prev, a])
+  }
+
+  async function uploadPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !editing) return
+    setUploadingPhoto(true)
+    const path = `${editing.id}/${Date.now()}-${file.name.replace(/\s+/g, '-')}`
+    const { error } = await supabase.storage.from('venue-photos').upload(path, file)
+    if (error) { setSaveError(`Photo upload failed: ${error.message}`); setUploadingPhoto(false); return }
+    const { data: { publicUrl } } = supabase.storage.from('venue-photos').getPublicUrl(path)
+    setPhotos(prev => [...prev, publicUrl])
+    setUploadingPhoto(false)
+    e.target.value = ''
+  }
+
+  function removePhoto(url: string) {
+    setPhotos(prev => prev.filter(p => p !== url))
   }
 
   function setDay(day: typeof DAYS[number], key: keyof WeekAvailability[typeof DAYS[number]], value: string | boolean) {
@@ -270,6 +302,42 @@ export default function Sites() {
             onChange={e => setForm(f => ({ ...f, min_hours: Number(e.target.value) }))}
             style={{ maxWidth: 120 }} />
         </div>
+
+        {/* Description */}
+        <div className="form-row">
+          <label className="form-label">Description <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(shown on booking page)</span></label>
+          <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Describe the venue…" value={description} onChange={e => setDescription(e.target.value)} />
+        </div>
+
+        {/* Amenities */}
+        <div className="sec-label" style={{ marginBottom: 8 }}>Amenities</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+          {AMENITY_OPTIONS.map(a => (
+            <button key={a} onClick={() => toggleAmenity(a)} style={{ padding: '5px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${amenities.includes(a) ? 'var(--accent)' : 'var(--border)'}`, background: amenities.includes(a) ? 'var(--accent-light)' : 'var(--surface2)', color: amenities.includes(a) ? 'var(--accent-text)' : 'var(--text-muted)' }}>
+              {a}
+            </button>
+          ))}
+        </div>
+
+        {/* Photos */}
+        <div className="sec-label" style={{ marginBottom: 8 }}>Photos</div>
+        {!editing && <div className="notice notice-accent" style={{ marginBottom: 12, fontSize: 12 }}>Save the site first, then you can upload photos.</div>}
+        {editing && (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+              {photos.map(url => (
+                <div key={url} style={{ position: 'relative', width: 90, height: 70 }}>
+                  <img src={url} alt="" style={{ width: 90, height: 70, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                  <button onClick={() => removePhoto(url)} style={{ position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: '50%', background: '#000000aa', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+                </div>
+              ))}
+              <label style={{ width: 90, height: 70, borderRadius: 8, border: '2px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: uploadingPhoto ? 'wait' : 'pointer', color: 'var(--text-muted)', fontSize: 11, gap: 3 }}>
+                {uploadingPhoto ? '⏳' : <>＋<span>Add photo</span></>}
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadPhoto} disabled={uploadingPhoto} />
+              </label>
+            </div>
+          </>
+        )}
 
         {/* Per-day availability */}
         <div className="sec-label" style={{ marginBottom: 8 }}>Availability by Day</div>

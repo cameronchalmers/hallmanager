@@ -202,15 +202,34 @@ export default function BookingForm() {
             {lockedSite ? lockedSite.address : 'Fill in the details below and we\'ll be in touch to confirm'}
           </div>
           {lockedSite && (
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
-              <span className="badge badge-accent">£{lockedSite.rate}/hr</span>
-              <span className="badge badge-neutral">£{lockedSite.deposit} deposit</span>
-              <span className="badge badge-neutral">Up to {lockedSite.capacity} guests</span>
-              {lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
-              {lockedSite.available_from && lockedSite.available_until && (
-                <span className="badge badge-neutral">{lockedSite.available_from}–{lockedSite.available_until}</span>
+            <>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+                <span className="badge badge-accent">£{lockedSite.rate}/hr</span>
+                <span className="badge badge-neutral">£{lockedSite.deposit} deposit</span>
+                <span className="badge badge-neutral">Up to {lockedSite.capacity} guests</span>
+                {lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
+                {lockedSite.available_from && lockedSite.available_until && (
+                  <span className="badge badge-neutral">{lockedSite.available_from}–{lockedSite.available_until}</span>
+                )}
+              </div>
+              {lockedSite.photos && lockedSite.photos.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: lockedSite.photos.length === 1 ? '1fr' : lockedSite.photos.length === 2 ? '1fr 1fr' : '2fr 1fr', gap: 6, marginTop: 16, borderRadius: 12, overflow: 'hidden', maxHeight: 240 }}>
+                  {lockedSite.photos.slice(0, 3).map((url, i) => (
+                    <img key={i} src={url} alt="" style={{ width: '100%', height: lockedSite.photos!.length === 1 ? 200 : 240, objectFit: 'cover', display: 'block', gridRow: i === 0 && lockedSite.photos!.length >= 3 ? 'span 2' : undefined }} />
+                  ))}
+                </div>
               )}
-            </div>
+              {lockedSite.description && (
+                <p style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 12, marginBottom: 0, lineHeight: 1.6 }}>{lockedSite.description}</p>
+              )}
+              {lockedSite.amenities && lockedSite.amenities.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 10 }}>
+                  {lockedSite.amenities.map(a => (
+                    <span key={a} style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: 'var(--surface2,#f4f4f6)', color: 'var(--text-muted,#71717a)', border: '1px solid var(--border,#e5e7eb)' }}>{a}</span>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
