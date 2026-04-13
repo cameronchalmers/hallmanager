@@ -13,11 +13,13 @@ function expandBooking(b: Booking, maxDate: string): Session[] {
   if (b.type !== 'recurring' || !b.recurrence || ['cancelled', 'denied'].includes(b.status)) {
     return [{ booking: b, date: b.date }]
   }
+  const cancelled = new Set(b.cancelled_sessions ?? [])
   const sessions: Session[] = []
   const cur = new Date(b.date + 'T12:00:00')
   const max = new Date(maxDate + 'T12:00:00')
   while (cur <= max) {
-    sessions.push({ booking: b, date: cur.toISOString().split('T')[0] })
+    const dateStr = cur.toISOString().split('T')[0]
+    if (!cancelled.has(dateStr)) sessions.push({ booking: b, date: dateStr })
     if (b.recurrence === 'Weekly') cur.setDate(cur.getDate() + 7)
     else if (b.recurrence === 'Fortnightly') cur.setDate(cur.getDate() + 14)
     else if (b.recurrence === 'Monthly') cur.setMonth(cur.getMonth() + 1)

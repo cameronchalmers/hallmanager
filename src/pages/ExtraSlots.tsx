@@ -26,7 +26,7 @@ export default function ExtraSlots() {
     setLoading(false)
   }
 
-  async function updateStatus(id: string, status: 'approved' | 'denied') {
+  async function updateStatus(id: string, status: 'approved' | 'denied' | 'cancelled') {
     await supabase.from('extra_slots').update({ status }).eq('id', id)
     setSlots(prev => prev.map(s => s.id === id ? { ...s, status } : s))
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status } : null)
@@ -34,7 +34,7 @@ export default function ExtraSlots() {
     if (status === 'denied') sendEmail('slot_denied', id)
   }
 
-  const FILTERS = ['all', 'pending', 'approved', 'denied']
+  const FILTERS = ['all', 'pending', 'approved', 'denied', 'cancelled']
   const filtered = filter === 'all' ? slots : slots.filter(s => s.status === filter)
 
   return (
@@ -89,6 +89,8 @@ export default function ExtraSlots() {
                     <button className="icon-btn icon-btn-approve" onClick={() => updateStatus(sl.id, 'approved')}>✓</button>
                     <button className="icon-btn icon-btn-deny" onClick={() => updateStatus(sl.id, 'denied')}>✗</button>
                   </>
+                ) : sl.status === 'approved' ? (
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px', color: '#dc2626' }} onClick={() => updateStatus(sl.id, 'cancelled')}>Cancel</button>
                 ) : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>}
               </div>
             </div>
@@ -107,6 +109,11 @@ export default function ExtraSlots() {
             <div style={{ display: 'flex', gap: 7, width: '100%' }}>
               <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { updateStatus(selected.id, 'denied'); setSelected(null) }}>✗ Deny</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { updateStatus(selected.id, 'approved'); setSelected(null) }}>✓ Approve & Notify</button>
+            </div>
+          ) : selected?.status === 'approved' ? (
+            <div style={{ display: 'flex', gap: 7, width: '100%' }}>
+              <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { updateStatus(selected.id, 'cancelled'); setSelected(null) }}>Cancel Slot</button>
+              <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setSelected(null)}>Close</button>
             </div>
           ) : (
             <button className="btn btn-ghost" onClick={() => setSelected(null)}>Close</button>

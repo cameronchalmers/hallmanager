@@ -8,6 +8,21 @@ import { format } from 'date-fns'
 
 type BookingWithSite = Booking & { sites?: Site }
 
+function expandRecurring(b: BookingWithSite): string[] {
+  if (b.type !== 'recurring' || !b.recurrence) return []
+  const dates: string[] = []
+  const cur = new Date(b.date + 'T12:00:00')
+  const max = new Date(); max.setFullYear(max.getFullYear() + 1)
+  while (cur <= max) {
+    dates.push(cur.toISOString().split('T')[0])
+    if (b.recurrence === 'Weekly') cur.setDate(cur.getDate() + 7)
+    else if (b.recurrence === 'Fortnightly') cur.setDate(cur.getDate() + 14)
+    else if (b.recurrence === 'Monthly') cur.setMonth(cur.getMonth() + 1)
+    else break
+  }
+  return dates
+}
+
 const DEFAULT_FORM = {
   site_id: '',
   name: '',
@@ -51,6 +66,8 @@ export default function Bookings() {
   const [copiedPayment, setCopiedPayment] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState(DEFAULT_FORM)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [checkedSessions, setCheckedSessions] = useState<Map<string, Set<string>>>(new Map())
 
   useEffect(() => { fetchBookings() }, [])
 
@@ -189,6 +206,53 @@ export default function Bookings() {
     if (selected?.id === bookingId) setSelected(prev => prev ? { ...prev, user_id: userId } : null)
   }
 
+  function toggleExpanded(id: string) {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleSessionCheck(bookingId: string, date: string) {
+    setCheckedSessions(prev => {
+      const next = new Map(prev)
+      const cur = new Set(next.get(bookingId) ?? [])
+      cur.has(date) ? cur.delete(date) : cur.add(date)
+      next.set(bookingId, cur)
+      return next
+    })
+  }
+
+  function toggleAllSessions(bookingId: string, dates: string[]) {
+    setCheckedSessions(prev => {
+      const next = new Map(prev)
+      const cur = next.get(bookingId) ?? new Set()
+      const activeDates = dates.filter(d => d)
+      const allChecked = activeDates.every(d => cur.has(d))
+      next.set(bookingId, allChecked ? new Set() : new Set(activeDates))
+      return next
+    })
+  }
+
+  async function cancelSessions(bookingId: string, dates: string[]) {
+    const booking = bookings.find(b => b.id === bookingId)
+    if (!booking) return
+    const existing = booking.cancelled_sessions ?? []
+    const updated = [...new Set([...existing, ...dates])]
+    await supabase.from('bookings').update({ cancelled_sessions: updated }).eq('id', bookingId)
+    setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, cancelled_sessions: updated } : b))
+    setCheckedSessions(prev => { const next = new Map(prev); next.delete(bookingId); return next })
+  }
+
+  async function uncancelSession(bookingId: string, date: string) {
+    const booking = bookings.find(b => b.id === bookingId)
+    if (!booking) return
+    const updated = (booking.cancelled_sessions ?? []).filter(d => d !== date)
+    await supabase.from('bookings').update({ cancelled_sessions: updated }).eq('id', bookingId)
+    setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, cancelled_sessions: updated } : b))
+  }
+
   async function createBooking() {
     const site = sites.find(s => s.id === form.site_id)
     if (!site) return
@@ -269,34 +333,125 @@ export default function Bookings() {
         )}
         {filtered.map(b => {
           const site = b.sites
+          const isExpanded = expandedIds.has(b.id)
+          const allDates = b.type === 'recurring' ? expandRecurring(b) : []
+          const cancelledSet = new Set(b.cancelled_sessions ?? [])
+          const checked = checkedSessions.get(b.id) ?? new Set<string>()
+          const today = new Date().toISOString().split('T')[0]
           return (
-            <div key={b.id} className="tbl-row cols-bookings" onClick={() => setSelected(b)}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{b.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
-                {b.user_id && (() => { const u = regularUsers.find(u => u.id === b.user_id); return u ? <div style={{ fontSize: 10, color: 'var(--accent-text)', fontWeight: 600, marginTop: 1 }}>🔗 {u.group_name ?? u.name}</div> : null })()}
+            <div key={b.id}>
+              <div className="tbl-row cols-bookings" onClick={() => setSelected(b)}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{b.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
+                  {b.user_id && (() => { const u = regularUsers.find(u => u.id === b.user_id); return u ? <div style={{ fontSize: 10, color: 'var(--accent-text)', fontWeight: 600, marginTop: 1 }}>🔗 {u.group_name ?? u.name}</div> : null })()}
+                </div>
+                <div>
+                  <div>{format(new Date(b.date), 'dd MMM yyyy')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name ?? '—'}</div>
+                <div>
+                  <span className={`badge ${b.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>
+                    {b.type === 'recurring' ? `↻ ${b.recurrence ?? ''}` : 'One-off'}
+                  </span>
+                </div>
+                <div><Badge status={b.status} /></div>
+                <div className="approve-deny" onClick={e => e.stopPropagation()}>
+                  {b.type === 'recurring' && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11, padding: '2px 8px' }}
+                      onClick={() => toggleExpanded(b.id)}
+                    >
+                      {isExpanded ? '▲ Hide' : '▼ Sessions'}
+                    </button>
+                  )}
+                  {b.status === 'pending' ? (
+                    <>
+                      <button className="icon-btn icon-btn-approve" onClick={() => approveBooking(b.id)}>✓</button>
+                      <button className="icon-btn icon-btn-deny" onClick={() => updateStatus(b.id, 'denied')}>✗</button>
+                    </>
+                  ) : b.status === 'confirmed' && b.type !== 'recurring' ? (
+                    <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => { setSelected(b); }}>View</button>
+                  ) : null}
+                </div>
               </div>
-              <div>
-                <div>{format(new Date(b.date), 'dd MMM yyyy')}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name ?? '—'}</div>
-              <div>
-                <span className={`badge ${b.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>
-                  {b.type === 'recurring' ? `↻ ${b.recurrence ?? ''}` : 'One-off'}
-                </span>
-              </div>
-              <div><Badge status={b.status} /></div>
-              <div className="approve-deny" onClick={e => e.stopPropagation()}>
-                {b.status === 'pending' ? (
-                  <>
-                    <button className="icon-btn icon-btn-approve" onClick={() => approveBooking(b.id)}>✓</button>
-                    <button className="icon-btn icon-btn-deny" onClick={() => updateStatus(b.id, 'denied')}>✗</button>
-                  </>
-                ) : b.status === 'confirmed' ? (
-                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => { setSelected(b); }}>View</button>
-                ) : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>}
-              </div>
+
+              {/* Inline session expansion */}
+              {isExpanded && b.type === 'recurring' && (
+                <div style={{ background: 'var(--surface2)', borderBottom: '1px solid var(--border)' }}>
+                  {/* Batch action bar */}
+                  <div style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={allDates.filter(d => !cancelledSet.has(d) && d >= today).length > 0 && allDates.filter(d => !cancelledSet.has(d) && d >= today).every(d => checked.has(d))}
+                        onChange={() => toggleAllSessions(b.id, allDates.filter(d => !cancelledSet.has(d) && d >= today))}
+                      />
+                      Select all upcoming
+                    </label>
+                    {checked.size > 0 && (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: '#ef4444', color: '#fff', border: 'none', marginLeft: 'auto' }}
+                        onClick={() => { if (window.confirm(`Cancel ${checked.size} session${checked.size > 1 ? 's' : ''}?`)) cancelSessions(b.id, [...checked]) }}
+                      >
+                        Cancel {checked.size} session{checked.size > 1 ? 's' : ''}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Session list */}
+                  <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                    {allDates.map(date => {
+                      const isCancelled = cancelledSet.has(date)
+                      const isPast = date < today
+                      return (
+                        <div key={date} style={{
+                          display: 'grid', gridTemplateColumns: '28px 1fr 80px 80px',
+                          gap: 10, alignItems: 'center', padding: '7px 16px',
+                          borderBottom: '1px solid var(--border)',
+                          opacity: isCancelled ? 0.45 : 1,
+                        }}>
+                          <input
+                            type="checkbox"
+                            disabled={isCancelled || isPast}
+                            checked={checked.has(date)}
+                            onChange={() => toggleSessionCheck(b.id, date)}
+                          />
+                          <div>
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>{format(new Date(date + 'T12:00:00'), 'dd MMM yyyy')}</span>
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>{b.start_time}–{b.end_time}</span>
+                          </div>
+                          <div>
+                            {isCancelled
+                              ? <span className="badge badge-denied">Cancelled</span>
+                              : isPast
+                              ? <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Past</span>
+                              : <span className="badge badge-approved">Upcoming</span>}
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            {isCancelled ? (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ fontSize: 11, padding: '2px 8px' }}
+                                onClick={() => uncancelSession(b.id, date)}
+                              >Restore</button>
+                            ) : !isPast ? (
+                              <button
+                                className="btn btn-sm"
+                                style={{ fontSize: 11, padding: '2px 8px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}
+                                onClick={() => cancelSessions(b.id, [date])}
+                              >Cancel</button>
+                            ) : null}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
