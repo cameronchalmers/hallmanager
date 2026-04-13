@@ -27,6 +27,12 @@ const DEFAULT_FORM = {
   notes: '',
 }
 
+const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
+  const h = Math.floor(i / 4).toString().padStart(2, '0')
+  const m = ((i % 4) * 15).toString().padStart(2, '0')
+  return `${h}:${m}`
+})
+
 function toSlug(name: string) {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 }
@@ -297,11 +303,17 @@ export default function BookingForm() {
             <div className="form-grid-2">
               <div>
                 <label className="form-label">Start time</label>
-                <input className="form-input" type="time" required value={form.start_time} onChange={e => set('start_time', e.target.value)} />
+                <select className="form-input" required value={form.start_time} onChange={e => set('start_time', e.target.value)}>
+                  <option value="">Select…</option>
+                  {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
               </div>
               <div>
                 <label className="form-label">End time</label>
-                <input className="form-input" type="time" required value={form.end_time} onChange={e => set('end_time', e.target.value)} />
+                <select className="form-input" required value={form.end_time} onChange={e => set('end_time', e.target.value)}>
+                  <option value="">Select…</option>
+                  {TIME_SLOTS.filter(t => !form.start_time || t > form.start_time).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
               </div>
             </div>
             <div className="form-row">
