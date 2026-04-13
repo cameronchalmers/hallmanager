@@ -92,7 +92,7 @@ export default function Portal() {
       <div className="portal-hero">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
           <div>
-            <div className="ph-greeting">Welcome back, {profile?.name?.split(' ')[0] ?? 'there'} 👋</div>
+            <div className="ph-greeting">Welcome back, {profile?.group_name ?? profile?.name?.split(' ')[0] ?? 'there'} 👋</div>
             <div className="ph-sub">Your booker portal — manage your sessions and requests</div>
           </div>
           <button

@@ -53,6 +53,13 @@ export default function Users() {
     setSelUser(u => u?.id === userId ? { ...u, site_ids } : u)
   }
 
+  async function saveGroupName(userId: string, group_name: string) {
+    const val = group_name.trim() || null
+    await supabase.from('users').update({ group_name: val }).eq('id', userId)
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, group_name: val } : u))
+    setSelUser(u => u ? { ...u, group_name: val } : null)
+  }
+
   async function saveCustomRate(userId: string, siteId: string, rate: number) {
     const user = users.find(u => u.id === userId)
     if (!user) return
@@ -137,6 +144,7 @@ export default function Users() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{u.name}</div>
+                {u.group_name && <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-text)' }}>{u.group_name}</div>}
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
               </div>
               <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -237,6 +245,19 @@ export default function Users() {
               <div className="notice notice-denied" style={{ marginBottom: 12 }}>
                 This will permanently delete <strong>{selUser.name}</strong> and remove their login access. Their bookings will remain.{' '}
                 <button style={{ background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', color: 'inherit', padding: 0, fontSize: 'inherit' }} onClick={() => setConfirmDelete(false)}>Cancel</button>
+              </div>
+            )}
+
+            {selUser.role === 'regular' && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', marginBottom: 6 }}>Group Name <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(shown in portal instead of personal name)</span></div>
+                <input
+                  className="form-input"
+                  defaultValue={selUser.group_name ?? ''}
+                  placeholder="e.g. Westside Yoga, Newcastle FC U12s…"
+                  style={{ maxWidth: 320 }}
+                  onBlur={e => saveGroupName(selUser.id, e.target.value)}
+                />
               </div>
             )}
 

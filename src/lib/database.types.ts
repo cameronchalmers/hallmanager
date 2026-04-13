@@ -137,6 +137,7 @@ export interface Database {
           color: string | null
           qf_client_id: string | null
           custom_rates: Json | null
+          group_name: string | null
           created_at: string
         }
         Insert: {
@@ -149,6 +150,7 @@ export interface Database {
           color?: string | null
           qf_client_id?: string | null
           custom_rates?: Json | null
+          group_name?: string | null
           created_at?: string
         }
         Update: {
@@ -161,6 +163,7 @@ export interface Database {
           color?: string | null
           qf_client_id?: string | null
           custom_rates?: Json | null
+          group_name?: string | null
           created_at?: string
         }
         Relationships: []
@@ -301,5 +304,6 @@ export interface AppUser {
   color: string | null
   qf_client_id: string | null
   custom_rates: Record<string, number> | null
+  group_name: string | null
   created_at: string
 }
