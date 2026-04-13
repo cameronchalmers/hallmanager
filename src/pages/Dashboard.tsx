@@ -34,6 +34,17 @@ export default function Dashboard() {
   }
 
   async function approveBooking(id: string) {
+    // Create Stripe payment link first
+    try {
+      const { data, error } = await supabase.functions.invoke('stripe-action', {
+        body: { action: 'create_payment', booking_id: id },
+      })
+      if (error) console.error('Stripe payment creation failed:', error)
+      else if (data?.url) {
+        setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_url: data.url } : b))
+      }
+    } catch (e) { console.error('Stripe action error:', e) }
+
     await supabase.from('bookings').update({ status: 'confirmed' }).eq('id', id)
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed' } : b))
     sendEmail('booking_approved', id)
