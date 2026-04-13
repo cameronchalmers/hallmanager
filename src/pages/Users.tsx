@@ -236,13 +236,13 @@ export default function Users() {
                     : 'Reset Password'}
                 </button>
                 {!confirmDelete
-                  ? <button className="btn btn-sm" style={{ color: 'var(--denied)', borderColor: 'var(--denied)', background: 'transparent' }} onClick={() => setConfirmDelete(true)}>Delete User</button>
-                  : <button className="btn btn-sm" style={{ background: 'var(--denied)', color: '#fff', border: 'none' }} disabled={deleting} onClick={() => deleteUser(selUser.id)}>{deleting ? 'Deleting…' : 'Confirm Delete'}</button>
+                  ? <button className="btn btn-sm" style={{ color: '#ef4444', border: '1px solid #ef4444', background: 'transparent' }} onClick={() => setConfirmDelete(true)}>Delete User</button>
+                  : <button className="btn btn-sm" style={{ background: '#ef4444', color: '#fff', border: 'none' }} disabled={deleting} onClick={() => deleteUser(selUser.id)}>{deleting ? 'Deleting…' : 'Confirm Delete'}</button>
                 }
               </div>
             </div>
             {confirmDelete && (
-              <div className="notice notice-denied" style={{ marginBottom: 12 }}>
+              <div className="notice notice-warn" style={{ marginBottom: 12 }}>
                 This will permanently delete <strong>{selUser.name}</strong> and remove their login access. Their bookings will remain.{' '}
                 <button style={{ background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', color: 'inherit', padding: 0, fontSize: 'inherit' }} onClick={() => setConfirmDelete(false)}>Cancel</button>
               </div>
