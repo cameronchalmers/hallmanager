@@ -21,7 +21,9 @@ function json(data: unknown, status = 200) {
 }
 
 function submissionNum() {
-  return Math.random().toString(36).substring(2, 14).toUpperCase()
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes).map(b => b.toString(36)).join('').toUpperCase().substring(0, 12)
 }
 
 function buildHeader() {
@@ -289,6 +291,7 @@ serve(async (req) => {
 
     return json({ ok: false, error: `Unknown action: ${action}` })
   } catch (err) {
-    return json({ ok: false, error: String(err) })
+    console.error('quickfile error:', err)
+    return json({ ok: false, error: 'Internal server error' }, 500)
   }
 })

@@ -50,9 +50,18 @@ Deno.serve(async (req) => {
     if (!user_id || !updates) return json({ ok: false, error: 'user_id and updates required' })
 
     // Prevent escalation: only admins can set role to admin/manager
-    if (updates.role && !['regular'].includes(updates.role)) {
-      const { data: caller } = await auth.serviceClient.from('users').select('role').eq('id', user_id).single()
-      // Only allow if caller themselves is admin (not just manager)
+    if (updates.role && updates.role !== 'regular') {
+      const authHeader = req.headers.get('Authorization')!
+      const userClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_ANON_KEY')!,
+        { global: { headers: { Authorization: authHeader } } }
+      )
+      const { data: { user } } = await userClient.auth.getUser()
+      const { data: caller } = await auth.serviceClient.from('users').select('role').eq('id', user!.id).single()
+      if (!caller || caller.role !== 'admin') {
+        return json({ ok: false, error: 'Only admins can change roles' }, 403)
+      }
     }
 
     const { error } = await auth.serviceClient.from('users').update(updates).eq('id', user_id)
@@ -60,6 +69,7 @@ Deno.serve(async (req) => {
 
     return json({ ok: true })
   } catch (e) {
-    return json({ ok: false, error: String(e) })
+    console.error('update-user error:', e)
+    return json({ ok: false, error: 'Internal server error' }, 500)
   }
 })

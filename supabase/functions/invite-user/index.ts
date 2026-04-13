@@ -50,7 +50,7 @@ function inviteEmail(name: string, inviteUrl: string): string {
 
 async function requireAdmin(req: Request) {
   const authHeader = req.headers.get('Authorization')
-  if (!authHeader) return { ok: false as const }
+  if (!authHeader) return { ok: false as const, response: new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
 
   const userClient = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -58,14 +58,14 @@ async function requireAdmin(req: Request) {
     { global: { headers: { Authorization: authHeader } } }
   )
   const { data: { user }, error } = await userClient.auth.getUser()
-  if (error || !user) return { ok: false as const }
+  if (error || !user) return { ok: false as const, response: new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
 
   const serviceClient = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
   const { data: profile } = await serviceClient.from('users').select('role').eq('id', user.id).single()
-  if (!profile || !['admin', 'manager'].includes(profile.role)) return { ok: false as const }
+  if (!profile || !['admin', 'manager'].includes(profile.role)) return { ok: false as const, response: new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
 
   return { ok: true as const }
 }
@@ -77,12 +77,7 @@ serve(async (req) => {
 
   try {
     const auth = await requireAdmin(req)
-    if (!auth.ok) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    if (!auth.ok) return auth.response
 
     const { email, name, role } = await req.json()
 
@@ -168,7 +163,8 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
+    console.error('invite-user error:', err)
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

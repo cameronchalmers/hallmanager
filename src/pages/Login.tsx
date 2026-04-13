@@ -30,7 +30,7 @@ export default function Login() {
   async function handleSetPassword(e: React.FormEvent) {
     e.preventDefault()
     if (password !== confirmPassword) { setError('Passwords do not match'); return }
-    if (password.length < 8) { setError('Password must be at least 8 characters'); return }
+    if (password.length < 12) { setError('Password must be at least 12 characters'); return }
     setLoading(true)
     setError('')
     const { error } = await supabase.auth.updateUser({ password })
@@ -83,7 +83,7 @@ export default function Login() {
                   className="form-input"
                   type="password"
                   required
-                  placeholder="At least 8 characters"
+                  placeholder="At least 12 characters"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                 />

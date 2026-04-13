@@ -195,11 +195,18 @@ create policy "users: read own row"
   to authenticated
   using (id = auth.uid() or public.is_admin_or_manager());
 
+-- Regular users can update their own non-sensitive fields; admins/managers can update anyone.
+-- Role changes are blocked at the row level for non-admins — route through the edge function instead.
 create policy "users: update own row"
   on public.users for update
   to authenticated
   using (id = auth.uid() or public.is_admin_or_manager())
-  with check (id = auth.uid() or public.is_admin_or_manager());
+  with check (
+    -- Admins/managers can update any field on any row
+    public.is_admin_or_manager()
+    -- Regular users can only update their own row, and cannot change their role
+    or (id = auth.uid() and role = (select role from public.users where id = auth.uid()))
+  );
 
 create policy "users: admin insert"
   on public.users for insert
@@ -224,11 +231,16 @@ create policy "bookings: insert own or admin"
   to authenticated
   with check (user_id = auth.uid() or public.is_admin_or_manager());
 
--- Public booking form submits as anon
+-- Public booking form submits as anon — restrict to safe defaults only
 create policy "bookings: anon insert"
   on public.bookings for insert
   to anon
-  with check (true);
+  with check (
+    status = 'pending'
+    and stripe_payment_status is null
+    and stripe_session_id is null
+    and user_id is null
+  );
 
 create policy "bookings: update admin/manager only"
   on public.bookings for update

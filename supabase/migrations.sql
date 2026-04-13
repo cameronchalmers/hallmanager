@@ -73,6 +73,34 @@ create trigger bookings_approved_at
 --   $$
 -- );
 
+-- ── RLS: tighten users update policy (block self-role-escalation) ────────────
+do $$ begin
+  -- Drop old permissive policy and replace with role-locked version
+  drop policy if exists "users: update own row" on public.users;
+  create policy "users: update own row"
+    on public.users for update
+    to authenticated
+    using (id = auth.uid() or public.is_admin_or_manager())
+    with check (
+      public.is_admin_or_manager()
+      or (id = auth.uid() and role = (select role from public.users where id = auth.uid()))
+    );
+end $$;
+
+-- ── RLS: tighten anon insert on bookings (prevent field injection) ────────────
+do $$ begin
+  drop policy if exists "bookings: anon insert" on public.bookings;
+  create policy "bookings: anon insert"
+    on public.bookings for insert
+    to anon
+    with check (
+      status = 'pending'
+      and stripe_payment_status is null
+      and stripe_session_id is null
+      and user_id is null
+    );
+end $$;
+
 -- ── RLS: anon read on sites (public booking form) ────────────────────────────
 do $$ begin
   if not exists (

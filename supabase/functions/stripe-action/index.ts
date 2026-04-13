@@ -88,6 +88,11 @@ serve(async (req) => {
     if (action === 'refund_deposit') {
       const { data: booking } = await supabase.from('bookings').select('*').eq('id', booking_id).single()
       if (!booking?.stripe_session_id) throw new Error('No Stripe session found for this booking')
+      if (booking.stripe_payment_status === 'deposit_refunded') {
+        return new Response(JSON.stringify({ error: 'Deposit already refunded' }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
 
       const session = await stripe.checkout.sessions.retrieve(booking.stripe_session_id)
       const paymentIntentId = session.payment_intent as string
@@ -109,7 +114,7 @@ serve(async (req) => {
     throw new Error(`Unknown action: ${action}`)
   } catch (err) {
     console.error('stripe-action error:', err)
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
