@@ -10,6 +10,20 @@ function getHashType() {
   return null
 }
 
+function passwordStrength(pw: string): { score: number; label: string; color: string } {
+  if (!pw) return { score: 0, label: '', color: '#e5e7eb' }
+  let score = 0
+  if (pw.length >= 8) score++
+  if (pw.length >= 12) score++
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++
+  if (/[0-9]/.test(pw)) score++
+  if (/[^A-Za-z0-9]/.test(pw)) score++
+  if (score <= 1) return { score, label: 'Weak', color: '#ef4444' }
+  if (score === 2) return { score, label: 'Fair', color: '#f59e0b' }
+  if (score === 3) return { score, label: 'Good', color: '#3b82f6' }
+  return { score, label: 'Strong', color: '#10b981' }
+}
+
 export default function Login() {
   const { user, signIn } = useAuth()
   const navigate = useNavigate()
@@ -87,6 +101,23 @@ export default function Login() {
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                 />
+                {password && (() => {
+                  const s = passwordStrength(password)
+                  return (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                        {[1, 2, 3, 4].map(i => (
+                          <div key={i} style={{
+                            flex: 1, height: 4, borderRadius: 2,
+                            background: s.score >= i ? s.color : '#e5e7eb',
+                            transition: 'background 0.2s',
+                          }} />
+                        ))}
+                      </div>
+                      <div style={{ fontSize: 11, color: s.color, fontWeight: 600 }}>{s.label}</div>
+                    </div>
+                  )
+                })()}
               </div>
               <div className="form-row">
                 <label className="form-label">Confirm password</label>

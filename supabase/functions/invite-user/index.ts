@@ -11,6 +11,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function resetEmail(name: string, resetUrl: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body style="font-family:'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f9fc;margin:0;padding:0;">
+  <div style="max-width:600px;margin:32px auto;padding:0 16px;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="display:inline-flex;align-items:center;gap:10px;">
+        <div style="width:36px;height:36px;background:${ACCENT};border-radius:10px;display:inline-flex;align-items:center;justify-content:center;">
+          <span style="color:white;font-weight:700;font-size:18px;line-height:1;">H</span>
+        </div>
+        <span style="font-size:20px;font-weight:700;color:#111827;letter-spacing:-0.3px;">HallManager</span>
+      </div>
+    </div>
+    <div style="background:#ffffff;border-radius:16px;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,0.06);overflow:hidden;">
+      <div style="padding:32px 32px 0;border-bottom:3px solid ${ACCENT};">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:${ACCENT};letter-spacing:0.5px;text-transform:uppercase;">Password Reset</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Reset your password</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${name}, click the button below to choose a new password for your HallManager account.</p>
+      </div>
+      <div style="padding:24px 32px;text-align:center;">
+        <a href="${resetUrl}" style="display:inline-block;background:${ACCENT};color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">Reset Password</a>
+        <p style="margin:16px 0 0;font-size:12px;color:#9ca3af;">This link expires in 24 hours. If you didn't request a password reset, you can ignore this email.</p>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;">
+      <p style="margin:0;">HallManager · <a href="${SITE_URL}" style="color:#9ca3af;">${SITE_URL.replace('https://', '')}</a></p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 function inviteEmail(name: string, inviteUrl: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -79,7 +116,7 @@ serve(async (req) => {
     const auth = await requireAdmin(req)
     if (!auth.ok) return auth.response
 
-    const { email, name, role } = await req.json()
+    const { email, name, role, reset } = await req.json()
 
     if (!email) {
       return new Response(JSON.stringify({ error: 'Email is required' }), {
@@ -92,6 +129,37 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
+
+    // Password reset flow — always generate a recovery link
+    if (reset) {
+      const { data: recoveryData, error: recoveryError } = await supabase.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${SITE_URL}/login` },
+      })
+      if (recoveryError || !recoveryData) {
+        return new Response(JSON.stringify({ error: recoveryError?.message ?? 'Failed to generate link' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const resetUrl = recoveryData.properties.action_link
+      const displayName = name ? name.split(' ')[0] : 'there'
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: FROM,
+          to: email,
+          subject: 'Reset your HallManager password',
+          html: resetEmail(displayName, resetUrl),
+        }),
+      })
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     // Try invite link first; fall back to recovery link if user already exists in auth
     let linkData, isNewUser = true

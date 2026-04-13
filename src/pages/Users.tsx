@@ -119,10 +119,10 @@ export default function Users() {
     setInviteStatus(s => ({ ...s, [userId]: error ? 'error' : 'sent' }))
   }
 
-  async function sendPasswordReset(email: string) {
+  async function sendPasswordReset(email: string, name: string) {
     setResetStatus('sending')
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/login`,
+    const { error } = await supabase.functions.invoke('invite-user', {
+      body: { email, name, reset: true },
     })
     setResetStatus(error ? 'error' : 'sent')
   }
@@ -268,7 +268,7 @@ export default function Users() {
                 <button
                   className="btn btn-ghost btn-sm"
                   disabled={resetStatus === 'sending'}
-                  onClick={() => sendPasswordReset(selUser.email)}
+                  onClick={() => sendPasswordReset(selUser.email, selUser.name)}
                 >
                   {resetStatus === 'sending' ? 'Sending…'
                     : resetStatus === 'sent' ? '✓ Reset sent'
