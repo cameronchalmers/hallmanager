@@ -42,6 +42,17 @@ export default function Users() {
     setLoading(false)
   }
 
+  async function toggleSite(userId: string, siteId: string) {
+    const user = users.find(u => u.id === userId)
+    if (!user) return
+    const site_ids = user.site_ids?.includes(siteId)
+      ? user.site_ids.filter(id => id !== siteId)
+      : [...(user.site_ids ?? []), siteId]
+    await supabase.from('users').update({ site_ids }).eq('id', userId)
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, site_ids } : u))
+    setSelUser(u => u?.id === userId ? { ...u, site_ids } : u)
+  }
+
   async function saveCustomRate(userId: string, siteId: string, rate: number) {
     const user = users.find(u => u.id === userId)
     if (!user) return
@@ -208,13 +219,20 @@ export default function Users() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-              {sites.filter(s => selUser.site_ids?.includes(s.id)).map(s => (
-                <span key={s.id} className="badge badge-accent">{s.emoji} {s.name}</span>
-              ))}
-              {(!selUser.site_ids || selUser.site_ids.length === 0) && (
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No sites assigned</span>
-              )}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', marginBottom: 6 }}>Sites</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {sites.map(s => {
+                  const assigned = selUser.site_ids?.includes(s.id)
+                  return (
+                    <button key={s.id} onClick={() => toggleSite(selUser.id, s.id)}
+                      style={{ padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${assigned ? 'var(--accent)' : 'var(--border)'}`, background: assigned ? 'var(--accent-light)' : 'var(--surface2)', color: assigned ? 'var(--accent-text)' : 'var(--text-muted)' }}>
+                      {s.emoji} {s.name}
+                    </button>
+                  )
+                })}
+                {sites.length === 0 && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No sites exist yet</span>}
+              </div>
             </div>
 
             {selUser.role === 'regular' && (
