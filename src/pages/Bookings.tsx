@@ -8,21 +8,49 @@ import { format } from 'date-fns'
 
 type BookingWithSite = Booking & { sites?: Site }
 
+const DEFAULT_FORM = {
+  site_id: '',
+  name: '',
+  email: '',
+  phone: '',
+  event: '',
+  date: '',
+  start_time: '',
+  end_time: '',
+  type: 'oneoff',
+  recurrence: '',
+  notes: '',
+  status: 'confirmed',
+}
+
+function calcHours(start: string, end: string) {
+  if (!start || !end) return 0
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
+}
+
 export default function Bookings() {
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
+  const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<BookingWithSite | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [form, setForm] = useState(DEFAULT_FORM)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => { fetchBookings() }, [])
 
   async function fetchBookings() {
     setLoading(true)
-    const [bRes] = await Promise.all([
+    const [bRes, sRes] = await Promise.all([
       supabase.from('bookings').select('*, sites(*)').order('date', { ascending: false }),
+      supabase.from('sites').select('*'),
     ])
     setBookings((bRes.data ?? []) as BookingWithSite[])
+    setSites(sRes.data ?? [])
     setLoading(false)
   }
 
@@ -34,6 +62,34 @@ export default function Bookings() {
     if (status === 'denied') sendEmail('booking_denied', id)
   }
 
+  async function createBooking() {
+    const site = sites.find(s => s.id === form.site_id)
+    if (!site) return
+    setSaving(true)
+    const hours = calcHours(form.start_time, form.end_time)
+    await supabase.from('bookings').insert({
+      name: form.name,
+      email: form.email,
+      phone: form.phone,
+      event: form.event,
+      site_id: form.site_id,
+      date: form.date,
+      start_time: form.start_time,
+      end_time: form.end_time,
+      hours,
+      type: form.type,
+      recurrence: form.type === 'recurring' ? form.recurrence : null,
+      notes: form.notes || null,
+      status: form.status,
+      deposit: site.deposit,
+      total: hours * site.rate,
+    })
+    await fetchBookings()
+    setShowCreate(false)
+    setForm(DEFAULT_FORM)
+    setSaving(false)
+  }
+
   const filtered = bookings.filter(b => {
     const ms = filter === 'all' || b.status === filter ||
       (filter === 'recurring' && b.type === 'recurring') ||
@@ -43,6 +99,8 @@ export default function Bookings() {
   })
 
   const FILTERS = ['all', 'pending', 'confirmed', 'denied', 'recurring', 'oneoff']
+  const formSite = sites.find(s => s.id === form.site_id)
+  const formHours = calcHours(form.start_time, form.end_time)
 
   return (
     <div>
@@ -64,6 +122,9 @@ export default function Bookings() {
             {f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
+        <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>
+          + New Booking
+        </button>
       </div>
 
       <div className="card">
@@ -108,6 +169,110 @@ export default function Bookings() {
           )
         })}
       </div>
+
+      {/* Create booking modal */}
+      <Modal
+        open={showCreate}
+        onClose={() => { setShowCreate(false); setForm(DEFAULT_FORM) }}
+        title="New Booking"
+        sub="Create a booking on behalf of a customer"
+        wide
+        footer={
+          <>
+            <button className="btn btn-ghost" onClick={() => { setShowCreate(false); setForm(DEFAULT_FORM) }}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              onClick={createBooking}
+              disabled={saving || !form.site_id || !form.name || !form.email || !form.date || !form.start_time || !form.end_time}
+            >
+              {saving ? 'Creating…' : 'Create Booking'}
+            </button>
+          </>
+        }
+      >
+        <div className="form-grid-2">
+          <div>
+            <label className="form-label">Venue</label>
+            <select className="form-input" value={form.site_id} onChange={e => setForm(f => ({ ...f, site_id: e.target.value }))}>
+              <option value="">Select venue…</option>
+              {sites.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="form-label">Status</label>
+            <select className="form-input" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+              <option value="confirmed">Confirmed</option>
+              <option value="pending">Pending</option>
+            </select>
+          </div>
+        </div>
+        <div className="form-grid-2">
+          <div>
+            <label className="form-label">Contact name</label>
+            <input className="form-input" placeholder="Jane Smith" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          </div>
+          <div>
+            <label className="form-label">Email</label>
+            <input className="form-input" type="email" placeholder="jane@example.com" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+          </div>
+        </div>
+        <div className="form-grid-2">
+          <div>
+            <label className="form-label">Phone</label>
+            <input className="form-input" placeholder="07700 900000" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+          </div>
+          <div>
+            <label className="form-label">Event / purpose</label>
+            <input className="form-input" placeholder="Birthday party…" value={form.event} onChange={e => setForm(f => ({ ...f, event: e.target.value }))} />
+          </div>
+        </div>
+        <div className="form-grid-2">
+          <div>
+            <label className="form-label">Type</label>
+            <select className="form-input" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+              <option value="oneoff">One-off</option>
+              <option value="recurring">Recurring</option>
+            </select>
+          </div>
+          <div>
+            <label className="form-label">Date</label>
+            <input className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+          </div>
+        </div>
+        {form.type === 'recurring' && (
+          <div className="form-row">
+            <label className="form-label">Recurrence</label>
+            <select className="form-input" value={form.recurrence} onChange={e => setForm(f => ({ ...f, recurrence: e.target.value }))}>
+              <option value="">Select…</option>
+              <option value="Weekly">Weekly</option>
+              <option value="Fortnightly">Fortnightly</option>
+              <option value="Monthly">Monthly</option>
+            </select>
+          </div>
+        )}
+        <div className="form-grid-2">
+          <div>
+            <label className="form-label">Start time</label>
+            <input className="form-input" type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} />
+          </div>
+          <div>
+            <label className="form-label">End time</label>
+            <input className="form-input" type="time" value={form.end_time} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} />
+          </div>
+        </div>
+        <div className="form-row">
+          <label className="form-label">Notes <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+          <textarea className="form-input" rows={2} style={{ resize: 'none' }} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+        </div>
+        {formSite && formHours > 0 && (
+          <div className="price-bar" style={{ marginTop: 4 }}>
+            <div><div className="pi-label">Rate</div><div className="pi-value">£{formSite.rate}/hr</div></div>
+            <div><div className="pi-label">Hours</div><div className="pi-value">{formHours}</div></div>
+            <div><div className="pi-label">Deposit</div><div className="pi-value">£{formSite.deposit}</div></div>
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{formHours * formSite.rate}</div></div>
+          </div>
+        )}
+      </Modal>
 
       {/* Detail modal */}
       <Modal

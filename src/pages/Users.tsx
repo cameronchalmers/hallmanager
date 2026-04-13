@@ -24,6 +24,8 @@ export default function Users() {
   const [showAdd, setShowAdd] = useState(false)
   const [newUser, setNewUser] = useState({ name: '', email: '', role: 'manager' })
   const [saving, setSaving] = useState(false)
+  const [inviteStatus, setInviteStatus] = useState<Record<string, 'idle' | 'sending' | 'sent' | 'error'>>({})
+  const [resetStatus, setResetStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
 
   useEffect(() => { fetchData() }, [])
 
@@ -47,6 +49,29 @@ export default function Users() {
     await supabase.from('users').update({ custom_rates }).eq('id', userId)
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, custom_rates } : u))
     if (selUser?.id === userId) setSelUser(u => u ? { ...u, custom_rates } : null)
+  }
+
+  async function sendInvite(email: string, userId: string) {
+    setInviteStatus(s => ({ ...s, [userId]: 'sending' }))
+    const { error } = await supabase.functions.invoke('invite-user', { body: { email } })
+    setInviteStatus(s => ({ ...s, [userId]: error ? 'error' : 'sent' }))
+  }
+
+  async function sendPasswordReset(email: string) {
+    setResetStatus('sending')
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/login`,
+    })
+    setResetStatus(error ? 'error' : 'sent')
+  }
+
+  async function addUser() {
+    setSaving(true)
+    await supabase.from('users').insert({ ...newUser, site_ids: [], custom_rates: null })
+    await fetchData()
+    setShowAdd(false)
+    setNewUser({ name: '', email: '', role: 'manager' })
+    setSaving(false)
   }
 
   const filtered = tab === 'all' ? users : users.filter(u => u.role === tab)
@@ -74,7 +99,7 @@ export default function Users() {
         {filtered.map(u => {
           const ub = bookings.filter(b => b.user_id === u.id)
           return (
-            <div key={u.id} className="users-row" style={{ cursor: 'pointer' }} onClick={() => setSelUser(u)}>
+            <div key={u.id} className="users-row" style={{ cursor: 'pointer' }} onClick={() => { setSelUser(u); setResetStatus('idle') }}>
               <div style={{ width: 32, height: 32, background: (u.color ?? '#7c3aed') + '22', color: u.color ?? '#7c3aed', borderRadius: '50%', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 {u.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
               </div>
@@ -103,13 +128,7 @@ export default function Users() {
         footer={
           <>
             <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>Cancel</button>
-            <button className="btn btn-primary" onClick={async () => {
-              setSaving(true)
-              await supabase.from('users').insert({ ...newUser, site_ids: [], custom_rates: null })
-              await fetchData()
-              setShowAdd(false)
-              setSaving(false)
-            }} disabled={saving || !newUser.name || !newUser.email}>
+            <button className="btn btn-primary" onClick={addUser} disabled={saving || !newUser.name || !newUser.email}>
               {saving ? 'Adding…' : 'Add User'}
             </button>
           </>
@@ -128,7 +147,7 @@ export default function Users() {
           </select>
         </div>
         <div className="notice notice-accent" style={{ marginTop: 4 }}>
-          Regular Bookers can log in to view bookings, invoices, pricing, and request extra one-off slots.
+          After adding the user, open their profile and click <strong>Send Invite Email</strong> to let them set a password and access the portal.
         </div>
       </Modal>
 
@@ -146,12 +165,35 @@ export default function Users() {
               <div style={{ width: 42, height: 42, fontSize: 15, background: (selUser.color ?? '#7c3aed') + '22', color: selUser.color ?? '#7c3aed', borderRadius: '50%', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {selUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
               </div>
-              <div>
+              <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{selUser.name}</div>
                 <div style={{ marginTop: 3, display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                   <RoleBadge role={selUser.role} />
                   {selUser.qf_client_id && <span className="badge badge-qf">🔗 {selUser.qf_client_id}</span>}
                 </div>
+              </div>
+              {/* Auth actions */}
+              <div style={{ display: 'flex', gap: 7, flexShrink: 0, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={inviteStatus[selUser.id] === 'sending'}
+                  onClick={() => sendInvite(selUser.email, selUser.id)}
+                >
+                  {inviteStatus[selUser.id] === 'sending' ? 'Sending…'
+                    : inviteStatus[selUser.id] === 'sent' ? '✓ Invite sent'
+                    : inviteStatus[selUser.id] === 'error' ? '✗ Failed — retry'
+                    : '✉ Send Invite Email'}
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={resetStatus === 'sending'}
+                  onClick={() => sendPasswordReset(selUser.email)}
+                >
+                  {resetStatus === 'sending' ? 'Sending…'
+                    : resetStatus === 'sent' ? '✓ Reset sent'
+                    : resetStatus === 'error' ? '✗ Failed'
+                    : 'Reset Password'}
+                </button>
               </div>
             </div>
 

@@ -21,6 +21,7 @@ export default function Sites() {
   const [editing, setEditing] = useState<Site | null>(null)
   const [form, setForm] = useState(DEFAULT_FORM)
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => { fetchSites() }, [])
 
@@ -34,12 +35,14 @@ export default function Sites() {
   function openAdd() {
     setEditing(null)
     setForm(DEFAULT_FORM)
+    setConfirmDelete(false)
     setShowModal(true)
   }
 
   function openEdit(site: Site) {
     setEditing(site)
     setForm({ name: site.name, address: site.address, capacity: site.capacity, rate: site.rate, deposit: site.deposit, emoji: site.emoji })
+    setConfirmDelete(false)
     setShowModal(true)
   }
 
@@ -53,6 +56,16 @@ export default function Sites() {
       if (data) setSites(prev => [...prev, data])
     }
     setShowModal(false)
+    setSaving(false)
+  }
+
+  async function deleteSite() {
+    if (!editing) return
+    setSaving(true)
+    await supabase.from('sites').delete().eq('id', editing.id)
+    setSites(prev => prev.filter(s => s.id !== editing.id))
+    setShowModal(false)
+    setConfirmDelete(false)
     setSaving(false)
   }
 
@@ -108,12 +121,27 @@ export default function Sites() {
         onClose={() => setShowModal(false)}
         title={editing ? `Edit ${editing.name}` : 'Add New Site'}
         footer={
-          <>
-            <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-            <button className="btn btn-primary" onClick={saveSite} disabled={saving || !form.name}>
-              {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Site'}
-            </button>
-          </>
+          confirmDelete ? (
+            <div style={{ display: 'flex', gap: 7, width: '100%', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>Delete this site? This cannot be undone.</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
+              <button className="btn btn-danger btn-sm" onClick={deleteSite} disabled={saving}>
+                {saving ? 'Deleting…' : 'Yes, delete'}
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 7, width: '100%' }}>
+              {editing && (
+                <button className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={() => setConfirmDelete(true)}>
+                  Delete site
+                </button>
+              )}
+              <button className="btn btn-ghost" onClick={() => { setShowModal(false); setConfirmDelete(false) }}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveSite} disabled={saving || !form.name}>
+                {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Site'}
+              </button>
+            </div>
+          )
         }
       >
         <div className="form-row" style={{ marginBottom: 12 }}>

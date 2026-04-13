@@ -1,0 +1,224 @@
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import type { Site } from '../lib/database.types'
+
+const DEFAULT_FORM = {
+  site_id: '',
+  name: '',
+  email: '',
+  phone: '',
+  event: '',
+  date: '',
+  start_time: '',
+  end_time: '',
+  type: 'oneoff',
+  recurrence: '',
+  notes: '',
+}
+
+function calcHours(start: string, end: string) {
+  if (!start || !end) return 0
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
+}
+
+export default function BookingForm() {
+  const [sites, setSites] = useState<Site[]>([])
+  const [form, setForm] = useState(DEFAULT_FORM)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    supabase.from('sites').select('*').then(({ data }) => setSites(data ?? []))
+  }, [])
+
+  const site = sites.find(s => s.id === form.site_id)
+  const hours = calcHours(form.start_time, form.end_time)
+  const total = site ? hours * site.rate : 0
+  const deposit = site?.deposit ?? 0
+
+  function set(key: keyof typeof form, value: string) {
+    setForm(f => ({ ...f, [key]: value }))
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!site || hours <= 0) { setError('Please check your times — end must be after start.'); return }
+    setSubmitting(true)
+    setError('')
+    const { error: err } = await supabase.from('bookings').insert({
+      name: form.name,
+      email: form.email,
+      phone: form.phone,
+      event: form.event,
+      site_id: form.site_id,
+      date: form.date,
+      start_time: form.start_time,
+      end_time: form.end_time,
+      hours,
+      type: form.type,
+      recurrence: form.type === 'recurring' ? form.recurrence : null,
+      notes: form.notes || null,
+      status: 'pending',
+      deposit,
+      total,
+    })
+    if (err) { setError(err.message); setSubmitting(false); return }
+    setSubmitted(true)
+    setSubmitting(false)
+  }
+
+  if (submitted) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f4f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 40, maxWidth: 420, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Request submitted!</div>
+          <div style={{ fontSize: 14, color: '#71717a', marginBottom: 24 }}>
+            Thanks, {form.name.split(' ')[0]}. We'll review your booking request and be in touch at <strong>{form.email}</strong> shortly.
+          </div>
+          <div style={{ background: '#f4f4f6', borderRadius: 10, padding: '12px 16px', fontSize: 13, textAlign: 'left', marginBottom: 24 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>{form.event}</div>
+            <div style={{ color: '#71717a' }}>{site?.name} · {form.date} · {form.start_time}–{form.end_time}</div>
+            <div style={{ marginTop: 6, fontWeight: 700 }}>Total: £{total} <span style={{ fontWeight: 400, color: '#71717a' }}>(deposit: £{deposit})</span></div>
+          </div>
+          <button
+            style={{ background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+            onClick={() => { setForm(DEFAULT_FORM); setSubmitted(false) }}
+          >
+            Submit another request
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f4f4f6', padding: '32px 16px', fontFamily: "'Figtree', sans-serif" }}>
+      <div style={{ maxWidth: 560, margin: '0 auto' }}>
+
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>H</div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>Request a Booking</div>
+          <div style={{ fontSize: 13, color: '#71717a', marginTop: 4 }}>Fill in the details below and we'll be in touch to confirm</div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          {/* Venue */}
+          <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#71717a', marginBottom: 10 }}>Venue</div>
+            <div className="form-row">
+              <label className="form-label">Select a venue</label>
+              <select className="form-input" required value={form.site_id} onChange={e => set('site_id', e.target.value)}>
+                <option value="">Choose a venue…</option>
+                {sites.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+              </select>
+            </div>
+            {site && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                <span className="badge badge-accent">£{site.rate}/hr</span>
+                <span className="badge badge-neutral">£{site.deposit} deposit</span>
+                <span className="badge badge-neutral">Up to {site.capacity} guests</span>
+                <span style={{ fontSize: 11, color: '#71717a' }}>{site.address}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Contact */}
+          <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#71717a', marginBottom: 10 }}>Your details</div>
+            <div className="form-grid-2">
+              <div>
+                <label className="form-label">Full name</label>
+                <input className="form-input" required placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
+              </div>
+              <div>
+                <label className="form-label">Email</label>
+                <input className="form-input" type="email" required placeholder="jane@example.com" value={form.email} onChange={e => set('email', e.target.value)} />
+              </div>
+            </div>
+            <div className="form-row">
+              <label className="form-label">Phone</label>
+              <input className="form-input" type="tel" required placeholder="07700 900000" value={form.phone} onChange={e => set('phone', e.target.value)} />
+            </div>
+          </div>
+
+          {/* Event */}
+          <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#71717a', marginBottom: 10 }}>Event details</div>
+            <div className="form-row">
+              <label className="form-label">Event / purpose</label>
+              <input className="form-input" required placeholder="e.g. Birthday party, Dance class…" value={form.event} onChange={e => set('event', e.target.value)} />
+            </div>
+            <div className="form-grid-2">
+              <div>
+                <label className="form-label">Booking type</label>
+                <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+                  <option value="oneoff">One-off</option>
+                  <option value="recurring">Recurring</option>
+                </select>
+              </div>
+              <div>
+                <label className="form-label">Date</label>
+                <input className="form-input" type="date" required value={form.date} onChange={e => set('date', e.target.value)} />
+              </div>
+            </div>
+            {form.type === 'recurring' && (
+              <div className="form-row">
+                <label className="form-label">Recurrence</label>
+                <select className="form-input" value={form.recurrence} onChange={e => set('recurrence', e.target.value)}>
+                  <option value="">Select…</option>
+                  <option value="Weekly">Weekly</option>
+                  <option value="Fortnightly">Fortnightly</option>
+                  <option value="Monthly">Monthly</option>
+                </select>
+              </div>
+            )}
+            <div className="form-grid-2">
+              <div>
+                <label className="form-label">Start time</label>
+                <input className="form-input" type="time" required value={form.start_time} onChange={e => set('start_time', e.target.value)} />
+              </div>
+              <div>
+                <label className="form-label">End time</label>
+                <input className="form-input" type="time" required value={form.end_time} onChange={e => set('end_time', e.target.value)} />
+              </div>
+            </div>
+            <div className="form-row">
+              <label className="form-label">Additional notes <span style={{ fontWeight: 400, color: '#71717a' }}>(optional)</span></label>
+              <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Any special requirements…" value={form.notes} onChange={e => set('notes', e.target.value)} />
+            </div>
+          </div>
+
+          {/* Price summary */}
+          {site && hours > 0 && (
+            <div className="price-bar" style={{ marginBottom: 14 }}>
+              <div><div className="pi-label">Rate</div><div className="pi-value">£{site.rate}/hr</div></div>
+              <div><div className="pi-label">Hours</div><div className="pi-value">{hours}</div></div>
+              <div><div className="pi-label">Deposit</div><div className="pi-value">£{deposit}</div></div>
+              <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{total}</div></div>
+            </div>
+          )}
+
+          {error && (
+            <div className="notice notice-warn" style={{ marginBottom: 12 }}>{error}</div>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting || !form.site_id || !form.name || !form.email}
+            style={{ width: '100%', background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 10, padding: '14px', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: submitting ? 0.7 : 1 }}
+          >
+            {submitting ? 'Submitting…' : 'Submit Booking Request'}
+          </button>
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#71717a', marginTop: 10 }}>
+            Your request will be reviewed and you'll receive a confirmation email
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}

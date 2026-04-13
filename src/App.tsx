@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import BookingForm from './pages/BookingForm'
 import Dashboard from './pages/Dashboard'
 import Bookings from './pages/Bookings'
 import ExtraSlots from './pages/ExtraSlots'
@@ -17,11 +18,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-white font-bold text-lg">H</div>
-          <p className="text-sm text-gray-400">Loading...</p>
-        </div>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'Figtree', sans-serif" }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--accent,#7c3aed)', color: '#fff', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>H</div>
+        <p style={{ fontSize: 13, color: '#71717a' }}>Loading…</p>
       </div>
     )
   }
@@ -33,7 +32,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <Routes>
+      {/* Public routes — no auth required */}
       <Route path="/login" element={<Login />} />
+      <Route path="/book" element={<BookingForm />} />
+
+      {/* Protected routes */}
       <Route
         path="/*"
         element={
