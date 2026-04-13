@@ -194,6 +194,7 @@ export default function Bookings() {
     if (!site) return
     setSaving(true)
     const hours = calcHours(form.start_time, form.end_time)
+    const isRecurring = form.type === 'recurring'
     await supabase.from('bookings').insert({
       name: form.name,
       email: form.email,
@@ -205,11 +206,11 @@ export default function Bookings() {
       end_time: form.end_time,
       hours,
       type: form.type,
-      recurrence: form.type === 'recurring' ? form.recurrence : null,
+      recurrence: isRecurring ? form.recurrence : null,
       notes: form.notes || null,
       status: form.status,
-      deposit: site.deposit,
-      total: hours * site.rate + site.deposit,
+      deposit: isRecurring ? 0 : site.deposit,
+      total: isRecurring ? hours * site.rate : hours * site.rate + site.deposit,
     })
     await fetchBookings()
     setShowCreate(false)
@@ -360,7 +361,10 @@ export default function Bookings() {
         <div className="form-grid-2">
           <div>
             <label className="form-label">Type</label>
-            <select className="form-input" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+            <select className="form-input" value={form.type} onChange={e => {
+              const t = e.target.value
+              setForm(f => ({ ...f, type: t, recurrence: t === 'recurring' ? (f.recurrence || 'Weekly') : f.recurrence }))
+            }}>
               <option value="oneoff">One-off</option>
               <option value="recurring">Recurring</option>
             </select>
@@ -374,7 +378,6 @@ export default function Bookings() {
           <div className="form-row">
             <label className="form-label">Recurrence</label>
             <select className="form-input" value={form.recurrence} onChange={e => setForm(f => ({ ...f, recurrence: e.target.value }))}>
-              <option value="">Select…</option>
               <option value="Weekly">Weekly</option>
               <option value="Fortnightly">Fortnightly</option>
               <option value="Monthly">Monthly</option>
@@ -399,8 +402,10 @@ export default function Bookings() {
           <div className="price-bar" style={{ marginTop: 4 }}>
             <div><div className="pi-label">Rate</div><div className="pi-value">£{formSite.rate}/hr</div></div>
             <div><div className="pi-label">Hours</div><div className="pi-value">{formHours}</div></div>
-            <div><div className="pi-label">Deposit</div><div className="pi-value">£{formSite.deposit}</div></div>
-            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{formHours * formSite.rate + formSite.deposit}</div></div>
+            {form.type === 'recurring'
+              ? <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
+              : <div><div className="pi-label">Deposit</div><div className="pi-value">£{formSite.deposit}</div></div>}
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{form.type === 'recurring' ? formHours * formSite.rate : formHours * formSite.rate + formSite.deposit}</div></div>
           </div>
         )}
       </Modal>

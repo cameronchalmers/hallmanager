@@ -78,6 +78,7 @@ export interface Database {
           stripe_payment_url: string | null
           stripe_payment_status: string | null
           attended: boolean | null
+          session_attendance: Record<string, boolean> | null
         }
         Insert: {
           id?: string
@@ -102,6 +103,7 @@ export interface Database {
           stripe_payment_url?: string | null
           stripe_payment_status?: string | null
           attended?: boolean | null
+          session_attendance?: Record<string, boolean> | null
         }
         Update: {
           id?: string
@@ -126,6 +128,7 @@ export interface Database {
           stripe_payment_url?: string | null
           stripe_payment_status?: string | null
           attended?: boolean | null
+          session_attendance?: Record<string, boolean> | null
         }
         Relationships: []
       }

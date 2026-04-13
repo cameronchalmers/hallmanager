@@ -7,6 +7,24 @@ import Modal from '../components/ui/Modal'
 import { format } from 'date-fns'
 
 type Tab = 'bookings' | 'slots' | 'invoices' | 'pricing'
+type Session = { booking: Booking; date: string }
+
+function expandBooking(b: Booking, maxDate: string): Session[] {
+  if (b.type !== 'recurring' || !b.recurrence || ['cancelled', 'denied'].includes(b.status)) {
+    return [{ booking: b, date: b.date }]
+  }
+  const sessions: Session[] = []
+  const cur = new Date(b.date + 'T12:00:00')
+  const max = new Date(maxDate + 'T12:00:00')
+  while (cur <= max) {
+    sessions.push({ booking: b, date: cur.toISOString().split('T')[0] })
+    if (b.recurrence === 'Weekly') cur.setDate(cur.getDate() + 7)
+    else if (b.recurrence === 'Fortnightly') cur.setDate(cur.getDate() + 14)
+    else if (b.recurrence === 'Monthly') cur.setMonth(cur.getMonth() + 1)
+    else break
+  }
+  return sessions
+}
 
 const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
   const h = Math.floor(i / 4).toString().padStart(2, '0')
@@ -93,12 +111,34 @@ export default function Portal() {
   }
 
   const today = new Date().toISOString().split('T')[0]
-  const upcoming = bookings.filter(b => b.date >= today && !['cancelled', 'denied'].includes(b.status)).sort((a, b) => a.date.localeCompare(b.date))
-  const past = bookings.filter(b => b.date < today || ['cancelled', 'denied'].includes(b.status)).sort((a, b) => b.date.localeCompare(a.date))
+  const maxFuture = new Date(); maxFuture.setFullYear(maxFuture.getFullYear() + 1)
+  const maxFutureStr = maxFuture.toISOString().split('T')[0]
 
-  async function markAttendance(bookingId: string, attended: boolean | null) {
-    await supabase.from('bookings').update({ attended }).eq('id', bookingId)
-    setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, attended } : b))
+  const allSessions: Session[] = bookings.flatMap(b => expandBooking(b, maxFutureStr))
+  const upcoming = allSessions.filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date))
+  const past = allSessions.filter(s => s.date < today).sort((a, b) => b.date.localeCompare(a.date))
+
+  async function markAttendance(bookingId: string, date: string, value: boolean | null) {
+    const booking = bookings.find(b => b.id === bookingId)
+    if (!booking) return
+    if (booking.type === 'recurring') {
+      const prev = (booking.session_attendance ?? {}) as Record<string, boolean>
+      const updated: Record<string, boolean> = { ...prev }
+      if (value === null) delete updated[date]
+      else updated[date] = value
+      await supabase.from('bookings').update({ session_attendance: updated }).eq('id', bookingId)
+      setBookings(bs => bs.map(b => b.id === bookingId ? { ...b, session_attendance: updated } : b))
+    } else {
+      await supabase.from('bookings').update({ attended: value }).eq('id', bookingId)
+      setBookings(bs => bs.map(b => b.id === bookingId ? { ...b, attended: value } : b))
+    }
+  }
+
+  function sessionAttended(s: Session): boolean | null | undefined {
+    if (s.booking.type === 'recurring') {
+      return (s.booking.session_attendance as Record<string, boolean> | null)?.[s.date] ?? null
+    }
+    return s.booking.attended
   }
 
   const tabs: { key: Tab; label: string }[] = [
@@ -171,16 +211,17 @@ export default function Portal() {
                 <div style={{ padding: '10px 18px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
                   Upcoming sessions
                 </div>
-                {upcoming.map(b => {
-                  const site = sites.find(s => s.id === b.site_id)
+                {upcoming.map(s => {
+                  const b = s.booking
+                  const site = sites.find(st => st.id === b.site_id)
                   return (
-                    <div key={b.id} className="tbl-row" style={{ display: 'grid', gridTemplateColumns: '1fr 130px 120px 80px 70px', gap: 12, alignItems: 'center' }}>
+                    <div key={b.id + s.date} className="tbl-row" style={{ display: 'grid', gridTemplateColumns: '1fr 130px 120px 80px 70px', gap: 12, alignItems: 'center' }}>
                       <div>
                         <div style={{ fontWeight: 600 }}>{b.event}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{site?.name ?? '—'} · {b.start_time}–{b.end_time}</div>
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600 }}>{format(new Date(b.date), 'dd MMM yyyy')}</div>
+                        <div style={{ fontWeight: 600 }}>{format(new Date(s.date + 'T12:00:00'), 'dd MMM yyyy')}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.hours}h</div>
                       </div>
                       <div>
@@ -202,16 +243,18 @@ export default function Portal() {
                 <div style={{ padding: '10px 18px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', borderTop: upcoming.length > 0 ? '1px solid var(--border)' : 'none', marginTop: upcoming.length > 0 ? 8 : 0 }}>
                   Past sessions
                 </div>
-                {past.map(b => {
-                  const site = sites.find(s => s.id === b.site_id)
+                {past.map(s => {
+                  const b = s.booking
+                  const site = sites.find(st => st.id === b.site_id)
+                  const attended = sessionAttended(s)
                   return (
-                    <div key={b.id} className="tbl-row" style={{ display: 'grid', gridTemplateColumns: '1fr 130px 80px 140px', gap: 12, alignItems: 'center', opacity: ['cancelled', 'denied'].includes(b.status) ? 0.5 : 1 }}>
+                    <div key={b.id + s.date} className="tbl-row" style={{ display: 'grid', gridTemplateColumns: '1fr 130px 80px 140px', gap: 12, alignItems: 'center', opacity: ['cancelled', 'denied'].includes(b.status) ? 0.5 : 1 }}>
                       <div>
                         <div style={{ fontWeight: 600 }}>{b.event}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{site?.name ?? '—'} · {b.start_time}–{b.end_time}</div>
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600 }}>{format(new Date(b.date), 'dd MMM yyyy')}</div>
+                        <div style={{ fontWeight: 600 }}>{format(new Date(s.date + 'T12:00:00'), 'dd MMM yyyy')}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.hours}h · £{sessionTotal(b)}</div>
                       </div>
                       <div><Badge status={b.status} /></div>
@@ -219,12 +262,12 @@ export default function Portal() {
                         {!['cancelled', 'denied'].includes(b.status) && (
                           <>
                             <button
-                              onClick={() => markAttendance(b.id, b.attended === true ? null : true)}
-                              style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${b.attended === true ? '#16a34a' : 'var(--border)'}`, background: b.attended === true ? '#dcfce7' : 'var(--surface2)', color: b.attended === true ? '#16a34a' : 'var(--text-muted)' }}
+                              onClick={() => markAttendance(b.id, s.date, attended === true ? null : true)}
+                              style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${attended === true ? '#16a34a' : 'var(--border)'}`, background: attended === true ? '#dcfce7' : 'var(--surface2)', color: attended === true ? '#16a34a' : 'var(--text-muted)' }}
                             >✓ Attended</button>
                             <button
-                              onClick={() => markAttendance(b.id, b.attended === false ? null : false)}
-                              style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${b.attended === false ? '#dc2626' : 'var(--border)'}`, background: b.attended === false ? '#fee2e2' : 'var(--surface2)', color: b.attended === false ? '#dc2626' : 'var(--text-muted)' }}
+                              onClick={() => markAttendance(b.id, s.date, attended === false ? null : false)}
+                              style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${attended === false ? '#dc2626' : 'var(--border)'}`, background: attended === false ? '#fee2e2' : 'var(--surface2)', color: attended === false ? '#dc2626' : 'var(--text-muted)' }}
                             >✗ Missed</button>
                           </>
                         )}
