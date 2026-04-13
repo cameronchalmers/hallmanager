@@ -5,6 +5,7 @@ import { sendEmail } from '../lib/email'
 import type { Booking, ExtraSlot, Site } from '../lib/database.types'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
+import CalendarWidget from '../components/CalendarWidget'
 import { format } from 'date-fns'
 
 type BookingWithSite = Booking & { sites?: Site }
@@ -176,6 +177,12 @@ export default function Dashboard() {
           </div>
         </>
       )}
+
+      {/* Calendar */}
+      <div className="sec-label">Calendar</div>
+      <div style={{ marginBottom: 20 }}>
+        <CalendarWidget showSiteFilter />
+      </div>
 
       {/* Upcoming confirmed */}
       <div className="sec-label">Upcoming confirmed</div>
