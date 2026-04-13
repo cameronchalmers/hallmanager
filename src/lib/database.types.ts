@@ -12,6 +12,9 @@ export interface Database {
           rate: number
           deposit: number
           emoji: string
+          min_hours: number | null
+          available_from: string | null
+          available_until: string | null
         }
         Insert: {
           id?: string
@@ -21,6 +24,9 @@ export interface Database {
           rate: number
           deposit: number
           emoji: string
+          min_hours?: number | null
+          available_from?: string | null
+          available_until?: string | null
         }
         Update: {
           id?: string
@@ -30,6 +36,9 @@ export interface Database {
           rate?: number
           deposit?: number
           emoji?: string
+          min_hours?: number | null
+          available_from?: string | null
+          available_until?: string | null
         }
         Relationships: []
       }

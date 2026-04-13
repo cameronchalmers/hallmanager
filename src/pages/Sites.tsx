@@ -16,6 +16,9 @@ const DEFAULT_FORM = {
   rate: 0,
   deposit: 0,
   emoji: '🏛️',
+  min_hours: 1,
+  available_from: '09:00',
+  available_until: '22:00',
 }
 
 export default function Sites() {
@@ -26,6 +29,7 @@ export default function Sites() {
   const [form, setForm] = useState(DEFAULT_FORM)
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
 
   useEffect(() => { fetchSites() }, [])
 
@@ -45,7 +49,17 @@ export default function Sites() {
 
   function openEdit(site: Site) {
     setEditing(site)
-    setForm({ name: site.name, address: site.address, capacity: site.capacity, rate: site.rate, deposit: site.deposit, emoji: site.emoji })
+    setForm({
+      name: site.name,
+      address: site.address,
+      capacity: site.capacity,
+      rate: site.rate,
+      deposit: site.deposit,
+      emoji: site.emoji,
+      min_hours: site.min_hours ?? 1,
+      available_from: site.available_from ?? '09:00',
+      available_until: site.available_until ?? '22:00',
+    })
     setConfirmDelete(false)
     setShowModal(true)
   }
@@ -64,14 +78,27 @@ export default function Sites() {
   }
 
   async function deleteSite() {
-    if (!editing) return
+    // Capture the ID immediately — don't rely on `editing` in the async callback
+    const siteId = editing?.id
+    if (!siteId) return
     setSaving(true)
-    await supabase.from('sites').delete().eq('id', editing.id)
-    setSites(prev => prev.filter(s => s.id !== editing.id))
-    setShowModal(false)
-    setConfirmDelete(false)
+    const { error } = await supabase.from('sites').delete().eq('id', siteId)
+    if (!error) {
+      setSites(prev => prev.filter(s => s.id !== siteId))
+      setShowModal(false)
+      setConfirmDelete(false)
+    }
     setSaving(false)
   }
+
+  function copyLink(site: Site) {
+    const url = `${window.location.origin}/book/${toSlug(site.name)}`
+    navigator.clipboard.writeText(url)
+    setCopied(site.id)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const bookingUrl = editing ? `${window.location.origin}/book/${toSlug(editing.name || form.name)}` : ''
 
   return (
     <div>
@@ -92,20 +119,8 @@ export default function Sites() {
                 </button>
               </div>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{site.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>{site.address}</div>
-              <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', background: 'var(--surface2)', padding: '2px 6px', borderRadius: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
-                  /book/{toSlug(site.name)}
-                </span>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  style={{ padding: '2px 6px', fontSize: 10, flexShrink: 0 }}
-                  onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(`${window.location.origin}/book/${toSlug(site.name)}`) }}
-                >
-                  Copy
-                </button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>{site.address}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 10 }}>
                 {[
                   { label: 'per hour', value: `£${site.rate}` },
                   { label: 'deposit', value: `£${site.deposit}` },
@@ -117,13 +132,26 @@ export default function Sites() {
                   </div>
                 ))}
               </div>
+              {/* Booking link */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', background: 'var(--surface2)', padding: '3px 7px', borderRadius: 5, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  /book/{toSlug(site.name)}
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ padding: '2px 8px', fontSize: 10, flexShrink: 0 }}
+                  onClick={e => { e.stopPropagation(); copyLink(site) }}
+                >
+                  {copied === site.id ? '✓ Copied' : 'Copy link'}
+                </button>
+              </div>
             </div>
           ))}
 
           {/* Add site card */}
           <button
             className="site-card"
-            style={{ border: '2px dashed var(--border)', background: 'transparent', boxShadow: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 160, color: 'var(--text-muted)' }}
+            style={{ border: '2px dashed var(--border)', background: 'transparent', boxShadow: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 180, color: 'var(--text-muted)' }}
             onClick={openAdd}
           >
             <span style={{ fontSize: 24 }}>+</span>
@@ -134,15 +162,16 @@ export default function Sites() {
 
       <Modal
         open={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={() => { setShowModal(false); setConfirmDelete(false) }}
         title={editing ? `Edit ${editing.name}` : 'Add New Site'}
+        wide
         footer={
           confirmDelete ? (
             <div style={{ display: 'flex', gap: 7, width: '100%', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>Delete this site? This cannot be undone.</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>This cannot be undone.</span>
               <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
               <button className="btn btn-danger btn-sm" onClick={deleteSite} disabled={saving}>
-                {saving ? 'Deleting…' : 'Yes, delete'}
+                {saving ? 'Deleting…' : 'Yes, delete site'}
               </button>
             </div>
           ) : (
@@ -160,6 +189,7 @@ export default function Sites() {
           )
         }
       >
+        {/* Emoji */}
         <div className="form-row" style={{ marginBottom: 12 }}>
           <label className="form-label">Emoji</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
@@ -179,16 +209,20 @@ export default function Sites() {
             ))}
           </div>
         </div>
+
+        {/* Name & address */}
         <div className="form-grid-2">
           <div>
             <label className="form-label">Site name</label>
-            <input className="form-input" placeholder="e.g. The Grand Hall" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            <input className="form-input" placeholder="e.g. Wingrove Hall" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           </div>
           <div>
             <label className="form-label">Address</label>
             <input className="form-input" placeholder="123 Example St, City" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
           </div>
         </div>
+
+        {/* Rate / deposit / capacity */}
         <div className="form-grid-3">
           <div>
             <label className="form-label">Capacity</label>
@@ -203,6 +237,59 @@ export default function Sites() {
             <input className="form-input" type="number" min="0" value={form.deposit} onChange={e => setForm(f => ({ ...f, deposit: Number(e.target.value) }))} />
           </div>
         </div>
+
+        {/* Hiring policy */}
+        <div className="sec-label" style={{ marginBottom: 8, marginTop: 4 }}>Hiring Policy</div>
+        <div className="form-grid-3">
+          <div>
+            <label className="form-label">Min. booking (hrs)</label>
+            <input
+              className="form-input"
+              type="number"
+              min="0.5"
+              step="0.5"
+              value={form.min_hours}
+              onChange={e => setForm(f => ({ ...f, min_hours: Number(e.target.value) }))}
+            />
+          </div>
+          <div>
+            <label className="form-label">Available from</label>
+            <input
+              className="form-input"
+              type="time"
+              value={form.available_from}
+              onChange={e => setForm(f => ({ ...f, available_from: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="form-label">Available until</label>
+            <input
+              className="form-input"
+              type="time"
+              value={form.available_until}
+              onChange={e => setForm(f => ({ ...f, available_until: e.target.value }))}
+            />
+          </div>
+        </div>
+
+        {/* Booking link */}
+        {editing && (
+          <>
+            <div className="sec-label" style={{ marginBottom: 8, marginTop: 4 }}>Public Booking Link</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface2)', borderRadius: 8, padding: '10px 12px' }}>
+              <span style={{ flex: 1, fontSize: 12, fontFamily: 'monospace', color: 'var(--accent-text)', wordBreak: 'break-all' }}>
+                {bookingUrl}
+              </span>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ flexShrink: 0 }}
+                onClick={() => { navigator.clipboard.writeText(bookingUrl); setCopied(editing.id); setTimeout(() => setCopied(null), 2000) }}
+              >
+                {copied === editing.id ? '✓ Copied' : 'Copy'}
+              </button>
+            </div>
+          </>
+        )}
       </Modal>
     </div>
   )

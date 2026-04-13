@@ -66,6 +66,21 @@ export default function BookingForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!activeSite || hours <= 0) { setError('Please check your times — end must be after start.'); return }
+
+    // Enforce site hiring policy
+    if (activeSite.min_hours && hours < activeSite.min_hours) {
+      setError(`Minimum booking at ${activeSite.name} is ${activeSite.min_hours} hour${activeSite.min_hours !== 1 ? 's' : ''}.`)
+      return
+    }
+    if (activeSite.available_from && form.start_time < activeSite.available_from) {
+      setError(`${activeSite.name} is not available before ${activeSite.available_from}.`)
+      return
+    }
+    if (activeSite.available_until && form.end_time > activeSite.available_until) {
+      setError(`${activeSite.name} is not available after ${activeSite.available_until}.`)
+      return
+    }
+
     setSubmitting(true)
     setError('')
     const { error: err } = await supabase.from('bookings').insert({
@@ -147,6 +162,10 @@ export default function BookingForm() {
               <span className="badge badge-accent">£{lockedSite.rate}/hr</span>
               <span className="badge badge-neutral">£{lockedSite.deposit} deposit</span>
               <span className="badge badge-neutral">Up to {lockedSite.capacity} guests</span>
+              {lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
+              {lockedSite.available_from && lockedSite.available_until && (
+                <span className="badge badge-neutral">{lockedSite.available_from}–{lockedSite.available_until}</span>
+              )}
             </div>
           )}
         </div>
@@ -168,6 +187,10 @@ export default function BookingForm() {
                   <span className="badge badge-accent">£{activeSite.rate}/hr</span>
                   <span className="badge badge-neutral">£{activeSite.deposit} deposit</span>
                   <span className="badge badge-neutral">Up to {activeSite.capacity} guests</span>
+                  {activeSite.min_hours && <span className="badge badge-neutral">Min. {activeSite.min_hours}hr</span>}
+                  {activeSite.available_from && activeSite.available_until && (
+                    <span className="badge badge-neutral">{activeSite.available_from}–{activeSite.available_until}</span>
+                  )}
                   <span style={{ fontSize: 11, color: '#71717a' }}>{activeSite.address}</span>
                 </div>
               )}
