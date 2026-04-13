@@ -31,6 +31,7 @@ const ICONS = {
   rep: 'M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3',
   inv: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H9H8',
   extra: 'M8 7v8M12 7v4M16 7v6M3 3h18v4H3zM3 21l3-6h12l3 6H3z',
+  chart: 'M18 20V10M12 20V4M6 20v-6',
 }
 
 export default function Layout({ children, pageTitle, actions }: {
@@ -78,6 +79,7 @@ export default function Layout({ children, pageTitle, actions }: {
       { to: '/bookings', icon: 'list', label: 'Bookings' },
       { to: '/extra-slots', icon: 'extra', label: 'Extra Slot Requests' },
       { to: '/calendar', icon: 'cal', label: 'Calendar' },
+      { to: '/insights', icon: 'chart', label: 'Insights' },
     ],
     [
       { to: '/quickfile', icon: 'inv', label: 'QuickFile' },

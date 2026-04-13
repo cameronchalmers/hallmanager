@@ -152,6 +152,7 @@ export default function Bookings() {
   function startEdit(b: BookingWithSite) {
     setEditForm({
       site_id: b.site_id,
+      user_id: b.user_id ?? '',
       name: b.name,
       email: b.email,
       phone: b.phone,
@@ -206,7 +207,7 @@ export default function Bookings() {
 
   async function linkUser(bookingId: string, userId: string | null) {
     const booking = bookings.find(b => b.id === bookingId)
-    const updates: Record<string, unknown> = { user_id: userId }
+    const updates: { user_id: string | null; total?: number } = { user_id: userId }
 
     // Recalculate total using the user's custom rate for this site if applicable
     if (userId && booking?.type === 'recurring' && booking.site_id && booking.hours) {

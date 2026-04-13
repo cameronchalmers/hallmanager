@@ -13,6 +13,7 @@ import Users from './pages/Users'
 import Portal from './pages/Portal'
 import Sites from './pages/Sites'
 import Settings from './pages/Settings'
+import Insights from './pages/Insights'
 
 const Spinner = () => (
   <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'Figtree', sans-serif" }}>
@@ -59,6 +60,7 @@ export default function App() {
                 <Route path="/bookings" element={<ProtectedRoute adminOnly><Bookings /></ProtectedRoute>} />
                 <Route path="/extra-slots" element={<ProtectedRoute adminOnly><ExtraSlots /></ProtectedRoute>} />
                 <Route path="/calendar" element={<ProtectedRoute adminOnly><CalendarView /></ProtectedRoute>} />
+                <Route path="/insights" element={<ProtectedRoute adminOnly><Insights /></ProtectedRoute>} />
                 <Route path="/quickfile" element={<ProtectedRoute adminOnly><QuickFile /></ProtectedRoute>} />
                 <Route path="/users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
                 <Route path="/sites" element={<ProtectedRoute adminOnly><Sites /></ProtectedRoute>} />
