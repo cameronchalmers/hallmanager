@@ -128,6 +128,7 @@ export default function Sites() {
   async function uploadPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file || !editing) return
+    if (file.size > 5 * 1024 * 1024) { setSaveError('Photo must be under 5MB'); e.target.value = ''; return }
     setUploadingPhoto(true)
     const path = `${editing.id}/${Date.now()}-${file.name.replace(/\s+/g, '-')}`
     const { error } = await supabase.storage.from('venue-photos').upload(path, file)
