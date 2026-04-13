@@ -25,6 +25,7 @@ function expandRecurring(b: BookingWithSite): string[] {
 
 const DEFAULT_FORM = {
   site_id: '',
+  user_id: '',
   name: '',
   email: '',
   phone: '',
@@ -204,9 +205,19 @@ export default function Bookings() {
   }
 
   async function linkUser(bookingId: string, userId: string | null) {
-    await supabase.from('bookings').update({ user_id: userId }).eq('id', bookingId)
-    setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, user_id: userId } : b))
-    if (selected?.id === bookingId) setSelected(prev => prev ? { ...prev, user_id: userId } : null)
+    const booking = bookings.find(b => b.id === bookingId)
+    const updates: Record<string, unknown> = { user_id: userId }
+
+    // Recalculate total using the user's custom rate for this site if applicable
+    if (userId && booking?.type === 'recurring' && booking.site_id && booking.hours) {
+      const user = regularUsers.find(u => u.id === userId)
+      const customRate = (user?.custom_rates as Record<string, number> | null)?.[booking.site_id]
+      if (customRate) updates.total = booking.hours * customRate
+    }
+
+    await supabase.from('bookings').update(updates).eq('id', bookingId)
+    setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, ...updates } : b))
+    if (selected?.id === bookingId) setSelected(prev => prev ? { ...prev, ...updates } : null)
   }
 
   function toggleExpanded(id: string) {
@@ -262,12 +273,17 @@ export default function Bookings() {
     setSaving(true)
     const hours = calcHours(form.start_time, form.end_time)
     const isRecurring = form.type === 'recurring'
+    const linkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
+    const effectiveRate = isRecurring && linkedUser
+      ? ((linkedUser.custom_rates as Record<string, number> | null)?.[form.site_id] ?? site.rate)
+      : site.rate
     await supabase.from('bookings').insert({
       name: form.name,
       email: form.email,
       phone: form.phone,
       event: form.event,
       site_id: form.site_id,
+      user_id: form.user_id || null,
       date: form.date,
       start_time: form.start_time,
       end_time: form.end_time,
@@ -277,7 +293,7 @@ export default function Bookings() {
       notes: form.notes || null,
       status: form.status,
       deposit: isRecurring ? 0 : site.deposit,
-      total: isRecurring ? hours * site.rate : hours * site.rate + site.deposit,
+      total: isRecurring ? hours * effectiveRate : hours * site.rate + site.deposit,
     })
     await fetchBookings()
     setShowCreate(false)
@@ -297,6 +313,10 @@ export default function Bookings() {
   const FILTERS = ['active', 'pending', 'approved', 'confirmed', 'cancelled', 'denied', 'recurring', 'oneoff']
   const formSite = sites.find(s => s.id === form.site_id)
   const formHours = calcHours(form.start_time, form.end_time)
+  const formLinkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
+  const formEffectiveRate = form.type === 'recurring' && formLinkedUser && formSite
+    ? ((formLinkedUser.custom_rates as Record<string, number> | null)?.[form.site_id] ?? formSite.rate)
+    : formSite?.rate ?? 0
 
   return (
     <div>
@@ -533,14 +553,23 @@ export default function Bookings() {
           </div>
         </div>
         {form.type === 'recurring' && (
-          <div className="form-row">
-            <label className="form-label">Recurrence</label>
-            <select className="form-input" value={form.recurrence} onChange={e => setForm(f => ({ ...f, recurrence: e.target.value }))}>
-              <option value="Weekly">Weekly</option>
-              <option value="Fortnightly">Fortnightly</option>
-              <option value="Monthly">Monthly</option>
-            </select>
-          </div>
+          <>
+            <div className="form-row">
+              <label className="form-label">Recurrence</label>
+              <select className="form-input" value={form.recurrence} onChange={e => setForm(f => ({ ...f, recurrence: e.target.value }))}>
+                <option value="Weekly">Weekly</option>
+                <option value="Fortnightly">Fortnightly</option>
+                <option value="Monthly">Monthly</option>
+              </select>
+            </div>
+            <div className="form-row">
+              <label className="form-label">Linked booker <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional — applies custom rate)</span></label>
+              <select className="form-input" value={form.user_id} onChange={e => setForm(f => ({ ...f, user_id: e.target.value }))}>
+                <option value="">None</option>
+                {regularUsers.map(u => <option key={u.id} value={u.id}>{u.group_name ?? u.name}</option>)}
+              </select>
+            </div>
+          </>
         )}
         <div className="form-grid-2">
           <div>
@@ -558,12 +587,12 @@ export default function Bookings() {
         </div>
         {formSite && formHours > 0 && (
           <div className="price-bar" style={{ marginTop: 4 }}>
-            <div><div className="pi-label">Rate</div><div className="pi-value">£{formSite.rate}/hr</div></div>
+            <div><div className="pi-label">Rate</div><div className="pi-value">£{formEffectiveRate}/hr{formEffectiveRate !== formSite.rate ? ' ✦' : ''}</div></div>
             <div><div className="pi-label">Hours</div><div className="pi-value">{formHours}</div></div>
             {form.type === 'recurring'
               ? <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
               : <div><div className="pi-label">Deposit</div><div className="pi-value">£{formSite.deposit}</div></div>}
-            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{form.type === 'recurring' ? formHours * formSite.rate : formHours * formSite.rate + formSite.deposit}</div></div>
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{form.type === 'recurring' ? formHours * formEffectiveRate : formHours * formSite.rate + formSite.deposit}</div></div>
           </div>
         )}
       </Modal>
