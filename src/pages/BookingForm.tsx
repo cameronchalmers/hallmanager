@@ -101,7 +101,7 @@ export default function BookingForm() {
 
     setSubmitting(true)
     setError('')
-    const { data: inserted, error: err } = await supabase.from('bookings').insert({
+    const { error: err } = await supabase.from('bookings').insert({
       name: form.name,
       email: form.email,
       phone: form.phone,
@@ -117,12 +117,27 @@ export default function BookingForm() {
       status: 'pending',
       deposit,
       total,
-    }).select().single()
+    })
     if (err) { setError(err.message); setSubmitting(false); return }
-    // Send confirmation email to booker + notification to admin (best-effort)
-    if (inserted?.id) {
-      supabase.functions.invoke('send-email', { body: { type: 'booking_submitted', id: inserted.id } })
-    }
+    // Pass booking data directly — anon can't SELECT back their own insert
+    supabase.functions.invoke('send-email', {
+      body: {
+        type: 'booking_submitted',
+        data: {
+          name: form.name,
+          email: form.email,
+          event: form.event,
+          date: form.date,
+          start_time: form.start_time,
+          end_time: form.end_time,
+          hours,
+          site_name: activeSite.name,
+          deposit,
+          total,
+          notes: form.notes || null,
+        },
+      },
+    })
     setSubmitted(true)
     setSubmitting(false)
   }

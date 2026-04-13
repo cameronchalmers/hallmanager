@@ -47,45 +47,53 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    const { type, id } = await req.json() as { type: string; id: string }
+    const { type, id, data: inlineData } = await req.json() as { type: string; id?: string; data?: BookingData }
 
     // ── Booking emails ────────────────────────────────────────────────────────
 
     if (['booking_submitted', 'booking_approved', 'booking_denied'].includes(type)) {
-      const { data: booking, error } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('id', id)
-        .single()
+      let b: BookingData
 
-      if (error || !booking) throw new Error(`Booking not found: ${id}`)
+      if (type === 'booking_submitted' && inlineData) {
+        // Public form passes data directly (anon can't SELECT back their own insert)
+        b = {
+          ...inlineData,
+          date: new Date(inlineData.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        }
+      } else {
+        // Admin actions pass an id; look up the booking with service role
+        const { data: booking, error } = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('id', id)
+          .single()
 
-      // Fetch site separately (no FK constraint yet)
-      const { data: site } = await supabase
-        .from('sites')
-        .select('name, address')
-        .eq('id', booking.site_id)
-        .single()
+        if (error || !booking) throw new Error(`Booking not found: ${id}`)
 
-      const b: BookingData = {
-        name: booking.name,
-        email: booking.email,
-        event: booking.event,
-        date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
-        start_time: booking.start_time,
-        end_time: booking.end_time,
-        hours: booking.hours,
-        site_name: site?.name ?? 'Unknown venue',
-        deposit: booking.deposit,
-        total: booking.total,
-        notes: booking.notes,
+        const { data: site } = await supabase
+          .from('sites')
+          .select('name')
+          .eq('id', booking.site_id)
+          .single()
+
+        b = {
+          name: booking.name,
+          email: booking.email,
+          event: booking.event,
+          date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+          start_time: booking.start_time,
+          end_time: booking.end_time,
+          hours: booking.hours,
+          site_name: site?.name ?? 'Unknown venue',
+          deposit: booking.deposit,
+          total: booking.total,
+          notes: booking.notes,
+        }
       }
 
       if (type === 'booking_submitted') {
-        // Email the booker
         const bookerEmail = bookingSubmitted(b)
         await sendEmail(b.email, bookerEmail.subject, bookerEmail.html)
-        // Email the admin
         if (ADMIN_EMAIL) {
           const adminEmail = bookingSubmittedAdmin(b)
           await sendEmail(ADMIN_EMAIL, adminEmail.subject, adminEmail.html)
