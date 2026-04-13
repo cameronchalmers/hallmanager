@@ -36,6 +36,7 @@ export default function Sites() {
   const [form, setForm] = useState(DEFAULT_FORM)
   const [availability, setAvailability] = useState<WeekAvailability>({ ...DEFAULT_AVAILABILITY })
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [copied, setCopied] = useState<string | null>(null) // stores slug, not id
@@ -54,6 +55,7 @@ export default function Sites() {
     setForm(DEFAULT_FORM)
     setAvailability({ ...DEFAULT_AVAILABILITY })
     setConfirmDelete(false)
+    setSaveError('')
     setShowModal(true)
   }
 
@@ -70,18 +72,22 @@ export default function Sites() {
     })
     setAvailability(getAvailability(site))
     setConfirmDelete(false)
+    setSaveError('')
     setShowModal(true)
   }
 
   async function saveSite() {
     setSaving(true)
+    setSaveError('')
     // Cast WeekAvailability to Json for the Supabase client
     const payload = { ...form, availability: availability as unknown as import('../lib/database.types').Json }
     if (editing) {
-      await supabase.from('sites').update(payload).eq('id', editing.id)
+      const { error } = await supabase.from('sites').update(payload).eq('id', editing.id)
+      if (error) { setSaveError(error.message); setSaving(false); return }
       setSites(prev => prev.map(s => s.id === editing.id ? { ...s, ...payload } : s))
     } else {
-      const { data } = await supabase.from('sites').insert(payload).select().single()
+      const { data, error } = await supabase.from('sites').insert(payload).select().single()
+      if (error) { setSaveError(error.message); setSaving(false); return }
       if (data) setSites(prev => [...prev, data])
     }
     setShowModal(false)
@@ -197,12 +203,19 @@ export default function Sites() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: 7, width: '100%' }}>
-              {editing && <button className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={() => setConfirmDelete(true)}>Delete site</button>}
-              <button className="btn btn-ghost" onClick={() => { setShowModal(false); setConfirmDelete(false) }}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveSite} disabled={saving || !form.name}>
-                {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Site'}
-              </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+              {saveError && (
+                <div className="notice notice-warn" style={{ fontSize: 11 }}>
+                  ✗ {saveError} — you may need to run the SQL migrations in Supabase first.
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 7 }}>
+                {editing && <button className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={() => setConfirmDelete(true)}>Delete site</button>}
+                <button className="btn btn-ghost" onClick={() => { setShowModal(false); setConfirmDelete(false); setSaveError('') }}>Cancel</button>
+                <button className="btn btn-primary" onClick={saveSite} disabled={saving || !form.name}>
+                  {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Site'}
+                </button>
+              </div>
             </div>
           )
         }

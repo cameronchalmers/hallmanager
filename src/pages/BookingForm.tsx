@@ -66,8 +66,8 @@ export default function BookingForm() {
 
   const activeSite = lockedSite ?? sites.find(s => s.id === form.site_id)
   const hours = calcHours(form.start_time, form.end_time)
-  const total = activeSite ? hours * activeSite.rate : 0
   const deposit = activeSite?.deposit ?? 0
+  const total = activeSite ? hours * activeSite.rate + deposit : 0
 
   function set(key: keyof typeof form, value: string) {
     setForm(f => ({ ...f, [key]: value }))

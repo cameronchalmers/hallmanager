@@ -82,7 +82,7 @@ export default function Bookings() {
       notes: form.notes || null,
       status: form.status,
       deposit: site.deposit,
-      total: hours * site.rate,
+      total: hours * site.rate + site.deposit,
     })
     await fetchBookings()
     setShowCreate(false)
@@ -269,7 +269,7 @@ export default function Bookings() {
             <div><div className="pi-label">Rate</div><div className="pi-value">£{formSite.rate}/hr</div></div>
             <div><div className="pi-label">Hours</div><div className="pi-value">{formHours}</div></div>
             <div><div className="pi-label">Deposit</div><div className="pi-value">£{formSite.deposit}</div></div>
-            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{formHours * formSite.rate}</div></div>
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{formHours * formSite.rate + formSite.deposit}</div></div>
           </div>
         )}
       </Modal>
