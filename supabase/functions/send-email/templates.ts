@@ -144,27 +144,31 @@ export function bookingSubmitted(b: BookingData): { subject: string; html: strin
 
 export function bookingApproved(b: BookingData): { subject: string; html: string } {
   return {
-    subject: `Booking confirmed — ${b.event} on ${b.date}`,
+    subject: `Booking approved — payment required to confirm your slot`,
     html: layout(`
-      <div style="padding:32px 32px 0;border-bottom:3px solid #059669;">
-        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#059669;letter-spacing:0.5px;text-transform:uppercase;">Booking Confirmed</p>
-        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">You're all booked in!</h1>
-        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${b.name}, great news — your booking has been approved.</p>
+      <div style="padding:32px 32px 0;border-bottom:3px solid #d97706;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#d97706;letter-spacing:0.5px;text-transform:uppercase;">Action Required</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Your booking has been approved</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${b.name}, great news — your booking request has been approved. Please read the important information below.</p>
       </div>
       <div style="padding:24px 32px;">
-        ${pill('Confirmed', '#065f46', '#ecfdf5')}
+        ${pill('Awaiting Payment', '#92400e', '#fffbeb')}
         ${bookingTable(b)}
+        <div style="margin-top:24px;padding:16px;background:#fffbeb;border-radius:10px;border:1px solid #fcd34d;">
+          <p style="margin:0 0 6px;font-size:14px;color:#92400e;font-weight:700;">⚠️ Your booking is not confirmed until payment is received</p>
+          <p style="margin:0;font-size:13px;color:#92400e;">Payment must be made within <strong>14 days</strong> to secure your slot. If payment is not received within this time, your booking will be automatically cancelled.</p>
+        </div>
         ${b.payment_url ? `
         <div style="margin-top:24px;text-align:center;">
           <a href="${b.payment_url}" style="display:inline-block;background:${ACCENT};color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">Pay now — £${b.total}</a>
           <p style="margin:10px 0 0;font-size:12px;color:#9ca3af;">Secure payment powered by Stripe</p>
         </div>
         ` : `
-        <div style="margin-top:24px;padding:16px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;">
-          <p style="margin:0;font-size:14px;color:#166534;font-weight:500;">💳 A deposit of <strong>£${b.deposit}</strong> is due to secure your booking. Please arrange payment at your earliest convenience.</p>
+        <div style="margin-top:16px;padding:16px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;">
+          <p style="margin:0;font-size:14px;color:#166534;font-weight:500;">💳 A deposit of <strong>£${b.deposit}</strong> is due to secure your booking. Please arrange payment within 14 days.</p>
         </div>
         `}
-        <p style="margin:20px 0 0;font-size:13px;color:#9ca3af;">Please keep this email as your booking confirmation. We look forward to seeing you!</p>
+        <p style="margin:20px 0 0;font-size:13px;color:#9ca3af;">Once payment is received you'll receive a confirmation email. If you have any questions please get in touch.</p>
       </div>
     `),
   }
