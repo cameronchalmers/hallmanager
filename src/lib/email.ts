@@ -4,6 +4,7 @@ type EmailType =
   | 'booking_submitted'
   | 'booking_approved'
   | 'booking_denied'
+  | 'booking_cancelled'
   | 'slot_approved'
   | 'slot_denied'
 
