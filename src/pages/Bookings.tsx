@@ -46,11 +46,16 @@ export default function Bookings() {
   async function fetchBookings() {
     setLoading(true)
     const [bRes, sRes] = await Promise.all([
-      supabase.from('bookings').select('*, sites(*)').order('date', { ascending: false }),
+      supabase.from('bookings').select('*').order('date', { ascending: false }),
       supabase.from('sites').select('*'),
     ])
-    setBookings((bRes.data ?? []) as BookingWithSite[])
-    setSites(sRes.data ?? [])
+    const allSites = sRes.data ?? []
+    const bookingsWithSites = (bRes.data ?? []).map(b => ({
+      ...b,
+      sites: allSites.find(s => s.id === b.site_id),
+    })) as BookingWithSite[]
+    setBookings(bookingsWithSites)
+    setSites(allSites)
     setLoading(false)
   }
 

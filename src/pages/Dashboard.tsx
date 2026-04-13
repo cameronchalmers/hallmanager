@@ -18,13 +18,18 @@ export default function Dashboard() {
   async function fetchAll() {
     setLoading(true)
     const [bRes, sRes, sitesRes] = await Promise.all([
-      supabase.from('bookings').select('*, sites(*)').order('created_at', { ascending: false }),
+      supabase.from('bookings').select('*').order('created_at', { ascending: false }),
       supabase.from('extra_slots').select('*').order('created_at', { ascending: false }),
       supabase.from('sites').select('*'),
     ])
-    setBookings((bRes.data ?? []) as BookingWithSite[])
+    const allSites = sitesRes.data ?? []
+    const bookingsWithSites = (bRes.data ?? []).map(b => ({
+      ...b,
+      sites: allSites.find(s => s.id === b.site_id),
+    })) as BookingWithSite[]
+    setBookings(bookingsWithSites)
     setSlots(sRes.data ?? [])
-    setSites(sitesRes.data ?? [])
+    setSites(allSites)
     setLoading(false)
   }
 
