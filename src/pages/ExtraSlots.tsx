@@ -27,7 +27,8 @@ export default function ExtraSlots() {
   }
 
   async function updateStatus(id: string, status: 'approved' | 'denied' | 'cancelled') {
-    await supabase.from('extra_slots').update({ status }).eq('id', id)
+    const { error } = await supabase.from('extra_slots').update({ status }).eq('id', id)
+    if (error) { alert(`Failed to update status: ${error.message}`); return }
     setSlots(prev => prev.map(s => s.id === id ? { ...s, status } : s))
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status } : null)
     if (status === 'approved') sendEmail('slot_approved', id)

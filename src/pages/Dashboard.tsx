@@ -186,29 +186,44 @@ export default function Dashboard() {
         </div>
         <div>
           <div className="sec-label">Upcoming confirmed</div>
-          <div className="card">
-            {confirmed.length === 0 && (
+          {confirmed.length === 0 && (
+            <div className="card">
               <div className="empty">
                 <div className="empty-icon">✅</div>
                 <div className="empty-title">No confirmed bookings yet</div>
               </div>
-            )}
-            {confirmed.slice(0, 8).map(b => {
-              const site = (b as BookingWithSite).sites
-              return (
-                <div key={b.id} className="tbl-row" style={{ cursor: 'pointer', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }} onClick={() => setPreview(b as BookingWithSite)}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{b.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event} · {site?.name}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{format(new Date(b.date), 'dd MMM')}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
-                  </div>
+            </div>
+          )}
+          {(['recurring', 'one-off'] as const).map(type => {
+            const group = confirmed.filter(b => type === 'recurring' ? b.type === 'recurring' : b.type !== 'recurring')
+            if (group.length === 0) return null
+            return (
+              <div key={type} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                  {type === 'recurring' ? '↻ Recurring' : 'One-off'}
                 </div>
-              )
-            })}
-          </div>
+                <div className="card">
+                  {group.slice(0, 6).map(b => {
+                    const site = (b as BookingWithSite).sites
+                    const label = b.type === 'recurring' ? b.event : b.name
+                    const sub = b.type === 'recurring' ? `${b.name} · ${site?.name}` : `${b.event} · ${site?.name}`
+                    return (
+                      <div key={b.id} className="tbl-row" style={{ cursor: 'pointer', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }} onClick={() => setPreview(b as BookingWithSite)}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{sub}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{format(new Date(b.date), 'dd MMM')}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
