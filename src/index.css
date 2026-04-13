@@ -289,3 +289,26 @@ body {
 .dark .badge-recurring { background: #2d1f5e; color: #a78bfa; }
 .dark .cal-day.other { color: #3a3a4a; }
 .dark .cal-day:hover { background: var(--surface2); }
+
+/* Two-column responsive layouts */
+.two-col-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (min-width: 860px) {
+  .two-col-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* Booking form two-column: info left, form right */
+.booking-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .booking-layout { grid-template-columns: 1fr 1fr; }
+  .booking-layout-info { position: sticky; top: 32px; }
+}

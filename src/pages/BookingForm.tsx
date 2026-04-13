@@ -188,182 +188,204 @@ export default function BookingForm() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg,#f4f4f6)', padding: '32px 16px', fontFamily: "'Figtree', sans-serif" }}>
-      <div style={{ maxWidth: 560, margin: '0 auto' }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
 
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-            {lockedSite ? lockedSite.emoji : 'H'}
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>
-            {lockedSite ? `Book ${lockedSite.name}` : 'Request a Booking'}
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 4 }}>
-            {lockedSite ? lockedSite.address : 'Fill in the details below and we\'ll be in touch to confirm'}
-          </div>
+        <div className={lockedSite ? 'booking-layout' : ''}>
+
+          {/* Left: venue info (only when a specific site is locked) */}
           {lockedSite && (
-            <>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
-                <span className="badge badge-accent">£{lockedSite.rate}/hr</span>
-                <span className="badge badge-neutral">£{lockedSite.deposit} deposit</span>
-                <span className="badge badge-neutral">Up to {lockedSite.capacity} guests</span>
-                {lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
-                {lockedSite.available_from && lockedSite.available_until && (
-                  <span className="badge badge-neutral">{lockedSite.available_from}–{lockedSite.available_until}</span>
+            <div className="booking-layout-info">
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 24, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {lockedSite.emoji}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1.1 }}>{lockedSite.name}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 3 }}>{lockedSite.address}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 16 }}>
+                  <span className="badge badge-accent">£{lockedSite.rate}/hr</span>
+                  <span className="badge badge-neutral">£{lockedSite.deposit} deposit</span>
+                  <span className="badge badge-neutral">Up to {lockedSite.capacity} guests</span>
+                  {lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
+                </div>
+
+                {lockedSite.photos && lockedSite.photos.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: lockedSite.photos.length === 1 ? '1fr' : lockedSite.photos.length === 2 ? '1fr 1fr' : '2fr 1fr', gap: 6, borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+                    {lockedSite.photos.slice(0, 3).map((url, i) => (
+                      <img key={i} src={url} alt="" style={{ width: '100%', height: lockedSite.photos!.length === 1 ? 220 : 260, objectFit: 'cover', display: 'block', gridRow: i === 0 && lockedSite.photos!.length >= 3 ? 'span 2' : undefined }} />
+                    ))}
+                  </div>
+                )}
+
+                {lockedSite.description && (
+                  <p style={{ fontSize: 14, color: 'var(--text-muted,#71717a)', marginTop: 0, marginBottom: 16, lineHeight: 1.7 }}>{lockedSite.description}</p>
+                )}
+
+                {lockedSite.amenities && lockedSite.amenities.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 8 }}>Amenities</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {lockedSite.amenities.map(a => (
+                        <span key={a} style={{ fontSize: 12, fontWeight: 600, padding: '4px 11px', borderRadius: 99, background: 'var(--surface2,#f4f4f6)', color: 'var(--text-muted,#71717a)', border: '1px solid var(--border,#e5e7eb)' }}>{a}</span>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
-              {lockedSite.photos && lockedSite.photos.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: lockedSite.photos.length === 1 ? '1fr' : lockedSite.photos.length === 2 ? '1fr 1fr' : '2fr 1fr', gap: 6, marginTop: 16, borderRadius: 12, overflow: 'hidden', maxHeight: 240 }}>
-                  {lockedSite.photos.slice(0, 3).map((url, i) => (
-                    <img key={i} src={url} alt="" style={{ width: '100%', height: lockedSite.photos!.length === 1 ? 200 : 240, objectFit: 'cover', display: 'block', gridRow: i === 0 && lockedSite.photos!.length >= 3 ? 'span 2' : undefined }} />
-                  ))}
-                </div>
-              )}
-              {lockedSite.description && (
-                <p style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 12, marginBottom: 0, lineHeight: 1.6 }}>{lockedSite.description}</p>
-              )}
-              {lockedSite.amenities && lockedSite.amenities.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 10 }}>
-                  {lockedSite.amenities.map(a => (
-                    <span key={a} style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: 'var(--surface2,#f4f4f6)', color: 'var(--text-muted,#71717a)', border: '1px solid var(--border,#e5e7eb)' }}>{a}</span>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          {/* Venue selector — only shown when no slug */}
-          {!lockedSite && (
-            <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Venue</div>
-              <div className="form-row">
-                <label className="form-label">Select a venue</label>
-                <select className="form-input" required value={form.site_id} onChange={e => set('site_id', e.target.value)}>
-                  <option value="">Choose a venue…</option>
-                  {sites.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
-                </select>
-              </div>
-              {activeSite && (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                  <span className="badge badge-accent">£{activeSite.rate}/hr</span>
-                  <span className="badge badge-neutral">£{activeSite.deposit} deposit</span>
-                  <span className="badge badge-neutral">Up to {activeSite.capacity} guests</span>
-                  {activeSite.min_hours && <span className="badge badge-neutral">Min. {activeSite.min_hours}hr</span>}
-                  {activeSite.available_from && activeSite.available_until && (
-                    <span className="badge badge-neutral">{activeSite.available_from}–{activeSite.available_until}</span>
-                  )}
-                  <span style={{ fontSize: 11, color: 'var(--text-muted,#71717a)' }}>{activeSite.address}</span>
-                </div>
-              )}
             </div>
           )}
 
-          {/* Contact */}
-          <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Your details</div>
-            <div className="form-grid-2">
-              <div>
-                <label className="form-label">Full name</label>
-                <input className="form-input" required placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
-              </div>
-              <div>
-                <label className="form-label">Email</label>
-                <input className="form-input" type="email" required placeholder="jane@example.com" value={form.email} onChange={e => set('email', e.target.value)} />
-              </div>
-            </div>
-            <div className="form-row">
-              <label className="form-label">Phone</label>
-              <input className="form-input" type="tel" required placeholder="07700 900000" value={form.phone} onChange={e => set('phone', e.target.value)} />
-            </div>
-          </div>
-
-          {/* Event */}
-          <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Event details</div>
-            <div className="form-row">
-              <label className="form-label">Event / purpose</label>
-              <input className="form-input" required placeholder="e.g. Birthday party, Dance class…" value={form.event} onChange={e => set('event', e.target.value)} />
-            </div>
-            <div className="form-grid-2">
-              <div>
-                <label className="form-label">Booking type</label>
-                <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
-                  <option value="oneoff">One-off</option>
-                  <option value="recurring">Recurring</option>
-                </select>
-              </div>
-              <div>
-                <label className="form-label">Date</label>
-                <input className="form-input" type="date" required value={form.date} onChange={e => set('date', e.target.value)} />
-              </div>
-            </div>
-            {form.type === 'recurring' && (
-              <div className="form-row">
-                <label className="form-label">Recurrence</label>
-                <select className="form-input" value={form.recurrence} onChange={e => set('recurrence', e.target.value)}>
-                  <option value="">Select…</option>
-                  <option value="Weekly">Weekly</option>
-                  <option value="Fortnightly">Fortnightly</option>
-                  <option value="Monthly">Monthly</option>
-                </select>
+          {/* Right: form (or full-width when no locked site) */}
+          <div>
+            {/* Header — only shown on single-column (no locked site) */}
+            {!lockedSite && (
+              <div style={{ textAlign: 'center', marginBottom: 28 }}>
+                <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                  H
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>Request a Booking</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 4 }}>Fill in the details below and we'll be in touch to confirm</div>
               </div>
             )}
-            {(() => {
-              const sched = activeSite && form.date ? getSiteSchedule(activeSite, form.date) : null
-              if (!sched) return null
-              if (!sched.open) {
-                const dayName = DAY_NAMES[new Date(form.date + 'T12:00:00').getDay()]
-                return <div className="notice notice-warn" style={{ marginBottom: 8 }}>⚠️ {activeSite!.name} is closed on {dayName.charAt(0).toUpperCase() + dayName.slice(1)}s. Please choose a different date.</div>
-              }
-              return <div className="notice notice-accent" style={{ marginBottom: 8 }}>🕐 Available {sched.from}–{sched.until} on this day</div>
-            })()}
-            <div className="form-grid-2">
-              <div>
-                <label className="form-label">Start time</label>
-                <select className="form-input" required value={form.start_time} onChange={e => set('start_time', e.target.value)}>
-                  <option value="">Select…</option>
-                  {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+
+            <form onSubmit={handleSubmit}>
+              {/* Venue selector — only shown when no slug */}
+              {!lockedSite && (
+                <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Venue</div>
+                  <div className="form-row">
+                    <label className="form-label">Select a venue</label>
+                    <select className="form-input" required value={form.site_id} onChange={e => set('site_id', e.target.value)}>
+                      <option value="">Choose a venue…</option>
+                      {sites.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+                    </select>
+                  </div>
+                  {activeSite && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                      <span className="badge badge-accent">£{activeSite.rate}/hr</span>
+                      <span className="badge badge-neutral">£{activeSite.deposit} deposit</span>
+                      <span className="badge badge-neutral">Up to {activeSite.capacity} guests</span>
+                      {activeSite.min_hours && <span className="badge badge-neutral">Min. {activeSite.min_hours}hr</span>}
+                      {activeSite.available_from && activeSite.available_until && (
+                        <span className="badge badge-neutral">{activeSite.available_from}–{activeSite.available_until}</span>
+                      )}
+                      <span style={{ fontSize: 11, color: 'var(--text-muted,#71717a)' }}>{activeSite.address}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Contact */}
+              <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Your details</div>
+                <div className="form-grid-2">
+                  <div>
+                    <label className="form-label">Full name</label>
+                    <input className="form-input" required placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="form-label">Email</label>
+                    <input className="form-input" type="email" required placeholder="jane@example.com" value={form.email} onChange={e => set('email', e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <label className="form-label">Phone</label>
+                  <input className="form-input" type="tel" required placeholder="07700 900000" value={form.phone} onChange={e => set('phone', e.target.value)} />
+                </div>
               </div>
-              <div>
-                <label className="form-label">End time</label>
-                <select className="form-input" required value={form.end_time} onChange={e => set('end_time', e.target.value)}>
-                  <option value="">Select…</option>
-                  {TIME_SLOTS.filter(t => !form.start_time || t > form.start_time).map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+
+              {/* Event */}
+              <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Event details</div>
+                <div className="form-row">
+                  <label className="form-label">Event / purpose</label>
+                  <input className="form-input" required placeholder="e.g. Birthday party, Dance class…" value={form.event} onChange={e => set('event', e.target.value)} />
+                </div>
+                <div className="form-grid-2">
+                  <div>
+                    <label className="form-label">Booking type</label>
+                    <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+                      <option value="oneoff">One-off</option>
+                      <option value="recurring">Recurring</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">Date</label>
+                    <input className="form-input" type="date" required value={form.date} onChange={e => set('date', e.target.value)} />
+                  </div>
+                </div>
+                {form.type === 'recurring' && (
+                  <div className="form-row">
+                    <label className="form-label">Recurrence</label>
+                    <select className="form-input" value={form.recurrence} onChange={e => set('recurrence', e.target.value)}>
+                      <option value="">Select…</option>
+                      <option value="Weekly">Weekly</option>
+                      <option value="Fortnightly">Fortnightly</option>
+                      <option value="Monthly">Monthly</option>
+                    </select>
+                  </div>
+                )}
+                {(() => {
+                  const sched = activeSite && form.date ? getSiteSchedule(activeSite, form.date) : null
+                  if (!sched) return null
+                  if (!sched.open) {
+                    const dayName = DAY_NAMES[new Date(form.date + 'T12:00:00').getDay()]
+                    return <div className="notice notice-warn" style={{ marginBottom: 8 }}>⚠️ {activeSite!.name} is closed on {dayName.charAt(0).toUpperCase() + dayName.slice(1)}s. Please choose a different date.</div>
+                  }
+                  return <div className="notice notice-accent" style={{ marginBottom: 8 }}>🕐 Available {sched.from}–{sched.until} on this day</div>
+                })()}
+                <div className="form-grid-2">
+                  <div>
+                    <label className="form-label">Start time</label>
+                    <select className="form-input" required value={form.start_time} onChange={e => set('start_time', e.target.value)}>
+                      <option value="">Select…</option>
+                      {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">End time</label>
+                    <select className="form-input" required value={form.end_time} onChange={e => set('end_time', e.target.value)}>
+                      <option value="">Select…</option>
+                      {TIME_SLOTS.filter(t => !form.start_time || t > form.start_time).map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-row">
+                  <label className="form-label">Additional notes <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(optional)</span></label>
+                  <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Any special requirements…" value={form.notes} onChange={e => set('notes', e.target.value)} />
+                </div>
               </div>
-            </div>
-            <div className="form-row">
-              <label className="form-label">Additional notes <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(optional)</span></label>
-              <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Any special requirements…" value={form.notes} onChange={e => set('notes', e.target.value)} />
-            </div>
+
+              {/* Price summary */}
+              {activeSite && hours > 0 && (
+                <div className="price-bar" style={{ marginBottom: 14 }}>
+                  <div><div className="pi-label">Rate</div><div className="pi-value">£{activeSite.rate}/hr</div></div>
+                  <div><div className="pi-label">Hours</div><div className="pi-value">{hours}</div></div>
+                  <div><div className="pi-label">Deposit</div><div className="pi-value">£{deposit}</div></div>
+                  <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{total}</div></div>
+                </div>
+              )}
+
+              {error && <div className="notice notice-warn" style={{ marginBottom: 12 }}>{error}</div>}
+
+              <button
+                type="submit"
+                disabled={submitting || (!lockedSite && !form.site_id) || !form.name || !form.email}
+                style={{ width: '100%', background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 10, padding: '14px', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: submitting ? 0.7 : 1 }}
+              >
+                {submitting ? 'Submitting…' : 'Submit Booking Request'}
+              </button>
+              <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted,#71717a)', marginTop: 10 }}>
+                Your request will be reviewed and you'll receive a confirmation email
+              </div>
+            </form>
           </div>
 
-          {/* Price summary */}
-          {activeSite && hours > 0 && (
-            <div className="price-bar" style={{ marginBottom: 14 }}>
-              <div><div className="pi-label">Rate</div><div className="pi-value">£{activeSite.rate}/hr</div></div>
-              <div><div className="pi-label">Hours</div><div className="pi-value">{hours}</div></div>
-              <div><div className="pi-label">Deposit</div><div className="pi-value">£{deposit}</div></div>
-              <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{total}</div></div>
-            </div>
-          )}
-
-          {error && <div className="notice notice-warn" style={{ marginBottom: 12 }}>{error}</div>}
-
-          <button
-            type="submit"
-            disabled={submitting || (!lockedSite && !form.site_id) || !form.name || !form.email}
-            style={{ width: '100%', background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 10, padding: '14px', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: submitting ? 0.7 : 1 }}
-          >
-            {submitting ? 'Submitting…' : 'Submit Booking Request'}
-          </button>
-          <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted,#71717a)', marginTop: 10 }}>
-            Your request will be reviewed and you'll receive a confirmation email
-          </div>
-        </form>
+        </div>
       </div>
     </div>
   )
