@@ -29,26 +29,40 @@ function buildHeader() {
   return {
     MessageType: 'Request',
     SubmissionNumber: sub,
-    ApplicationID: APP_ID,          // at header level, not inside Authentication
     Authentication: {
       AccNumber: ACC_NUM,
       MD5Value: md5(ACC_NUM + API_KEY + sub) as string,
+      ApplicationID: APP_ID,
     },
   }
 }
 
-async function qf(service: string, action: string, body: Record<string, unknown>) {
+// Returns { body, raw } where body is the response Body for this service/action
+async function qf(service: string, action: string, reqBody: Record<string, unknown>) {
   const url = `${QF_BASE}/${service}/${action}`
-  const payload = { payload: { header: buildHeader(), body } }
+  const payload = { payload: { Header: buildHeader(), Body: reqBody } }
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  // Capture body regardless of status for debugging
   const text = await res.text()
   if (!res.ok) throw new Error(`QuickFile HTTP ${res.status}: ${text.slice(0, 300)}`)
-  try { return JSON.parse(text) } catch { throw new Error(`QuickFile non-JSON response: ${text.slice(0, 300)}`) }
+  let parsed: Record<string, unknown>
+  try { parsed = JSON.parse(text) } catch { throw new Error(`QuickFile non-JSON response: ${text.slice(0, 300)}`) }
+
+  // Response top-level key is e.g. "Client_Search", "Invoice_Create"
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+  const key = `${cap(service)}_${cap(action)}`
+  const envelope = parsed[key] as Record<string, unknown> | undefined
+  if (!envelope) throw new Error(`Unexpected QF response (no ${key} key): ${JSON.stringify(parsed).slice(0, 300)}`)
+
+  const msgType = (envelope.Header as Record<string, unknown>)?.MessageType
+  if (msgType !== 'Response') {
+    throw new Error(`QF error: ${JSON.stringify(envelope.Body ?? envelope).slice(0, 300)}`)
+  }
+
+  return envelope.Body as Record<string, unknown>
 }
 
 // Build split line items from a booking + site rate
@@ -99,26 +113,22 @@ serve(async (req) => {
 
     // ── Test connection ──────────────────────────────────────────────────────
     if (action === 'test') {
-      const data = await qf('client', 'search', {
-        ReturnCount: 1,
-        Offset: 0,
-        OrderResultsBy: 'CreatedDate',
-        OrderDirection: 'DESC',
+      await qf('client', 'search', {
+        SearchParameters: { ReturnCount: 1, Offset: 0, OrderResultsBy: 'CreatedDate', OrderDirection: 'DESC' },
       })
-      const ok = data?.payload?.header?.ReturnInfo?.StatusCode === 'SUCCESS'
-      return json({ ok, raw: ok ? undefined : data })
+      // qf() throws on error, so reaching here means success
+      return json({ ok: true })
     }
 
     // ── Find QF client by email ──────────────────────────────────────────────
     if (action === 'find_client') {
       const { data: user } = await supabase.from('users').select('*').eq('id', user_id).single()
       if (!user) return json({ ok: false, error: 'User not found' })
-      const data = await qf('client', 'search', {
-        Email: user.email,
-        ReturnCount: 5,
-        Offset: 0,
+      const body = await qf('client', 'search', {
+        SearchParameters: { Email: user.email, ReturnCount: 5, Offset: 0, OrderResultsBy: 'CreatedDate', OrderDirection: 'DESC' },
       })
-      const raw = data?.payload?.body?.Clients?.Client ?? []
+      // Body.Record is a single object or array
+      const raw = (body as any)?.Record ?? []
       const clients = Array.isArray(raw) ? raw : (raw ? [raw] : [])
       return json({ ok: true, clients })
     }
@@ -134,7 +144,7 @@ serve(async (req) => {
       const { data: user } = await supabase.from('users').select('*').eq('id', user_id).single()
       if (!user) return json({ ok: false, error: 'User not found' })
       const nameParts = (user.name as string).split(' ')
-      const data = await qf('client', 'create', {
+      const body = await qf('client', 'create', {
         ClientData: {
           CompanyName: user.group_name ?? user.name,
           DefaultContact: {
@@ -144,8 +154,8 @@ serve(async (req) => {
           },
         },
       })
-      const clientId = data?.payload?.body?.ClientID
-      if (!clientId) return json({ ok: false, error: 'Failed to create client', raw: data })
+      const clientId = (body as any)?.ClientID
+      if (!clientId) return json({ ok: false, error: 'Failed to create client — no ClientID in response' })
       await supabase.from('users').update({ qf_client_id: String(clientId) }).eq('id', user_id)
       return json({ ok: true, qf_client_id: String(clientId) })
     }
@@ -173,9 +183,9 @@ serve(async (req) => {
       }
       if (lines.length === 0) lines = [{ ItemDescription: inv.description, UnitCost: inv.amount, Qty: 1 }]
 
-      const data = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines))
-      const qfRef = data?.payload?.body?.InvoiceID ?? data?.payload?.body?.InvoiceNumber
-      if (!qfRef) return json({ ok: false, error: 'Unexpected QF response', raw: data })
+      const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines))
+      const qfRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
+      if (!qfRef) return json({ ok: false, error: `Unexpected QF invoice response: ${JSON.stringify(respBody).slice(0, 200)}` })
 
       await supabase.from('invoices').update({ qf_synced: true, qf_ref: String(qfRef) }).eq('id', invoice_id)
       return json({ ok: true, qf_ref: String(qfRef) })
@@ -210,13 +220,13 @@ serve(async (req) => {
         if (lines.length === 0) lines = [{ ItemDescription: inv.description, UnitCost: inv.amount, Qty: 1 }]
 
         try {
-          const data = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines))
-          const qfRef = data?.payload?.body?.InvoiceID ?? data?.payload?.body?.InvoiceNumber
+          const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines))
+          const qfRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
           if (qfRef) {
             await supabase.from('invoices').update({ qf_synced: true, qf_ref: String(qfRef) }).eq('id', inv.id)
             synced++
           } else {
-            errors.push(`Invoice ${inv.id.slice(0, 8)}: unexpected QF response`)
+            errors.push(`Invoice ${inv.id.slice(0, 8)}: no InvoiceID in QF response`)
           }
         } catch (e) {
           errors.push(`Invoice ${inv.id.slice(0, 8)}: ${String(e)}`)
@@ -251,10 +261,10 @@ serve(async (req) => {
 
       const today = new Date().toISOString().split('T')[0]
       const lines = [{ ItemDescription: desc, UnitCost: booking.deposit, Qty: 1 }]
-      const data = await qf('invoice', 'create', invoiceBody(clientId, today, lines, creditNote))
+      const respBody = await qf('invoice', 'create', invoiceBody(clientId, today, lines, creditNote))
 
-      const creditRef = data?.payload?.body?.InvoiceID ?? data?.payload?.body?.InvoiceNumber
-      if (!creditRef) return json({ ok: false, error: 'QF did not return a credit note ID', raw: data })
+      const creditRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
+      if (!creditRef) return json({ ok: false, error: `QF did not return a credit note ID: ${JSON.stringify(respBody).slice(0, 200)}` })
 
       return json({ ok: true, credit_ref: String(creditRef) })
     }
