@@ -8,6 +8,19 @@ import { format } from 'date-fns'
 
 type Tab = 'bookings' | 'slots' | 'invoices' | 'pricing'
 
+const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
+  const h = Math.floor(i / 4).toString().padStart(2, '0')
+  const m = ((i % 4) * 15).toString().padStart(2, '0')
+  return `${h}:${m}`
+})
+
+function calcHours(start: string, end: string) {
+  if (!start || !end) return 0
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
+}
+
 export default function Portal() {
   const { user, profile } = useAuth()
   const [tab, setTab] = useState<Tab>('bookings')
@@ -23,7 +36,6 @@ export default function Portal() {
     date: '',
     start_time: '',
     end_time: '',
-    hours: '',
     reason: '',
   })
 
@@ -49,10 +61,10 @@ export default function Portal() {
     setSaving(true)
     const site = sites.find(s => s.id === slotForm.site_id)
     const rate = (profile.custom_rates as Record<string, number>)?.[slotForm.site_id] ?? site?.rate ?? 0
-    const hours = parseFloat(slotForm.hours)
+    const hours = calcHours(slotForm.start_time, slotForm.end_time)
     await supabase.from('extra_slots').insert({
       user_id: user.id,
-      name: profile.name,
+      name: profile.group_name ?? profile.name,
       site_id: slotForm.site_id,
       date: slotForm.date,
       start_time: slotForm.start_time,
@@ -65,7 +77,7 @@ export default function Portal() {
     })
     await fetchData()
     setShowRequest(false)
-    setSlotForm({ site_id: '', date: '', start_time: '', end_time: '', hours: '', reason: '' })
+    setSlotForm({ site_id: '', date: '', start_time: '', end_time: '', reason: '' })
     setSaving(false)
   }
 
@@ -100,7 +112,8 @@ export default function Portal() {
   const previewRate = selectedSite
     ? ((profile?.custom_rates as Record<string, number>)?.[slotForm.site_id] ?? selectedSite.rate)
     : null
-  const previewTotal = previewRate && slotForm.hours ? previewRate * parseFloat(slotForm.hours) : null
+  const previewHours = calcHours(slotForm.start_time, slotForm.end_time)
+  const previewTotal = previewRate && previewHours > 0 ? previewRate * previewHours : null
 
   return (
     <div>
@@ -318,7 +331,7 @@ export default function Portal() {
             <button
               className="btn btn-primary"
               style={{ flex: 1 }}
-              disabled={saving || !slotForm.site_id || !slotForm.date || !slotForm.start_time || !slotForm.end_time || !slotForm.hours || !slotForm.reason}
+              disabled={saving || !slotForm.site_id || !slotForm.date || !slotForm.start_time || !slotForm.end_time || previewHours <= 0 || !slotForm.reason}
               onClick={submitSlotRequest}
             >
               {saving ? 'Submitting…' : 'Submit Request'}
@@ -343,16 +356,18 @@ export default function Portal() {
         <div className="form-grid-2">
           <div>
             <label className="form-label">Start time</label>
-            <input className="form-input" type="time" value={slotForm.start_time} onChange={e => setSlotForm(f => ({ ...f, start_time: e.target.value }))} />
+            <select className="form-input" value={slotForm.start_time} onChange={e => setSlotForm(f => ({ ...f, start_time: e.target.value, end_time: '' }))}>
+              <option value="">Select…</option>
+              {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
           </div>
           <div>
             <label className="form-label">End time</label>
-            <input className="form-input" type="time" value={slotForm.end_time} onChange={e => setSlotForm(f => ({ ...f, end_time: e.target.value }))} />
+            <select className="form-input" value={slotForm.end_time} onChange={e => setSlotForm(f => ({ ...f, end_time: e.target.value }))}>
+              <option value="">Select…</option>
+              {TIME_SLOTS.filter(t => !slotForm.start_time || t > slotForm.start_time).map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
           </div>
-        </div>
-        <div className="form-row">
-          <label className="form-label">Hours</label>
-          <input className="form-input" type="number" min="0.5" step="0.5" value={slotForm.hours} onChange={e => setSlotForm(f => ({ ...f, hours: e.target.value }))} placeholder="e.g. 2" />
         </div>
         <div className="form-row">
           <label className="form-label">Reason for extra slot</label>
@@ -367,8 +382,8 @@ export default function Portal() {
         </div>
         {previewTotal !== null && (
           <div className="price-bar" style={{ marginTop: 8 }}>
-            <div><div className="pi-label">Custom Rate</div><div className="pi-value">£{previewRate}/hr</div></div>
-            <div><div className="pi-label">Hours</div><div className="pi-value">{slotForm.hours}</div></div>
+            <div><div className="pi-label">Rate</div><div className="pi-value">£{previewRate}/hr</div></div>
+            <div><div className="pi-label">Hours</div><div className="pi-value">{previewHours}</div></div>
             <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
             <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{previewTotal}</div></div>
           </div>
