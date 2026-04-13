@@ -47,6 +47,30 @@ async function qf(service: string, action: string, body: Record<string, unknown>
   return res.json()
 }
 
+// Build split line items from a booking record + site rate
+function buildLineItems(booking: Record<string, unknown>, siteRate: number) {
+  const lines: Record<string, unknown>[] = []
+  const hours = Number(booking.hours ?? 0)
+  const deposit = Number(booking.deposit ?? 0)
+  const event = String(booking.event ?? 'Hall hire')
+
+  if (hours > 0 && siteRate > 0) {
+    lines.push({
+      ItemDescription: `${event} — ${hours}h @ £${siteRate}/hr`,
+      UnitCost: siteRate,
+      Quantity: hours,
+    })
+  }
+  if (deposit > 0) {
+    lines.push({
+      ItemDescription: 'Refundable deposit',
+      UnitCost: deposit,
+      Quantity: 1,
+    })
+  }
+  return lines
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -60,9 +84,10 @@ serve(async (req) => {
   )
 
   try {
-    const { action, user_id, invoice_id } = await req.json()
+    const body = await req.json()
+    const { action, user_id, invoice_id, booking_id, qf_client_id } = body
 
-    // ── Test connection ────────────────────────────────────────────────────────
+    // ── Test connection ──────────────────────────────────────────────────────
     if (action === 'test') {
       const data = await qf('client', 'search', {
         SearchParameters: {},
@@ -75,33 +100,30 @@ serve(async (req) => {
       return json({ ok, raw: ok ? undefined : data })
     }
 
-    // ── Find QF client by email ────────────────────────────────────────────────
+    // ── Find QF client by email ──────────────────────────────────────────────
     if (action === 'find_client') {
       const { data: user } = await supabase.from('users').select('*').eq('id', user_id).single()
       if (!user) return json({ ok: false, error: 'User not found' })
-
       const data = await qf('client', 'search', {
         SearchParameters: { Email: user.email },
         ReturnCount: 5,
         Offset: 0,
       })
-      const clients = data?.payload?.body?.Clients?.Client ?? []
-      const list = Array.isArray(clients) ? clients : [clients]
-      return json({ ok: true, clients: list })
+      const raw = data?.payload?.body?.Clients?.Client ?? []
+      const clients = Array.isArray(raw) ? raw : [raw]
+      return json({ ok: true, clients })
     }
 
-    // ── Link QF client ID to user ──────────────────────────────────────────────
+    // ── Link existing QF client to user ──────────────────────────────────────
     if (action === 'link_client') {
-      const { qf_client_id } = await req.json().catch(() => ({}))
       await supabase.from('users').update({ qf_client_id }).eq('id', user_id)
       return json({ ok: true })
     }
 
-    // ── Create QF client for a user ────────────────────────────────────────────
+    // ── Create QF client for a user ──────────────────────────────────────────
     if (action === 'create_client') {
       const { data: user } = await supabase.from('users').select('*').eq('id', user_id).single()
       if (!user) return json({ ok: false, error: 'User not found' })
-
       const nameParts = (user.name as string).split(' ')
       const data = await qf('client', 'create', {
         ClientDetails: {
@@ -115,55 +137,86 @@ serve(async (req) => {
       })
       const clientId = data?.payload?.body?.ClientID
       if (!clientId) return json({ ok: false, error: 'Failed to create client', raw: data })
-
       await supabase.from('users').update({ qf_client_id: String(clientId) }).eq('id', user_id)
       return json({ ok: true, qf_client_id: String(clientId) })
     }
 
-    // ── Sync a single invoice ──────────────────────────────────────────────────
+    // ── Sync a single paid invoice ───────────────────────────────────────────
     if (action === 'sync_invoice') {
       const { data: inv } = await supabase.from('invoices').select('*').eq('id', invoice_id).single()
       if (!inv) return json({ ok: false, error: 'Invoice not found' })
+      if (inv.status !== 'paid') return json({ ok: false, error: 'Invoice is not paid yet — only paid invoices are sent to QuickFile.' })
 
+      // Resolve QF client
       let clientId: string | null = null
       if (inv.user_id) {
         const { data: user } = await supabase.from('users').select('qf_client_id').eq('id', inv.user_id).single()
         clientId = user?.qf_client_id ?? null
       }
-      if (!clientId) return json({ ok: false, error: 'No QuickFile client linked to this invoice\'s user. Link the client first.' })
+      if (!clientId) return json({ ok: false, error: 'No QuickFile client linked. Link the booker first.' })
+
+      // Build line items — split by rate + deposit if booking is available
+      let lineItems: Record<string, unknown>[]
+      if (inv.booking_id) {
+        const { data: booking } = await supabase.from('bookings').select('*').eq('id', inv.booking_id).single()
+        if (booking) {
+          const { data: site } = await supabase.from('sites').select('rate').eq('id', booking.site_id).single()
+          lineItems = buildLineItems(booking, site?.rate ?? 0)
+        }
+      }
+      if (!lineItems! || lineItems.length === 0) {
+        lineItems = [{ ItemDescription: inv.description, UnitCost: inv.amount, Quantity: 1 }]
+      }
 
       const data = await qf('invoice', 'create', {
         InvoiceDetails: {
           ClientID: clientId,
           InvoiceType: 'INVOICE',
           InvoiceDate: inv.date,
-          ItemLines: {
-            ItemLine: [{
-              ItemDescription: inv.description,
-              UnitCost: inv.amount,
-              Quantity: 1,
-            }],
-          },
+          ItemLines: { ItemLine: lineItems },
         },
       })
       const qfRef = data?.payload?.body?.InvoiceID ?? data?.payload?.body?.InvoiceNumber
-      if (!qfRef) return json({ ok: false, error: 'Failed to create invoice in QuickFile', raw: data })
+      if (!qfRef) return json({ ok: false, error: 'Unexpected QF response', raw: data })
 
       await supabase.from('invoices').update({ qf_synced: true, qf_ref: String(qfRef) }).eq('id', invoice_id)
       return json({ ok: true, qf_ref: String(qfRef) })
     }
 
-    // ── Sync all unsynced invoices ─────────────────────────────────────────────
+    // ── Sync all unsynced PAID invoices ──────────────────────────────────────
     if (action === 'sync_all') {
-      const { data: invoices } = await supabase.from('invoices').select('*, users(qf_client_id)').eq('qf_synced', false)
+      const { data: invoices } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('qf_synced', false)
+        .eq('status', 'paid')   // only paid invoices go to QF
+
       if (!invoices?.length) return json({ ok: true, synced: 0, skipped: 0, errors: [] })
 
       let synced = 0, skipped = 0
       const errors: string[] = []
 
       for (const inv of invoices) {
-        const clientId = (inv as any).users?.qf_client_id ?? null
+        // Resolve QF client
+        let clientId: string | null = null
+        if (inv.user_id) {
+          const { data: user } = await supabase.from('users').select('qf_client_id').eq('id', inv.user_id).single()
+          clientId = user?.qf_client_id ?? null
+        }
         if (!clientId) { skipped++; continue }
+
+        // Build line items
+        let lineItems: Record<string, unknown>[] = []
+        if (inv.booking_id) {
+          const { data: booking } = await supabase.from('bookings').select('*').eq('id', inv.booking_id).single()
+          if (booking) {
+            const { data: site } = await supabase.from('sites').select('rate').eq('id', booking.site_id).single()
+            lineItems = buildLineItems(booking, site?.rate ?? 0)
+          }
+        }
+        if (lineItems.length === 0) {
+          lineItems = [{ ItemDescription: inv.description, UnitCost: inv.amount, Quantity: 1 }]
+        }
 
         try {
           const data = await qf('invoice', 'create', {
@@ -171,13 +224,7 @@ serve(async (req) => {
               ClientID: clientId,
               InvoiceType: 'INVOICE',
               InvoiceDate: inv.date,
-              ItemLines: {
-                ItemLine: [{
-                  ItemDescription: inv.description,
-                  UnitCost: inv.amount,
-                  Quantity: 1,
-                }],
-              },
+              ItemLines: { ItemLine: lineItems },
             },
           })
           const qfRef = data?.payload?.body?.InvoiceID ?? data?.payload?.body?.InvoiceNumber
@@ -193,6 +240,54 @@ serve(async (req) => {
       }
 
       return json({ ok: true, synced, skipped, errors })
+    }
+
+    // ── Create QF credit note when deposit is refunded ───────────────────────
+    if (action === 'refund_deposit') {
+      // Find the synced invoice for this booking
+      const { data: inv } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('booking_id', booking_id)
+        .eq('qf_synced', true)
+        .maybeSingle()
+
+      // Fetch booking for deposit amount and client
+      const { data: booking } = await supabase.from('bookings').select('*').eq('id', booking_id).single()
+      if (!booking) return json({ ok: false, error: 'Booking not found' })
+      if (!booking.deposit || booking.deposit <= 0) return json({ ok: true, skipped: true, reason: 'No deposit on booking' })
+
+      // Resolve client ID via booking's linked user
+      let clientId: string | null = null
+      if (booking.user_id) {
+        const { data: user } = await supabase.from('users').select('qf_client_id').eq('id', booking.user_id).single()
+        clientId = user?.qf_client_id ?? null
+      }
+      if (!clientId) return json({ ok: true, skipped: true, reason: 'No QF client linked — create credit note manually in QuickFile' })
+
+      const refDesc = inv?.qf_ref
+        ? `Deposit refund (ref QF #${inv.qf_ref}) — ${booking.event}`
+        : `Deposit refund — ${booking.event}`
+
+      const data = await qf('invoice', 'create', {
+        InvoiceDetails: {
+          ClientID: clientId,
+          InvoiceType: 'CREDIT',
+          InvoiceDate: new Date().toISOString().split('T')[0],
+          ItemLines: {
+            ItemLine: [{
+              ItemDescription: refDesc,
+              UnitCost: booking.deposit,
+              Quantity: 1,
+            }],
+          },
+        },
+      })
+
+      const creditRef = data?.payload?.body?.InvoiceID ?? data?.payload?.body?.InvoiceNumber
+      if (!creditRef) return json({ ok: false, error: 'QF did not return a credit note ID', raw: data })
+
+      return json({ ok: true, credit_ref: String(creditRef) })
     }
 
     return json({ ok: false, error: `Unknown action: ${action}` })

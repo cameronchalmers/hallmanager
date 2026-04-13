@@ -141,6 +141,9 @@ export default function Bookings() {
     if (!error) {
       setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_status: 'deposit_refunded' } : b))
       if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_status: 'deposit_refunded' } : null)
+      // Notify QuickFile — creates a credit note for the deposit (fails silently if QF not connected)
+      supabase.functions.invoke('quickfile', { body: { action: 'refund_deposit', booking_id: id } })
+        .catch(() => {/* QF not configured — ignore */})
     }
     setActionLoading(null)
   }

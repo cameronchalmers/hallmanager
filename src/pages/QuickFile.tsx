@@ -157,7 +157,8 @@ npx supabase functions deploy quickfile --no-verify-jwt`}</pre>
         {connStatus === 'connected' && (
           <div style={{ padding: '12px 18px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {[
-              { label: 'Unsynced invoices', value: unsynced.length === 0 ? '✓ All synced' : `${unsynced.length} pending`, green: unsynced.length === 0 },
+              { label: 'Unsynced paid invoices', value: unsynced.filter(i => i.status === 'paid').length === 0 ? '✓ All synced' : `${unsynced.filter(i => i.status === 'paid').length} pending`, green: unsynced.filter(i => i.status === 'paid').length === 0 },
+              { label: 'Awaiting payment', value: unsynced.filter(i => i.status !== 'paid').length },
               { label: 'Clients linked', value: `${users.filter(u => u.qf_client_id).length}/${users.length}` },
             ].map(({ label, value, green }) => (
               <div key={label} style={{ flex: 1, minWidth: 120 }}>
