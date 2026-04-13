@@ -34,6 +34,45 @@ alter table public.extra_slots drop constraint if exists extra_slots_status_chec
 alter table public.extra_slots add constraint extra_slots_status_check
   check (status in ('pending','approved','denied','cancelled'));
 
+-- ── bookings: add approved_at column ─────────────────────────────────────────
+alter table public.bookings add column if not exists approved_at timestamptz;
+
+-- ── bookings: trigger to set approved_at automatically ───────────────────────
+create or replace function public.set_approved_at()
+returns trigger language plpgsql as $$
+begin
+  if NEW.status = 'approved' and (OLD.status is null or OLD.status != 'approved') then
+    NEW.approved_at = now();
+  end if;
+  return NEW;
+end;
+$$;
+
+drop trigger if exists bookings_approved_at on public.bookings;
+create trigger bookings_approved_at
+  before update on public.bookings
+  for each row execute function public.set_approved_at();
+
+-- ── pg_cron: daily auto-cancel job ───────────────────────────────────────────
+-- Requires pg_cron and pg_net extensions to be enabled in Supabase.
+-- Replace <YOUR_PROJECT_REF> and <YOUR_SERVICE_ROLE_KEY> with real values,
+-- or set them as database settings via Supabase dashboard.
+--
+-- select cron.schedule(
+--   'auto-cancel-overdue-bookings',
+--   '0 9 * * *',
+--   $$
+--   select net.http_post(
+--     url := 'https://<YOUR_PROJECT_REF>.supabase.co/functions/v1/auto-cancel',
+--     headers := jsonb_build_object(
+--       'Authorization', 'Bearer <YOUR_SERVICE_ROLE_KEY>',
+--       'Content-Type', 'application/json'
+--     ),
+--     body := '{}'::jsonb
+--   );
+--   $$
+-- );
+
 -- ── RLS: anon read on sites (public booking form) ────────────────────────────
 do $$ begin
   if not exists (

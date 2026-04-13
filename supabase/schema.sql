@@ -70,6 +70,7 @@ create table if not exists public.bookings (
   attended             boolean,
   session_attendance   jsonb,
   cancelled_sessions   text[] default '{}',
+  approved_at          timestamptz,
   created_at           timestamptz not null default now()
 );
 
@@ -313,6 +314,22 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- TRIGGER: set approved_at when booking status changes to 'approved'
+create or replace function public.set_approved_at()
+returns trigger language plpgsql as $$
+begin
+  if NEW.status = 'approved' and (OLD.status is null or OLD.status != 'approved') then
+    NEW.approved_at = now();
+  end if;
+  return NEW;
+end;
+$$;
+
+drop trigger if exists bookings_approved_at on public.bookings;
+create trigger bookings_approved_at
+  before update on public.bookings
+  for each row execute function public.set_approved_at();
 
 
 -- ============================================================
