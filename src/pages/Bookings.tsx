@@ -23,6 +23,12 @@ const DEFAULT_FORM = {
   status: 'confirmed',
 }
 
+const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
+  const h = Math.floor(i / 4).toString().padStart(2, '0')
+  const m = ((i % 4) * 15).toString().padStart(2, '0')
+  return `${h}:${m}`
+})
+
 function calcHours(start: string, end: string) {
   if (!start || !end) return 0
   const [sh, sm] = start.split(':').map(Number)
@@ -42,6 +48,8 @@ export default function Bookings() {
   const [saving, setSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [copiedPayment, setCopiedPayment] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [editForm, setEditForm] = useState(DEFAULT_FORM)
 
   useEffect(() => { fetchBookings() }, [])
 
@@ -115,6 +123,61 @@ export default function Bookings() {
       if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_status: 'deposit_refunded' } : null)
     }
     setActionLoading(null)
+  }
+
+  function startEdit(b: BookingWithSite) {
+    setEditForm({
+      site_id: b.site_id,
+      name: b.name,
+      email: b.email,
+      phone: b.phone,
+      event: b.event,
+      date: b.date,
+      start_time: b.start_time,
+      end_time: b.end_time,
+      type: b.type,
+      recurrence: b.recurrence ?? '',
+      notes: b.notes ?? '',
+      status: b.status,
+    })
+    setEditMode(true)
+  }
+
+  async function saveEdit() {
+    if (!selected) return
+    setSaving(true)
+    const hours = calcHours(editForm.start_time, editForm.end_time)
+    const site = selected.sites
+    const total = site ? hours * site.rate + selected.deposit : selected.total
+    const totalChanged = total !== selected.total
+
+    await supabase.from('bookings').update({
+      name: editForm.name,
+      email: editForm.email,
+      phone: editForm.phone,
+      event: editForm.event,
+      date: editForm.date,
+      start_time: editForm.start_time,
+      end_time: editForm.end_time,
+      hours,
+      type: editForm.type,
+      recurrence: editForm.type === 'recurring' ? editForm.recurrence : null,
+      notes: editForm.notes || null,
+      total,
+    }).eq('id', selected.id)
+
+    // If total changed on an unpaid approved booking, regenerate the Stripe payment link
+    if (totalChanged && selected.status === 'approved') {
+      try {
+        await supabase.functions.invoke('stripe-action', {
+          body: { action: 'create_payment', booking_id: selected.id },
+        })
+      } catch (e) { console.error('Stripe regeneration failed:', e) }
+    }
+
+    await fetchBookings()
+    setEditMode(false)
+    setSaving(false)
   }
 
   async function createBooking() {
@@ -335,11 +398,18 @@ export default function Bookings() {
       {/* Detail modal */}
       <Modal
         open={!!selected}
-        onClose={() => setSelected(null)}
-        title={selected?.event ?? ''}
-        sub={selected ? `${format(new Date(selected.date), 'dd MMM yyyy')} · created ${format(new Date(selected.created_at), 'dd MMM yyyy')}` : ''}
+        onClose={() => { setSelected(null); setEditMode(false) }}
+        title={editMode ? 'Edit Booking' : (selected?.event ?? '')}
+        sub={!editMode && selected ? `${format(new Date(selected.date), 'dd MMM yyyy')} · created ${format(new Date(selected.created_at), 'dd MMM yyyy')}` : ''}
         footer={
-          selected?.status === 'pending' ? (
+          editMode ? (
+            <div style={{ display: 'flex', gap: 7, width: '100%' }}>
+              <button className="btn btn-ghost" style={{ marginRight: 'auto' }} onClick={() => setEditMode(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveEdit} disabled={saving}>
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          ) : selected?.status === 'pending' ? (
             <div style={{ display: 'flex', gap: 7, width: '100%' }}>
               <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { updateStatus(selected.id, 'denied'); setSelected(null) }} disabled={!!actionLoading}>✗ Deny</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => approveBooking(selected.id)} disabled={!!actionLoading}>
@@ -367,6 +437,7 @@ export default function Bookings() {
                     {actionLoading === 'paid' ? 'Saving…' : '✓ Mark as Paid'}
                   </button>
                 )}
+                <button className="btn btn-ghost btn-sm" onClick={() => startEdit(selected)}>Edit</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>Close</button>
               </div>
             </div>
@@ -382,6 +453,7 @@ export default function Bookings() {
                   {actionLoading === 'refund' ? 'Refunding…' : `Refund Deposit (£${selected.deposit})`}
                 </button>
               )}
+              <button className="btn btn-ghost btn-sm" onClick={() => startEdit(selected)}>Edit</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>Close</button>
             </div>
           ) : (
@@ -389,7 +461,7 @@ export default function Bookings() {
           )
         }
       >
-        {selected && (
+        {selected && !editMode && (
           <>
             <div className="notice notice-accent" style={{ marginBottom: 12 }}>
               <span>{selected.sites?.emoji}</span>
@@ -422,6 +494,97 @@ export default function Bookings() {
             </div>
           </>
         )}
+        {selected && editMode && (() => {
+          const editHours = calcHours(editForm.start_time, editForm.end_time)
+          const editTotal = selected.sites ? editHours * selected.sites.rate + selected.deposit : selected.total
+          const totalChanged = editTotal !== selected.total
+          return (
+            <>
+              {selected.status === 'confirmed' && totalChanged && (
+                <div className="notice notice-warn" style={{ marginBottom: 12, fontSize: 12 }}>
+                  Total has changed from £{selected.total} to £{editTotal}. Since this booking is already paid, send a new payment link manually if additional payment is needed.
+                </div>
+              )}
+              {selected.status === 'approved' && totalChanged && (
+                <div className="notice notice-accent" style={{ marginBottom: 12, fontSize: 12 }}>
+                  Total will change from £{selected.total} to £{editTotal}. The Stripe payment link will be regenerated automatically.
+                </div>
+              )}
+              <div className="form-grid-2">
+                <div>
+                  <label className="form-label">Name</label>
+                  <input className="form-input" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Email</label>
+                  <input className="form-input" type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-grid-2">
+                <div>
+                  <label className="form-label">Phone</label>
+                  <input className="form-input" value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Event / purpose</label>
+                  <input className="form-input" value={editForm.event} onChange={e => setEditForm(f => ({ ...f, event: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-grid-2">
+                <div>
+                  <label className="form-label">Type</label>
+                  <select className="form-input" value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
+                    <option value="oneoff">One-off</option>
+                    <option value="recurring">Recurring</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">Date</label>
+                  <input className="form-input" type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
+                </div>
+              </div>
+              {editForm.type === 'recurring' && (
+                <div className="form-row">
+                  <label className="form-label">Recurrence</label>
+                  <select className="form-input" value={editForm.recurrence} onChange={e => setEditForm(f => ({ ...f, recurrence: e.target.value }))}>
+                    <option value="">Select…</option>
+                    <option value="Weekly">Weekly</option>
+                    <option value="Fortnightly">Fortnightly</option>
+                    <option value="Monthly">Monthly</option>
+                  </select>
+                </div>
+              )}
+              <div className="form-grid-2">
+                <div>
+                  <label className="form-label">Start time</label>
+                  <select className="form-input" value={editForm.start_time} onChange={e => setEditForm(f => ({ ...f, start_time: e.target.value }))}>
+                    <option value="">Select…</option>
+                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">End time</label>
+                  <select className="form-input" value={editForm.end_time} onChange={e => setEditForm(f => ({ ...f, end_time: e.target.value }))}>
+                    <option value="">Select…</option>
+                    {TIME_SLOTS.filter(t => !editForm.start_time || t > editForm.start_time).map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
+                <label className="form-label">Notes <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+                <textarea className="form-input" rows={2} style={{ resize: 'none' }} value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
+              </div>
+              {editHours > 0 && selected.sites && (
+                <div className="price-bar" style={{ marginTop: 4 }}>
+                  <div><div className="pi-label">Rate</div><div className="pi-value">£{selected.sites.rate}/hr</div></div>
+                  <div><div className="pi-label">Hours</div><div className="pi-value">{editHours}</div></div>
+                  <div><div className="pi-label">Deposit</div><div className="pi-value">£{selected.deposit}</div></div>
+                  <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{editTotal}</div></div>
+                </div>
+              )}
+            </>
+          )
+        })()}
       </Modal>
     </div>
   )
