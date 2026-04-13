@@ -77,6 +77,17 @@ export default function Users() {
   }
 
   const [addError, setAddError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  async function deleteUser(userId: string) {
+    setDeleting(true)
+    await supabase.functions.invoke('delete-user', { body: { user_id: userId } })
+    setUsers(prev => prev.filter(u => u.id !== userId))
+    setSelUser(null)
+    setConfirmDelete(false)
+    setDeleting(false)
+  }
 
   async function addUser() {
     setSaving(true)
@@ -176,7 +187,7 @@ export default function Users() {
       {/* User detail modal */}
       <Modal
         open={!!selUser}
-        onClose={() => setSelUser(null)}
+        onClose={() => { setSelUser(null); setConfirmDelete(false) }}
         title={selUser?.name ?? ''}
         sub={selUser?.email}
         wide
@@ -216,8 +227,18 @@ export default function Users() {
                     : resetStatus === 'error' ? '✗ Failed'
                     : 'Reset Password'}
                 </button>
+                {!confirmDelete
+                  ? <button className="btn btn-sm" style={{ color: 'var(--denied)', borderColor: 'var(--denied)', background: 'transparent' }} onClick={() => setConfirmDelete(true)}>Delete User</button>
+                  : <button className="btn btn-sm" style={{ background: 'var(--denied)', color: '#fff', border: 'none' }} disabled={deleting} onClick={() => deleteUser(selUser.id)}>{deleting ? 'Deleting…' : 'Confirm Delete'}</button>
+                }
               </div>
             </div>
+            {confirmDelete && (
+              <div className="notice notice-denied" style={{ marginBottom: 12 }}>
+                This will permanently delete <strong>{selUser.name}</strong> and remove their login access. Their bookings will remain.{' '}
+                <button style={{ background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', color: 'inherit', padding: 0, fontSize: 'inherit' }} onClick={() => setConfirmDelete(false)}>Cancel</button>
+              </div>
+            )}
 
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', marginBottom: 6 }}>Sites</div>
