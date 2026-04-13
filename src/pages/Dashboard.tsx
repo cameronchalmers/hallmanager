@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
 import type { Booking, ExtraSlot, Site } from '../lib/database.types'
 import Badge from '../components/ui/Badge'
+import Modal from '../components/ui/Modal'
 import { format } from 'date-fns'
 
 type BookingWithSite = Booking & { sites?: Site }
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
   const [slots, setSlots] = useState<ExtraSlot[]>([])
   const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
+  const [preview, setPreview] = useState<BookingWithSite | null>(null)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -146,7 +150,7 @@ export default function Dashboard() {
             {pending.map(b => {
               const site = (b as BookingWithSite).sites
               return (
-                <div key={b.id} className="tbl-row cols-bookings">
+                <div key={b.id} className="tbl-row cols-bookings" style={{ cursor: 'pointer' }} onClick={() => setPreview(b as BookingWithSite)}>
                   <div>
                     <div style={{ fontWeight: 600 }}>{b.name}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
@@ -188,7 +192,7 @@ export default function Dashboard() {
         {confirmed.slice(0, 5).map(b => {
           const site = (b as BookingWithSite).sites
           return (
-            <div key={b.id} className="tbl-row cols-bookings">
+            <div key={b.id} className="tbl-row cols-bookings" style={{ cursor: 'pointer' }} onClick={() => setPreview(b as BookingWithSite)}>
               <div>
                 <div style={{ fontWeight: 600 }}>{b.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
@@ -204,11 +208,68 @@ export default function Dashboard() {
                 </span>
               </div>
               <div><Badge status={b.status} /></div>
-              <div></div>
+              <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--text-muted)' }}>View →</div>
             </div>
           )
         })}
       </div>
+
+      {/* Quick-view modal */}
+      <Modal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        title={preview?.event ?? ''}
+        sub={preview ? `${format(new Date(preview.date), 'dd MMM yyyy')} · ${preview.start_time}–${preview.end_time}` : ''}
+        footer={
+          <div style={{ display: 'flex', gap: 7, width: '100%' }}>
+            {preview?.status === 'pending' && (
+              <>
+                <button className="btn btn-danger btn-sm" onClick={() => { denyBooking(preview.id); setPreview(null) }}>✗ Deny</button>
+                <button className="btn btn-primary btn-sm" onClick={() => { approveBooking(preview.id); setPreview(null) }}>✓ Approve</button>
+              </>
+            )}
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => { setPreview(null); navigate('/bookings') }}
+            >
+              Open in Bookings →
+            </button>
+          </div>
+        }
+      >
+        {preview && (
+          <>
+            <div className="notice notice-accent" style={{ marginBottom: 12 }}>
+              <span>{preview.sites?.emoji}</span>
+              <div>
+                <strong>{preview.sites?.name ?? 'Unknown venue'}</strong>
+                <div style={{ fontSize: 11, marginTop: 1 }}>{preview.sites?.address}</div>
+              </div>
+            </div>
+            <div className="detail-grid">
+              <div><div className="detail-label">Contact</div><div className="detail-value">{preview.name}</div></div>
+              <div><div className="detail-label">Status</div><div className="detail-value"><Badge status={preview.status} /></div></div>
+              <div><div className="detail-label">Email</div><div className="detail-value" style={{ fontSize: 12 }}>{preview.email}</div></div>
+              <div><div className="detail-label">Phone</div><div className="detail-value" style={{ fontSize: 12 }}>{preview.phone}</div></div>
+              <div><div className="detail-label">Hours</div><div className="detail-value">{preview.hours}h</div></div>
+              <div><div className="detail-label">Type</div><div className="detail-value"><span className={`badge ${preview.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>{preview.type === 'recurring' ? `↻ ${preview.recurrence}` : 'One-off'}</span></div></div>
+            </div>
+            {preview.notes && (
+              <div style={{ background: 'var(--surface2)', borderRadius: 7, padding: '9px 12px', fontSize: 12, color: 'var(--text)', marginBottom: 12, border: '1px solid var(--border)' }}>
+                <div style={{ fontWeight: 700, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>Notes</div>
+                {preview.notes}
+              </div>
+            )}
+            <div className="price-bar">
+              <div><div className="pi-label">Rate</div><div className="pi-value">£{preview.sites?.rate ?? 0}/hr</div></div>
+              <div><div className="pi-label">Hours</div><div className="pi-value">{preview.hours}</div></div>
+              <div><div className="pi-label">Deposit</div><div className="pi-value">£{preview.deposit}</div></div>
+              <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{preview.total}</div></div>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   )
 }
