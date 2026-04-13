@@ -91,6 +91,7 @@ serve(async (req) => {
     .from('bookings')
     .select('*, sites(name)')
     .eq('status', 'approved')
+    .neq('type', 'recurring')
     .lt('approved_at', cutoff.toISOString())
 
   if (error) {
