@@ -7,11 +7,13 @@ interface SyncEntry { time: string; action: string; ok: boolean }
 
 type ConnStatus = 'checking' | 'connected' | 'error' | 'unconfigured'
 
+
 export default function QuickFile() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [connStatus, setConnStatus] = useState<ConnStatus>('checking')
+  const [connError, setConnError] = useState<string>('')
   const [syncing, setSyncing] = useState(false)
   const [syncLog, setSyncLog] = useState<SyncEntry[]>([])
   const [linkingUser, setLinkingUser] = useState<string | null>(null)
@@ -35,12 +37,15 @@ export default function QuickFile() {
 
   async function testConnection() {
     setConnStatus('checking')
+    setConnError('')
     const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'test' } })
     if (error || !data?.ok) {
-      const msg = data?.error ?? error?.message ?? ''
+      const msg = data?.error ?? error?.message ?? 'Unknown error'
+      setConnError(msg)
       setConnStatus(msg.includes('not configured') ? 'unconfigured' : 'error')
     } else {
       setConnStatus('connected')
+      setConnError('')
     }
   }
 
@@ -136,6 +141,23 @@ export default function QuickFile() {
             )}
           </div>
         </div>
+
+        {connStatus === 'error' && connError && (
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div className="notice notice-warn" style={{ marginBottom: 0 }}>
+              <span>⚠️</span>
+              <div>
+                <strong>Could not connect to QuickFile</strong>
+                <div style={{ fontSize: 12, marginTop: 4, fontFamily: 'monospace' }}>{connError}</div>
+                <div style={{ fontSize: 12, marginTop: 8, color: 'var(--text-muted)' }}>
+                  Make sure you've run:<br />
+                  <code style={{ fontSize: 11 }}>npx supabase secrets set QF_ACCOUNT_NUM=... QF_APP_ID=... QF_API_KEY=...</code><br />
+                  <code style={{ fontSize: 11 }}>npx supabase functions deploy quickfile --no-verify-jwt</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {connStatus === 'unconfigured' && (
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
