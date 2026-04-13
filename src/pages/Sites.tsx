@@ -5,6 +5,10 @@ import Modal from '../components/ui/Modal'
 
 const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿']
 
+function toSlug(name: string) {
+  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+}
+
 const DEFAULT_FORM = {
   name: '',
   address: '',
@@ -88,7 +92,19 @@ export default function Sites() {
                 </button>
               </div>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{site.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>{site.address}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>{site.address}</div>
+              <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', background: 'var(--surface2)', padding: '2px 6px', borderRadius: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+                  /book/{toSlug(site.name)}
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ padding: '2px 6px', fontSize: 10, flexShrink: 0 }}
+                  onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(`${window.location.origin}/book/${toSlug(site.name)}`) }}
+                >
+                  Copy
+                </button>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
                 {[
                   { label: 'per hour', value: `£${site.rate}` },

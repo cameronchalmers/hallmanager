@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Site } from '../lib/database.types'
 
@@ -16,6 +17,10 @@ const DEFAULT_FORM = {
   notes: '',
 }
 
+function toSlug(name: string) {
+  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+}
+
 function calcHours(start: string, end: string) {
   if (!start || !end) return 0
   const [sh, sm] = start.split(':').map(Number)
@@ -24,20 +29,35 @@ function calcHours(start: string, end: string) {
 }
 
 export default function BookingForm() {
+  const { slug } = useParams<{ slug?: string }>()
   const [sites, setSites] = useState<Site[]>([])
+  const [lockedSite, setLockedSite] = useState<Site | null>(null)
   const [form, setForm] = useState(DEFAULT_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    supabase.from('sites').select('*').then(({ data }) => setSites(data ?? []))
-  }, [])
+    supabase.from('sites').select('*').then(({ data }) => {
+      const all = data ?? []
+      setSites(all)
+      if (slug) {
+        const match = all.find(s => toSlug(s.name) === slug)
+        if (match) {
+          setLockedSite(match)
+          setForm(f => ({ ...f, site_id: match.id }))
+        } else {
+          setNotFound(true)
+        }
+      }
+    })
+  }, [slug])
 
-  const site = sites.find(s => s.id === form.site_id)
+  const activeSite = lockedSite ?? sites.find(s => s.id === form.site_id)
   const hours = calcHours(form.start_time, form.end_time)
-  const total = site ? hours * site.rate : 0
-  const deposit = site?.deposit ?? 0
+  const total = activeSite ? hours * activeSite.rate : 0
+  const deposit = activeSite?.deposit ?? 0
 
   function set(key: keyof typeof form, value: string) {
     setForm(f => ({ ...f, [key]: value }))
@@ -45,7 +65,7 @@ export default function BookingForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!site || hours <= 0) { setError('Please check your times — end must be after start.'); return }
+    if (!activeSite || hours <= 0) { setError('Please check your times — end must be after start.'); return }
     setSubmitting(true)
     setError('')
     const { error: err } = await supabase.from('bookings').insert({
@@ -53,7 +73,7 @@ export default function BookingForm() {
       email: form.email,
       phone: form.phone,
       event: form.event,
-      site_id: form.site_id,
+      site_id: activeSite.id,
       date: form.date,
       start_time: form.start_time,
       end_time: form.end_time,
@@ -70,23 +90,35 @@ export default function BookingForm() {
     setSubmitting(false)
   }
 
+  if (notFound) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f4f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Figtree', sans-serif" }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🏛️</div>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Venue not found</div>
+          <div style={{ fontSize: 13, color: '#71717a' }}>This booking link doesn't match any venue.</div>
+        </div>
+      </div>
+    )
+  }
+
   if (submitted) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f4f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ minHeight: '100vh', background: '#f4f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Figtree', sans-serif" }}>
         <div style={{ background: '#fff', borderRadius: 16, padding: 40, maxWidth: 420, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
           <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Request submitted!</div>
           <div style={{ fontSize: 14, color: '#71717a', marginBottom: 24 }}>
-            Thanks, {form.name.split(' ')[0]}. We'll review your booking request and be in touch at <strong>{form.email}</strong> shortly.
+            Thanks, {form.name.split(' ')[0]}. We'll review your booking and be in touch at <strong>{form.email}</strong> shortly.
           </div>
           <div style={{ background: '#f4f4f6', borderRadius: 10, padding: '12px 16px', fontSize: 13, textAlign: 'left', marginBottom: 24 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>{form.event}</div>
-            <div style={{ color: '#71717a' }}>{site?.name} · {form.date} · {form.start_time}–{form.end_time}</div>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>{form.event}</div>
+            <div style={{ color: '#71717a' }}>{activeSite?.name} · {form.date} · {form.start_time}–{form.end_time}</div>
             <div style={{ marginTop: 6, fontWeight: 700 }}>Total: £{total} <span style={{ fontWeight: 400, color: '#71717a' }}>(deposit: £{deposit})</span></div>
           </div>
           <button
             style={{ background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-            onClick={() => { setForm(DEFAULT_FORM); setSubmitted(false) }}
+            onClick={() => { setForm(f => ({ ...f, name: '', email: '', phone: '', event: '', date: '', start_time: '', end_time: '', notes: '' })); setSubmitted(false) }}
           >
             Submit another request
           </button>
@@ -101,31 +133,46 @@ export default function BookingForm() {
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>H</div>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>Request a Booking</div>
-          <div style={{ fontSize: 13, color: '#71717a', marginTop: 4 }}>Fill in the details below and we'll be in touch to confirm</div>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+            {lockedSite ? lockedSite.emoji : 'H'}
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>
+            {lockedSite ? `Book ${lockedSite.name}` : 'Request a Booking'}
+          </div>
+          <div style={{ fontSize: 13, color: '#71717a', marginTop: 4 }}>
+            {lockedSite ? lockedSite.address : 'Fill in the details below and we\'ll be in touch to confirm'}
+          </div>
+          {lockedSite && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+              <span className="badge badge-accent">£{lockedSite.rate}/hr</span>
+              <span className="badge badge-neutral">£{lockedSite.deposit} deposit</span>
+              <span className="badge badge-neutral">Up to {lockedSite.capacity} guests</span>
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSubmit}>
-          {/* Venue */}
-          <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#71717a', marginBottom: 10 }}>Venue</div>
-            <div className="form-row">
-              <label className="form-label">Select a venue</label>
-              <select className="form-input" required value={form.site_id} onChange={e => set('site_id', e.target.value)}>
-                <option value="">Choose a venue…</option>
-                {sites.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
-              </select>
-            </div>
-            {site && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                <span className="badge badge-accent">£{site.rate}/hr</span>
-                <span className="badge badge-neutral">£{site.deposit} deposit</span>
-                <span className="badge badge-neutral">Up to {site.capacity} guests</span>
-                <span style={{ fontSize: 11, color: '#71717a' }}>{site.address}</span>
+          {/* Venue selector — only shown when no slug */}
+          {!lockedSite && (
+            <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#71717a', marginBottom: 10 }}>Venue</div>
+              <div className="form-row">
+                <label className="form-label">Select a venue</label>
+                <select className="form-input" required value={form.site_id} onChange={e => set('site_id', e.target.value)}>
+                  <option value="">Choose a venue…</option>
+                  {sites.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+                </select>
               </div>
-            )}
-          </div>
+              {activeSite && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                  <span className="badge badge-accent">£{activeSite.rate}/hr</span>
+                  <span className="badge badge-neutral">£{activeSite.deposit} deposit</span>
+                  <span className="badge badge-neutral">Up to {activeSite.capacity} guests</span>
+                  <span style={{ fontSize: 11, color: '#71717a' }}>{activeSite.address}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Contact */}
           <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
@@ -194,22 +241,20 @@ export default function BookingForm() {
           </div>
 
           {/* Price summary */}
-          {site && hours > 0 && (
+          {activeSite && hours > 0 && (
             <div className="price-bar" style={{ marginBottom: 14 }}>
-              <div><div className="pi-label">Rate</div><div className="pi-value">£{site.rate}/hr</div></div>
+              <div><div className="pi-label">Rate</div><div className="pi-value">£{activeSite.rate}/hr</div></div>
               <div><div className="pi-label">Hours</div><div className="pi-value">{hours}</div></div>
               <div><div className="pi-label">Deposit</div><div className="pi-value">£{deposit}</div></div>
               <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{total}</div></div>
             </div>
           )}
 
-          {error && (
-            <div className="notice notice-warn" style={{ marginBottom: 12 }}>{error}</div>
-          )}
+          {error && <div className="notice notice-warn" style={{ marginBottom: 12 }}>{error}</div>}
 
           <button
             type="submit"
-            disabled={submitting || !form.site_id || !form.name || !form.email}
+            disabled={submitting || (!lockedSite && !form.site_id) || !form.name || !form.email}
             style={{ width: '100%', background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 10, padding: '14px', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: submitting ? 0.7 : 1 }}
           >
             {submitting ? 'Submitting…' : 'Submit Booking Request'}

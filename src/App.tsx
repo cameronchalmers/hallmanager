@@ -35,6 +35,7 @@ export default function App() {
       {/* Public routes — no auth required */}
       <Route path="/login" element={<Login />} />
       <Route path="/book" element={<BookingForm />} />
+      <Route path="/book/:slug" element={<BookingForm />} />
 
       {/* Protected routes */}
       <Route
