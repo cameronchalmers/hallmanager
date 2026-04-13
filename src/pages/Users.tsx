@@ -65,9 +65,19 @@ export default function Users() {
     setResetStatus(error ? 'error' : 'sent')
   }
 
+  const [addError, setAddError] = useState<string | null>(null)
+
   async function addUser() {
     setSaving(true)
-    await supabase.from('users').insert({ ...newUser, site_ids: [], custom_rates: null })
+    setAddError(null)
+    const { data, error } = await supabase.functions.invoke('invite-user', {
+      body: { email: newUser.email, name: newUser.name, role: newUser.role },
+    })
+    if (error || data?.error) {
+      setAddError(data?.error ?? error?.message ?? 'Failed to add user')
+      setSaving(false)
+      return
+    }
     await fetchData()
     setShowAdd(false)
     setNewUser({ name: '', email: '', role: 'manager' })
@@ -127,7 +137,7 @@ export default function Users() {
         title="Add User"
         footer={
           <>
-            <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>Cancel</button>
+            <button className="btn btn-ghost" onClick={() => { setShowAdd(false); setAddError(null) }}>Cancel</button>
             <button className="btn btn-primary" onClick={addUser} disabled={saving || !newUser.name || !newUser.email}>
               {saving ? 'Adding…' : 'Add User'}
             </button>
@@ -146,8 +156,9 @@ export default function Users() {
             <option value="regular">Regular Booker — portal access, extra slot requests</option>
           </select>
         </div>
+        {addError && <div className="notice notice-denied" style={{ marginTop: 4 }}>✗ {addError}</div>}
         <div className="notice notice-accent" style={{ marginTop: 4 }}>
-          After adding the user, open their profile and click <strong>Send Invite Email</strong> to let them set a password and access the portal.
+          An invite email will be sent immediately so they can set a password and access the portal.
         </div>
       </Modal>
 

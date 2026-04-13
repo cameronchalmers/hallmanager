@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { email } = await req.json()
+    const { email, name, role } = await req.json()
 
     if (!email) {
       return new Response(JSON.stringify({ error: 'Email is required' }), {
@@ -35,6 +35,17 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: error.message }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Create the public.users row with the new auth user's ID
+    if (data.user && (name || role)) {
+      await supabase.from('users').upsert({
+        id: data.user.id,
+        email,
+        name: name ?? email,
+        role: role ?? 'manager',
+        site_ids: [],
       })
     }
 
