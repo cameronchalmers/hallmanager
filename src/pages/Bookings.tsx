@@ -73,11 +73,12 @@ export default function Bookings() {
     // Create Stripe payment link first
     let stripeUrl: string | null = null
     try {
-      const { data } = await supabase.functions.invoke('stripe-action', {
+      const { data, error } = await supabase.functions.invoke('stripe-action', {
         body: { action: 'create_payment', booking_id: id },
       })
-      stripeUrl = data?.url ?? null
-    } catch (_) { /* Stripe not configured — approve without payment link */ }
+      if (error) console.error('Stripe payment creation failed:', error)
+      else stripeUrl = data?.url ?? null
+    } catch (e) { console.error('Stripe action error:', e) }
 
     await supabase.from('bookings').update({ status: 'confirmed' }).eq('id', id)
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed', stripe_payment_url: stripeUrl } : b))
