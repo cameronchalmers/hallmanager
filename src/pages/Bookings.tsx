@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
-import type { Booking, Site } from '../lib/database.types'
+import type { AppUser, Booking, Site } from '../lib/database.types'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
 import { format } from 'date-fns'
@@ -39,6 +39,7 @@ function calcHours(start: string, end: string) {
 export default function Bookings() {
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
   const [sites, setSites] = useState<Site[]>([])
+  const [regularUsers, setRegularUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('active')
   const [search, setSearch] = useState('')
@@ -55,9 +56,10 @@ export default function Bookings() {
 
   async function fetchBookings() {
     setLoading(true)
-    const [bRes, sRes] = await Promise.all([
+    const [bRes, sRes, uRes] = await Promise.all([
       supabase.from('bookings').select('*').order('date', { ascending: false }),
       supabase.from('sites').select('*'),
+      supabase.from('users').select('*').eq('role', 'regular'),
     ])
     const allSites = sRes.data ?? []
     const bookingsWithSites = (bRes.data ?? []).map(b => ({
@@ -66,6 +68,7 @@ export default function Bookings() {
     })) as BookingWithSite[]
     setBookings(bookingsWithSites)
     setSites(allSites)
+    setRegularUsers((uRes.data ?? []) as unknown as AppUser[])
     setLoading(false)
   }
 
@@ -180,6 +183,12 @@ export default function Bookings() {
     setSaving(false)
   }
 
+  async function linkUser(bookingId: string, userId: string | null) {
+    await supabase.from('bookings').update({ user_id: userId }).eq('id', bookingId)
+    setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, user_id: userId } : b))
+    if (selected?.id === bookingId) setSelected(prev => prev ? { ...prev, user_id: userId } : null)
+  }
+
   async function createBooking() {
     const site = sites.find(s => s.id === form.site_id)
     if (!site) return
@@ -264,6 +273,7 @@ export default function Bookings() {
               <div>
                 <div style={{ fontWeight: 600 }}>{b.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
+                {b.user_id && (() => { const u = regularUsers.find(u => u.id === b.user_id); return u ? <div style={{ fontSize: 10, color: 'var(--accent-text)', fontWeight: 600, marginTop: 1 }}>🔗 {u.group_name ?? u.name}</div> : null })()}
               </div>
               <div>
                 <div>{format(new Date(b.date), 'dd MMM yyyy')}</div>
@@ -479,6 +489,19 @@ export default function Bookings() {
               <div><div className="detail-label">Time</div><div className="detail-value">{selected.start_time}–{selected.end_time} ({selected.hours}h)</div></div>
               <div><div className="detail-label">Type</div><div className="detail-value"><span className={`badge ${selected.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>{selected.type === 'recurring' ? `↻ ${selected.recurrence}` : 'One-off'}</span></div></div>
               <div><div className="detail-label">Capacity</div><div className="detail-value">Up to {selected.sites?.capacity} guests</div></div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label className="form-label" style={{ display: 'block', marginBottom: 5 }}>Linked hirer</label>
+              <select
+                className="form-input"
+                value={selected.user_id ?? ''}
+                onChange={e => linkUser(selected.id, e.target.value || null)}
+              >
+                <option value="">— No linked hirer —</option>
+                {regularUsers.map(u => (
+                  <option key={u.id} value={u.id}>{u.group_name ?? u.name} ({u.email})</option>
+                ))}
+              </select>
             </div>
             {selected.notes && (
               <div style={{ background: '#fafafa', borderRadius: 7, padding: '9px 12px', fontSize: 12, color: '#3f3f46', marginBottom: 12, border: '1px solid var(--border)' }}>
