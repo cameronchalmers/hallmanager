@@ -8,7 +8,7 @@ import Modal from '../components/ui/Modal'
 import CalendarWidget from '../components/CalendarWidget'
 import { format } from 'date-fns'
 
-type BookingWithSite = Booking & { sites?: Site }
+type BookingWithSite = Booking & { sites?: Site; user_group_name?: string | null }
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -22,15 +22,18 @@ export default function Dashboard() {
 
   async function fetchAll() {
     setLoading(true)
-    const [bRes, sRes, sitesRes] = await Promise.all([
+    const [bRes, sRes, sitesRes, usersRes] = await Promise.all([
       supabase.from('bookings').select('*').order('created_at', { ascending: false }),
       supabase.from('extra_slots').select('*').order('created_at', { ascending: false }),
       supabase.from('sites').select('*'),
+      supabase.from('users').select('id, group_name'),
     ])
     const allSites = sitesRes.data ?? []
+    const allUsers = usersRes.data ?? []
     const bookingsWithSites = (bRes.data ?? []).map(b => ({
       ...b,
       sites: allSites.find(s => s.id === b.site_id),
+      user_group_name: allUsers.find(u => u.id === b.user_id)?.group_name ?? null,
     })) as BookingWithSite[]
     setBookings(bookingsWithSites)
     setSlots(sRes.data ?? [])
@@ -205,7 +208,7 @@ export default function Dashboard() {
                 <div className="card">
                   {group.slice(0, 6).map(b => {
                     const site = (b as BookingWithSite).sites
-                    const label = b.type === 'recurring' ? b.event : b.name
+                    const label = b.type === 'recurring' ? (b.user_group_name ?? b.event) : b.name
                     const sub = b.type === 'recurring' ? `${b.name} · ${site?.name}` : `${b.event} · ${site?.name}`
                     return (
                       <div key={b.id} className="tbl-row" style={{ cursor: 'pointer', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }} onClick={() => setPreview(b as BookingWithSite)}>
