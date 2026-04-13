@@ -98,6 +98,18 @@ function invoiceBody(clientId: string, date: string, lines: Record<string, unkno
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
+  // Verify caller is an authenticated admin/manager
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader) return json({ ok: false, error: 'Unauthorized' }, 401)
+
+  const userClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: authHeader } } }
+  )
+  const { data: { user }, error: authError } = await userClient.auth.getUser()
+  if (authError || !user) return json({ ok: false, error: 'Unauthorized' }, 401)
+
   if (!ACC_NUM || !APP_ID || !API_KEY) {
     return json({ ok: false, error: 'QuickFile credentials not configured. Set QF_ACCOUNT_NUM, QF_APP_ID and QF_API_KEY as Supabase secrets.' })
   }
@@ -106,6 +118,12 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
+
+  // Check admin/manager role
+  const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
+  if (!profile || !['admin', 'manager'].includes(profile.role)) {
+    return json({ ok: false, error: 'Forbidden' }, 403)
+  }
 
   try {
     const body = await req.json()

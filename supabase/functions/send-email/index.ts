@@ -50,6 +50,29 @@ serve(async (req) => {
 
     const { type, id, data: inlineData, template } = await req.json() as { type: string; id?: string; data?: BookingData; template?: string }
 
+    // booking_submitted with inline data comes from the public form (anon) — allow it.
+    // All other types require an authenticated admin/manager.
+    const isPublicBookingSubmit = type === 'booking_submitted' && !!inlineData
+    if (!isPublicBookingSubmit) {
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+      }
+      const userClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_ANON_KEY')!,
+        { global: { headers: { Authorization: authHeader } } }
+      )
+      const { data: { user }, error: authError } = await userClient.auth.getUser()
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+      }
+      const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
+      if (!profile || !['admin', 'manager'].includes(profile.role)) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
+      }
+    }
+
     // ── Booking emails ────────────────────────────────────────────────────────
 
     if (['booking_submitted', 'booking_approved', 'booking_denied', 'booking_cancelled'].includes(type)) {

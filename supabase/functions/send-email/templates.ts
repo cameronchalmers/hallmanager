@@ -1,3 +1,13 @@
+function esc(text: string | null | undefined): string {
+  if (!text) return ''
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
 const BASE = `
   font-family: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: #f8f9fc;
@@ -51,13 +61,13 @@ function pill(text: string, color: string, bg: string) {
 
 function bookingTable(b: BookingData) {
   const rows = [
-    ['Event', b.event],
-    ['Date', b.date],
-    ['Time', `${b.start_time} – ${b.end_time}`],
-    ['Duration', `${b.hours} hours`],
-    ['Venue', b.site_name],
-    ['Deposit', `£${b.deposit}`],
-    ['Total', `£${b.total}`],
+    ['Event', esc(b.event)],
+    ['Date', esc(b.date)],
+    ['Time', `${esc(b.start_time)} – ${esc(b.end_time)}`],
+    ['Duration', `${Number(b.hours)} hours`],
+    ['Venue', esc(b.site_name)],
+    ['Deposit', `£${Number(b.deposit)}`],
+    ['Total', `£${Number(b.total)}`],
   ]
   return `
     <table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:16px;">
@@ -112,7 +122,7 @@ export function bookingSubmittedAdmin(b: BookingData): { subject: string; html: 
       <div style="padding:24px 32px;">
         ${pill('Pending Review', '#92400e', '#fffbeb')}
         ${bookingTable(b)}
-        ${b.notes ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-radius:8px;border-left:3px solid #e5e7eb;"><p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Notes from booker</p><p style="margin:4px 0 0;font-size:14px;color:#374151;">${b.notes}</p></div>` : ''}
+        ${b.notes ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-radius:8px;border-left:3px solid #e5e7eb;"><p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Notes from booker</p><p style="margin:4px 0 0;font-size:14px;color:#374151;">${esc(b.notes)}</p></div>` : ''}
         <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;">Log in to HallManager to approve or deny this request.</p>
       </div>
     `),
@@ -128,12 +138,12 @@ export function bookingSubmitted(b: BookingData): { subject: string; html: strin
       <div style="padding:32px 32px 0;border-bottom:3px solid ${ACCENT};">
         <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:${ACCENT};letter-spacing:0.5px;text-transform:uppercase;">Booking Request</p>
         <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">We've received your request</h1>
-        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${b.name}, your booking is pending review. We'll be in touch shortly.</p>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(b.name)}, your booking is pending review. We'll be in touch shortly.</p>
       </div>
       <div style="padding:24px 32px;">
         ${pill('Pending Review', '#92400e', '#fffbeb')}
         ${bookingTable(b)}
-        ${b.notes ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-radius:8px;border-left:3px solid #e5e7eb;"><p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Notes</p><p style="margin:4px 0 0;font-size:14px;color:#374151;">${b.notes}</p></div>` : ''}
+        ${b.notes ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-radius:8px;border-left:3px solid #e5e7eb;"><p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Notes</p><p style="margin:4px 0 0;font-size:14px;color:#374151;">${esc(b.notes)}</p></div>` : ''}
         <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;">If you have any questions, reply to your original enquiry or contact us directly.</p>
       </div>
     `),
@@ -149,7 +159,7 @@ export function bookingApproved(b: BookingData): { subject: string; html: string
       <div style="padding:32px 32px 0;border-bottom:3px solid #d97706;">
         <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#d97706;letter-spacing:0.5px;text-transform:uppercase;">Action Required</p>
         <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Your booking has been approved</h1>
-        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${b.name}, great news — your booking request has been approved. Please read the important information below.</p>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(b.name)}, great news — your booking request has been approved. Please read the important information below.</p>
       </div>
       <div style="padding:24px 32px;">
         ${pill('Awaiting Payment', '#92400e', '#fffbeb')}
@@ -183,7 +193,7 @@ export function bookingDenied(b: BookingData): { subject: string; html: string }
       <div style="padding:32px 32px 0;border-bottom:3px solid #dc2626;">
         <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#dc2626;letter-spacing:0.5px;text-transform:uppercase;">Booking Update</p>
         <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Unfortunately we can't accommodate this booking</h1>
-        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${b.name}, we're sorry but your booking request could not be approved at this time.</p>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(b.name)}, we're sorry but your booking request could not be approved at this time.</p>
       </div>
       <div style="padding:24px 32px;">
         ${pill('Not approved', '#991b1b', '#fef2f2')}
@@ -205,18 +215,18 @@ export function extraSlotApproved(s: ExtraSlotData): { subject: string; html: st
       <div style="padding:32px 32px 0;border-bottom:3px solid #059669;">
         <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#059669;letter-spacing:0.5px;text-transform:uppercase;">Extra Slot Approved</p>
         <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Your extra slot is confirmed</h1>
-        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${s.name}, your additional session request has been approved.</p>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(s.name)}, your additional session request has been approved.</p>
       </div>
       <div style="padding:24px 32px;">
         ${pill('Approved', '#065f46', '#ecfdf5')}
         <table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:16px;">
           ${[
-            ['Venue', s.site_name],
-            ['Date', s.date],
-            ['Time', `${s.start_time} – ${s.end_time}`],
-            ['Duration', `${s.hours} hours`],
-            ['Reason', s.reason],
-            ['Total', `£${s.total}`],
+            ['Venue', esc(s.site_name)],
+            ['Date', esc(s.date)],
+            ['Time', `${esc(s.start_time)} – ${esc(s.end_time)}`],
+            ['Duration', `${Number(s.hours)} hours`],
+            ['Reason', esc(s.reason)],
+            ['Total', `£${Number(s.total)}`],
           ].map(([label, value], i) => `
             <tr style="background:${i % 2 === 0 ? '#f9fafb' : '#ffffff'};">
               <td style="padding:10px 14px;color:#6b7280;font-weight:500;width:40%;">${label}</td>
@@ -239,16 +249,16 @@ export function extraSlotDenied(s: ExtraSlotData): { subject: string; html: stri
       <div style="padding:32px 32px 0;border-bottom:3px solid #dc2626;">
         <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#dc2626;letter-spacing:0.5px;text-transform:uppercase;">Extra Slot Update</p>
         <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Extra slot not available</h1>
-        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${s.name}, unfortunately we're unable to accommodate your additional session request.</p>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(s.name)}, unfortunately we're unable to accommodate your additional session request.</p>
       </div>
       <div style="padding:24px 32px;">
         ${pill('Not approved', '#991b1b', '#fef2f2')}
         <table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:16px;">
           ${[
-            ['Venue', s.site_name],
-            ['Date', s.date],
-            ['Time', `${s.start_time} – ${s.end_time}`],
-            ['Reason given', s.reason],
+            ['Venue', esc(s.site_name)],
+            ['Date', esc(s.date)],
+            ['Time', `${esc(s.start_time)} – ${esc(s.end_time)}`],
+            ['Reason given', esc(s.reason)],
           ].map(([label, value], i) => `
             <tr style="background:${i % 2 === 0 ? '#f9fafb' : '#ffffff'};">
               <td style="padding:10px 14px;color:#6b7280;font-weight:500;width:40%;">${label}</td>
@@ -273,7 +283,7 @@ export function bookingCancelled(b: BookingData): { subject: string; html: strin
       <div style="padding:32px 32px 0;border-bottom:3px solid #6b7280;">
         <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#6b7280;letter-spacing:0.5px;text-transform:uppercase;">Booking Cancelled</p>
         <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Your booking has been cancelled</h1>
-        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${b.name}, your booking has been cancelled. Please see the details below.</p>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(b.name)}, your booking has been cancelled. Please see the details below.</p>
       </div>
       <div style="padding:24px 32px;">
         ${pill('Cancelled', '#374151', '#f3f4f6')}

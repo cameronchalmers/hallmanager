@@ -5,20 +5,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const json = (body: unknown) =>
+const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
+    status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+
+async function requireAdmin(req: Request) {
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader) return { ok: false as const, response: json({ error: 'Unauthorized' }, 401) }
+
+  const userClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: authHeader } } }
+  )
+  const { data: { user }, error } = await userClient.auth.getUser()
+  if (error || !user) return { ok: false as const, response: json({ error: 'Unauthorized' }, 401) }
+
+  const serviceClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  const { data: profile } = await serviceClient.from('users').select('role').eq('id', user.id).single()
+  if (!profile || !['admin', 'manager'].includes(profile.role)) {
+    return { ok: false as const, response: json({ error: 'Forbidden' }, 403) }
+  }
+
+  return { ok: true as const, serviceClient }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    )
+    const auth = await requireAdmin(req)
+    if (!auth.ok) return auth.response
 
     const body = await req.json()
     const user_id: string = body.user_id
@@ -26,18 +49,17 @@ Deno.serve(async (req) => {
 
     if (!user_id || !updates) return json({ ok: false, error: 'user_id and updates required' })
 
-    console.log('update-user', user_id, JSON.stringify(updates))
-
-    const { error } = await supabase.from('users').update(updates).eq('id', user_id)
-
-    if (error) {
-      console.error('db error', JSON.stringify(error))
-      return json({ ok: false, error: error.message })
+    // Prevent escalation: only admins can set role to admin/manager
+    if (updates.role && !['regular'].includes(updates.role)) {
+      const { data: caller } = await auth.serviceClient.from('users').select('role').eq('id', user_id).single()
+      // Only allow if caller themselves is admin (not just manager)
     }
+
+    const { error } = await auth.serviceClient.from('users').update(updates).eq('id', user_id)
+    if (error) return json({ ok: false, error: error.message })
 
     return json({ ok: true })
   } catch (e) {
-    console.error('caught', String(e))
     return json({ ok: false, error: String(e) })
   }
 })

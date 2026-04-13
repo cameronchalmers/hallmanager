@@ -48,12 +48,42 @@ function inviteEmail(name: string, inviteUrl: string): string {
 </html>`
 }
 
+async function requireAdmin(req: Request) {
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader) return { ok: false as const }
+
+  const userClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: authHeader } } }
+  )
+  const { data: { user }, error } = await userClient.auth.getUser()
+  if (error || !user) return { ok: false as const }
+
+  const serviceClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  )
+  const { data: profile } = await serviceClient.from('users').select('role').eq('id', user.id).single()
+  if (!profile || !['admin', 'manager'].includes(profile.role)) return { ok: false as const }
+
+  return { ok: true as const }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
+    const auth = await requireAdmin(req)
+    if (!auth.ok) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { email, name, role } = await req.json()
 
     if (!email) {
