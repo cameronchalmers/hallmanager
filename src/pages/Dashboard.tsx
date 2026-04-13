@@ -8,7 +8,7 @@ import Modal from '../components/ui/Modal'
 import CalendarWidget from '../components/CalendarWidget'
 import { format } from 'date-fns'
 
-type BookingWithSite = Booking & { sites?: Site; user_group_name?: string | null }
+type BookingWithSite = Booking & { sites?: Site; user_group_name?: string | null; effective_total?: number }
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -26,15 +26,20 @@ export default function Dashboard() {
       supabase.from('bookings').select('*').order('created_at', { ascending: false }),
       supabase.from('extra_slots').select('*').order('created_at', { ascending: false }),
       supabase.from('sites').select('*'),
-      supabase.from('users').select('id, group_name'),
+      supabase.from('users').select('id, group_name, custom_rates'),
     ])
     const allSites = sitesRes.data ?? []
     const allUsers = usersRes.data ?? []
-    const bookingsWithSites = (bRes.data ?? []).map(b => ({
-      ...b,
-      sites: allSites.find(s => s.id === b.site_id),
-      user_group_name: allUsers.find(u => u.id === b.user_id)?.group_name ?? null,
-    })) as BookingWithSite[]
+    const bookingsWithSites = (bRes.data ?? []).map(b => {
+      const linkedUser = allUsers.find(u => u.id === b.user_id)
+      const customRate = (linkedUser?.custom_rates as Record<string, number> | null)?.[b.site_id]
+      return {
+        ...b,
+        sites: allSites.find(s => s.id === b.site_id),
+        user_group_name: linkedUser?.group_name ?? null,
+        effective_total: b.type === 'recurring' && customRate ? b.hours * customRate : (b.total ?? 0),
+      }
+    }) as BookingWithSite[]
     setBookings(bookingsWithSites)
     setSlots(sRes.data ?? [])
     setSites(allSites)
@@ -79,7 +84,7 @@ export default function Dashboard() {
   const pending = bookings.filter(b => b.status === 'pending')
   const pendingSlots = slots.filter(s => s.status === 'pending')
   const confirmed = bookings.filter(b => b.status === 'confirmed' || b.status === 'approved')
-  const revenue = confirmed.reduce((s, b) => s + (b.total ?? 0), 0)
+  const revenue = confirmed.reduce((s, b) => s + ((b as BookingWithSite).effective_total ?? b.total ?? 0), 0)
 
   if (loading) return <div className="empty"><div className="empty-icon">⏳</div><div className="empty-title">Loading…</div></div>
 
