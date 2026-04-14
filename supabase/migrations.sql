@@ -4,6 +4,22 @@
 -- Safe to re-run (uses IF NOT EXISTS / IF EXISTS / DO blocks).
 -- ============================================================
 
+-- ── get_site_bookings: safe anon-accessible RPC for public booking form ───────
+-- Returns only time/recurrence fields (no PII) for confirmed/approved bookings.
+create or replace function public.get_site_bookings(p_site_id uuid)
+returns table(
+  date text, start_time text, end_time text,
+  type text, recurrence text,
+  cancelled_sessions text[], recurrence_days integer[]
+)
+language sql security definer stable as $$
+  select date::text, start_time, end_time, type, recurrence, cancelled_sessions, recurrence_days
+  from public.bookings
+  where site_id = p_site_id
+    and status in ('confirmed', 'approved')
+$$;
+grant execute on function public.get_site_bookings to anon, authenticated;
+
 -- ── app_settings: key/value store for global toggles ─────────────────────────
 create table if not exists public.app_settings (
   key   text primary key,

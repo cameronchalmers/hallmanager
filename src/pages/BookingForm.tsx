@@ -5,6 +5,42 @@ import type { Site, WeekAvailability } from '../lib/database.types'
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
 
+interface SlotBooking {
+  date: string
+  start_time: string
+  end_time: string
+  type: string
+  recurrence: string | null
+  cancelled_sessions: string[] | null
+  recurrence_days: number[] | null
+}
+
+function getBookingsOnDate(bookings: SlotBooking[], dateStr: string): SlotBooking[] {
+  if (!dateStr) return []
+  const targetDow = (new Date(dateStr + 'T12:00:00').getDay() + 6) % 7
+  return bookings.filter(b => {
+    const cancelled = new Set(b.cancelled_sessions ?? [])
+    if (cancelled.has(dateStr)) return false
+    if (b.type !== 'recurring') return b.date === dateStr
+    if (dateStr < b.date) return false
+
+    const isMultiDay = b.recurrence === 'Weekly' && b.recurrence_days && b.recurrence_days.length > 1
+    const startDow = (new Date(b.date + 'T12:00:00').getDay() + 6) % 7
+    const diffDays = Math.round((new Date(dateStr + 'T12:00:00').getTime() - new Date(b.date + 'T12:00:00').getTime()) / 86400000)
+
+    if (b.recurrence === 'Weekly') {
+      if (isMultiDay) return (b.recurrence_days as number[]).includes(targetDow) && diffDays % 7 === 0
+      return startDow === targetDow && diffDays % 7 === 0
+    }
+    if (b.recurrence === 'Fortnightly') return startDow === targetDow && diffDays % 14 === 0
+    if (b.recurrence === 'Monthly') {
+      const s = new Date(b.date + 'T12:00:00'), t = new Date(dateStr + 'T12:00:00')
+      return s.getDate() === t.getDate() && (t.getFullYear() * 12 + t.getMonth()) > (s.getFullYear() * 12 + s.getMonth())
+    }
+    return false
+  })
+}
+
 function getSiteSchedule(site: Site, date: string): { open: boolean; from: string; until: string } | null {
   if (!site.availability || typeof site.availability !== 'object' || Array.isArray(site.availability)) return null
   const av = site.availability as unknown as WeekAvailability
@@ -54,6 +90,7 @@ export default function BookingForm() {
   const [error, setError] = useState('')
   const [notFound, setNotFound] = useState(false)
   const [photoIndex, setPhotoIndex] = useState(0)
+  const [siteBookings, setSiteBookings] = useState<SlotBooking[]>([])
 
   useEffect(() => {
     supabase.from('sites').select('*').then(({ data }) => {
@@ -64,12 +101,19 @@ export default function BookingForm() {
         if (match) {
           setLockedSite(match)
           setForm(f => ({ ...f, site_id: match.id }))
+          fetchSiteBookings(match.id)
         } else {
           setNotFound(true)
         }
       }
     })
   }, [slug])
+
+  async function fetchSiteBookings(siteId: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any).rpc('get_site_bookings', { p_site_id: siteId })
+    setSiteBookings((data ?? []) as SlotBooking[])
+  }
 
   const activeSite = lockedSite ?? sites.find(s => s.id === form.site_id)
   const hours = calcHours(form.start_time, form.end_time)
@@ -283,7 +327,7 @@ export default function BookingForm() {
                   <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Venue</div>
                   <div className="form-row">
                     <label className="form-label">Select a venue</label>
-                    <select className="form-input" required value={form.site_id} onChange={e => set('site_id', e.target.value)}>
+                    <select className="form-input" required value={form.site_id} onChange={e => { set('site_id', e.target.value); if (e.target.value) fetchSiteBookings(e.target.value) }}>
                       <option value="">Choose a venue…</option>
                       {sites.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
                     </select>
@@ -361,6 +405,24 @@ export default function BookingForm() {
                     return <div className="notice notice-warn" style={{ marginBottom: 8 }}>⚠️ {activeSite!.name} is closed on {dayName.charAt(0).toUpperCase() + dayName.slice(1)}s. Please choose a different date.</div>
                   }
                   return <div className="notice notice-accent" style={{ marginBottom: 8 }}>🕐 Available {sched.from}–{sched.until} on this day</div>
+                })()}
+                {(() => {
+                  if (!form.date) return null
+                  const booked = getBookingsOnDate(siteBookings, form.date)
+                  if (booked.length === 0) return null
+                  return (
+                    <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#c2410c', marginBottom: 6 }}>⚠️ Already booked on this date</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                        {booked.sort((a, b) => a.start_time.localeCompare(b.start_time)).map((b, i) => (
+                          <span key={i} style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: '#fed7aa', color: '#9a3412' }}>
+                            {b.start_time}–{b.end_time}
+                          </span>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#9a3412' }}>You can still submit a request for a different time slot — we'll confirm availability.</div>
+                    </div>
+                  )
                 })()}
                 {(() => {
                   const sched = activeSite && form.date ? getSiteSchedule(activeSite, form.date) : null
