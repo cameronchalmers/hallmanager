@@ -306,6 +306,9 @@ serve(async (req) => {
         body = await qf('invoice', 'search', {
           SearchParameters: {
             InvoiceNumber: '',
+            OrderResultsBy: 'InvoiceNumber',
+            OrderDirection: 'DESC',
+            InvoiceType: 'INVOICE',
             ReturnCount: 100,
             Offset: 0,
           },
