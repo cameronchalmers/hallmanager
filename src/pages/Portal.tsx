@@ -66,7 +66,7 @@ export default function Portal() {
     const [bRes, sRes, iRes, sitesRes] = await Promise.all([
       supabase.from('bookings').select('*').eq('user_id', user!.id).order('date', { ascending: false }),
       supabase.from('extra_slots').select('*').eq('user_id', user!.id).order('date', { ascending: false }),
-      supabase.from('invoices').select('*').eq('user_id', user!.id).order('date', { ascending: false }),
+      supabase.from('invoices').select('*').order('date', { ascending: false }),
       supabase.from('sites').select('*'),
     ])
     setBookings(bRes.data ?? [])

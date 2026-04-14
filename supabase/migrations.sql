@@ -101,6 +101,22 @@ do $$ begin
     );
 end $$;
 
+-- ── RLS: invoices visible via booking ownership (not just user_id) ──────────
+do $$ begin
+  drop policy if exists "invoices: read own or admin" on public.invoices;
+  create policy "invoices: read own or admin"
+    on public.invoices for select
+    to authenticated
+    using (
+      public.is_admin_or_manager()
+      or user_id = auth.uid()
+      or exists (
+        select 1 from public.bookings b
+        where b.id = booking_id and b.user_id = auth.uid()
+      )
+    );
+end $$;
+
 -- ── RLS: anon read on sites (public booking form) ────────────────────────────
 do $$ begin
   if not exists (

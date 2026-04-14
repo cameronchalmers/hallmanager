@@ -263,7 +263,14 @@ create policy "bookings: delete admin only"
 create policy "invoices: read own or admin"
   on public.invoices for select
   to authenticated
-  using (user_id = auth.uid() or public.is_admin_or_manager());
+  using (
+    public.is_admin_or_manager()
+    or user_id = auth.uid()
+    or exists (
+      select 1 from public.bookings b
+      where b.id = booking_id and b.user_id = auth.uid()
+    )
+  );
 
 create policy "invoices: insert admin/manager"
   on public.invoices for insert
