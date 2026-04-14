@@ -309,6 +309,8 @@ serve(async (req) => {
             OrderResultsBy: 'InvoiceNumber',
             OrderDirection: 'DESC',
             InvoiceType: 'INVOICE',
+            Offset: 0,
+            ReturnCount: 100,
           },
         })
       } catch (e) {
