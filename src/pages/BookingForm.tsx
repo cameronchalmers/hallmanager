@@ -317,6 +317,7 @@ export default function BookingForm() {
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>Request a Booking</div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 4 }}>Fill in the details below and we'll be in touch to confirm</div>
+                <a href="/availability" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: 'var(--accent,#7c3aed)', fontWeight: 600, textDecoration: 'none' }}>📅 View availability calendar →</a>
               </div>
             )}
 

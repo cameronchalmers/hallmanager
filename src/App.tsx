@@ -14,6 +14,7 @@ import Portal from './pages/Portal'
 import Sites from './pages/Sites'
 import Settings from './pages/Settings'
 import Insights from './pages/Insights'
+import PublicCalendar from './pages/PublicCalendar'
 
 const Spinner = () => (
   <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'Figtree', sans-serif" }}>
@@ -46,6 +47,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/book" element={<BookingForm />} />
       <Route path="/book/:slug" element={<BookingForm />} />
+      <Route path="/availability" element={<PublicCalendar />} />
 
       {/* Protected routes */}
       <Route
