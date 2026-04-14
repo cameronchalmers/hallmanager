@@ -317,12 +317,10 @@ serve(async (req) => {
         return json({ ok: false, error: String(e) })
       }
 
+      // Log the full body so we can see the actual QF response structure
+      console.log('QF invoice search body:', JSON.stringify(body))
       const raw = (body as any)?.InvoiceResult?.InvoiceResultSet ?? []
       const all = Array.isArray(raw) ? raw : (raw ? [raw] : [])
-      // Temporary: return raw to inspect structure
-      if (all.length > 0) {
-        return json({ ok: false, debug: true, sample: all[0], clientId, total: all.length })
-      }
       // Filter to only this client's invoices
       const invoices = all.filter((inv: any) => String(inv.ClientID) === String(clientId))
 
