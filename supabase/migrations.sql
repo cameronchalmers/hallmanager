@@ -53,6 +53,26 @@ create trigger bookings_approved_at
   before update on public.bookings
   for each row execute function public.set_approved_at();
 
+-- ── pg_cron: daily booking reminder job ──────────────────────────────────────
+-- Runs at 9am UTC each day. Sends a reminder email to anyone with a confirmed
+-- one-off booking tomorrow.
+-- Replace <YOUR_PROJECT_REF> and <YOUR_SERVICE_ROLE_KEY> with real values.
+--
+-- select cron.schedule(
+--   'send-booking-reminders',
+--   '0 9 * * *',
+--   $$
+--   select net.http_post(
+--     url := 'https://<YOUR_PROJECT_REF>.supabase.co/functions/v1/send-reminder',
+--     headers := jsonb_build_object(
+--       'Authorization', 'Bearer <YOUR_SERVICE_ROLE_KEY>',
+--       'Content-Type', 'application/json'
+--     ),
+--     body := '{}'::jsonb
+--   );
+--   $$
+-- );
+
 -- ── pg_cron: daily auto-cancel job ───────────────────────────────────────────
 -- Requires pg_cron and pg_net extensions to be enabled in Supabase.
 -- Replace <YOUR_PROJECT_REF> and <YOUR_SERVICE_ROLE_KEY> with real values,
