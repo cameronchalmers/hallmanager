@@ -761,6 +761,7 @@ export default function Bookings() {
           ) : selected?.status === 'pending' ? (
             <div style={{ display: 'flex', gap: 7, width: '100%' }}>
               <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { updateStatus(selected.id, 'denied'); setSelected(null) }} disabled={!!actionLoading}>✗ Deny</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => startEdit(selected)}>Edit</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => approveBooking(selected.id)} disabled={!!actionLoading}>
                 {actionLoading === 'approve' ? 'Approving…' : '✓ Approve & Send Payment'}
               </button>

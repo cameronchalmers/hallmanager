@@ -24,6 +24,7 @@ interface SiteData {
   available_from: string | null
   available_until: string | null
   availability: Record<string, DaySchedule> | null
+  blocked_dates: string[] | null
 }
 
 function toSlug(name: string) {
@@ -95,7 +96,7 @@ export default function PublicCalendar() {
   useEffect(() => { if (site) fetchMonth() }, [cal, site])
 
   async function loadSite() {
-    const { data } = await (supabase as any).from('sites').select('id, name, available_from, available_until, availability')
+    const { data } = await (supabase as any).from('sites').select('id, name, available_from, available_until, availability, blocked_dates')
     const all: SiteData[] = data ?? []
     const match = slug ? all.find(s => toSlug(s.name) === slug) : all[0]
     setSite(match ?? null)
@@ -204,7 +205,8 @@ export default function PublicCalendar() {
                 const dow = (d.date.getDay() + 6) % 7
                 const isLastInRow = dow === 6
                 const schedule = d.curr && site ? getDaySchedule(site, d.date) : null
-                const isClosed = d.curr && !isPast && schedule ? !schedule.open : false
+                const isBlocked = d.curr && !isPast && (site?.blocked_dates ?? []).includes(toDs(d.date))
+                const isClosed = d.curr && !isPast && (isBlocked || (schedule ? !schedule.open : false))
 
                 // Background colour
                 let bg = '#fff'
@@ -279,9 +281,11 @@ export default function PublicCalendar() {
                       </span>
                     )}
 
-                    {/* Closed label */}
+                    {/* Closed / unavailable label */}
                     {isClosed && (
-                      <span style={{ position: 'absolute', bottom: 5, left: 0, right: 0, fontSize: 9, color: '#c4c4c4', textAlign: 'center', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px' }}>Closed</span>
+                      <span style={{ position: 'absolute', bottom: 5, left: 0, right: 0, fontSize: 9, color: '#c4c4c4', textAlign: 'center', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                        {isBlocked ? 'Unavailable' : 'Closed'}
+                      </span>
                     )}
 
                     {/* Free label on open available days */}

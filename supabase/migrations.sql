@@ -43,6 +43,7 @@ alter table public.sites add column if not exists availability    jsonb;
 alter table public.sites add column if not exists description     text;
 alter table public.sites add column if not exists amenities       text[];
 alter table public.sites add column if not exists photos          text[];
+alter table public.sites add column if not exists blocked_dates   text[] default '{}';
 
 -- ── users: add group_name ─────────────────────────────────────────────────────
 alter table public.users add column if not exists group_name text;
