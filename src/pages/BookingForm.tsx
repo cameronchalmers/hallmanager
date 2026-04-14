@@ -417,7 +417,7 @@ export default function BookingForm() {
                 })()}
                 {(() => {
                   if (!form.date) return null
-                  const booked = getBookingsOnDate(siteBookings, form.date)
+                  const booked = getBookingsOnDate(siteBookings, form.date).filter(b => b.type !== 'recurring')
                   if (booked.length === 0) return null
                   return (
                     <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
