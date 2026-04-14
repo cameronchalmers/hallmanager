@@ -4,6 +4,21 @@
 -- Safe to re-run (uses IF NOT EXISTS / IF EXISTS / DO blocks).
 -- ============================================================
 
+-- ── app_settings: key/value store for global toggles ─────────────────────────
+create table if not exists public.app_settings (
+  key   text primary key,
+  value jsonb not null
+);
+alter table public.app_settings enable row level security;
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'app_settings' and policyname = 'app_settings: admin read/write') then
+    create policy "app_settings: admin read/write" on public.app_settings
+      for all to authenticated using (public.is_admin_or_manager()) with check (public.is_admin_or_manager());
+  end if;
+end $$;
+-- Default: reminders enabled
+insert into public.app_settings (key, value) values ('reminders_enabled', 'true') on conflict do nothing;
+
 -- ── sites: add extended columns ───────────────────────────────────────────────
 alter table public.sites add column if not exists min_hours       numeric(5,2);
 alter table public.sites add column if not exists available_from  time;

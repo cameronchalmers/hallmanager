@@ -141,16 +141,63 @@ function reminderEmail(name: string, event: string, date: string, time: string, 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  // Called by pg_cron with service role key — verify it
   const authHeader = req.headers.get('Authorization')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+  let body: Record<string, unknown> = {}
+  try { body = await req.json() } catch { /* no body */ }
+
+  const isTest = body?.test === true
+
+  // Test mode: called from Settings UI — verify admin/manager auth
+  // Production mode: called by pg_cron — verify service role key
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey)
+
+  if (isTest) {
+    if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    const userClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader } } })
+    const { data: { user }, error: authError } = await userClient.auth.getUser()
+    if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    const { data: profile } = await supabase.from('users').select('role, email').eq('id', user.id).single()
+    if (!profile || !['admin', 'manager'].includes(profile.role)) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+    // Send both test emails to the requesting admin
+    const adminEmail = profile.email as string
+    const dummyDate = 'Wednesday, 30 July 2025'
+    const dummyTime = '09:00 – 11:00'
+    const type = String(body?.type ?? 'hirer')
+
+    if (type === 'hirer' || type === 'both') {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: FROM, to: adminEmail, subject: '[TEST] Reminder: your booking is tomorrow — Community Yoga', html: reminderEmail('Jane Smith', 'Community Yoga', dummyDate, dummyTime, 'The Old Town Hall', '123 High Street, London') }),
+      })
+    }
+    if (type === 'admin' || type === 'both') {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: FROM, to: adminEmail, subject: '[TEST] Open up tomorrow: Community Yoga at The Old Town Hall — 09:00 – 11:00', html: adminReminderEmail('Community Yoga', dummyDate, dummyTime, 'Jane Smith', 'The Old Town Hall', '123 High Street, London') }),
+      })
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  }
+
+  // Production: must be service role key
   if (!authHeader || authHeader !== `Bearer ${serviceKey}`) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey)
+  // Check reminders are enabled
+  const { data: setting } = await supabase.from('app_settings').select('value').eq('key', 'reminders_enabled').single()
+  if (setting?.value === false || setting?.value === 'false') {
+    return new Response(JSON.stringify({ ok: true, sent: 0, skipped: 'reminders disabled' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
 
   // Tomorrow's date in YYYY-MM-DD (UTC — pg_cron runs in UTC, booking dates are stored as dates)
   const tomorrow = new Date()

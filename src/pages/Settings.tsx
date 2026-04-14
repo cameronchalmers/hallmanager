@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -36,6 +36,22 @@ export default function Settings() {
   const [saved, setSaved] = useState(false)
   const [testSending, setTestSending] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<Record<string, 'ok' | 'error'>>({})
+  const [remindersEnabled, setRemindersEnabled] = useState(true)
+  const [reminderToggleSaving, setReminderToggleSaving] = useState(false)
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(supabase as any).from('app_settings').select('value').eq('key', 'reminders_enabled').single()
+      .then(({ data }: { data: { value: unknown } | null }) => { if (data) setRemindersEnabled(data.value !== false && data.value !== 'false') })
+  }, [])
+
+  async function toggleReminders(enabled: boolean) {
+    setRemindersEnabled(enabled)
+    setReminderToggleSaving(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('app_settings').upsert({ key: 'reminders_enabled', value: enabled })
+    setReminderToggleSaving(false)
+  }
 
   async function sendTestEmail(template: string) {
     setTestSending(template)
@@ -45,6 +61,17 @@ export default function Settings() {
     setTestResult(prev => ({ ...prev, [template]: error ? 'error' : 'ok' }))
     setTestSending(null)
     setTimeout(() => setTestResult(prev => { const n = { ...prev }; delete n[template]; return n }), 3000)
+  }
+
+  async function sendReminderTest(type: 'hirer' | 'admin') {
+    const key = `reminder_${type}`
+    setTestSending(key)
+    const { error } = await supabase.functions.invoke('send-reminder', {
+      body: { test: true, type },
+    })
+    setTestResult(prev => ({ ...prev, [key]: error ? 'error' : 'ok' }))
+    setTestSending(null)
+    setTimeout(() => setTestResult(prev => { const n = { ...prev }; delete n[key]; return n }), 3000)
   }
 
   function toggleNotification(key: string) {
@@ -190,6 +217,46 @@ export default function Settings() {
             </button>
           </div>
         </div>
+
+        {/* Reminder emails — admin only */}
+        {!isRegular && (
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Booking Reminders</span>
+              {reminderToggleSaving && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Saving…</span>}
+            </div>
+            <div style={{ padding: '13px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Day-before reminders</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>Sends a reminder to the booker and an open-up reminder to all admins the day before each one-off booking</div>
+              </div>
+              <button
+                className="toggle"
+                style={{ background: remindersEnabled ? 'var(--accent)' : '#d1d5db', flexShrink: 0 }}
+                onClick={() => toggleReminders(!remindersEnabled)}
+              >
+                <span className="toggle-thumb" style={{ left: remindersEnabled ? 18 : 3 }} />
+              </button>
+            </div>
+            <div style={{ padding: '10px 18px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>Send test emails to your address:</span>
+              {(['hirer', 'admin'] as const).map(type => {
+                const key = `reminder_${type}`
+                return (
+                  <button
+                    key={type}
+                    className="btn btn-ghost btn-sm"
+                    style={{ color: testResult[key] === 'ok' ? 'var(--green)' : testResult[key] === 'error' ? '#ef4444' : undefined }}
+                    disabled={testSending === key}
+                    onClick={() => sendReminderTest(type)}
+                  >
+                    {testSending === key ? 'Sending…' : testResult[key] === 'ok' ? '✓ Sent!' : testResult[key] === 'error' ? '✗ Failed' : type === 'hirer' ? 'Test booker email' : 'Test admin email'}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Test emails — admin only */}
         {!isRegular && (
