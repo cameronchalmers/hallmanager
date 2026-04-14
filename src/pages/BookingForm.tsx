@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Site, WeekAvailability } from '../lib/database.types'
 
@@ -82,9 +82,10 @@ function calcHours(start: string, end: string) {
 
 export default function BookingForm() {
   const { slug } = useParams<{ slug?: string }>()
+  const [searchParams] = useSearchParams()
   const [sites, setSites] = useState<Site[]>([])
   const [lockedSite, setLockedSite] = useState<Site | null>(null)
-  const [form, setForm] = useState(DEFAULT_FORM)
+  const [form, setForm] = useState({ ...DEFAULT_FORM, date: searchParams.get('date') ?? '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')

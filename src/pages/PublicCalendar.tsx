@@ -326,7 +326,7 @@ export default function PublicCalendar() {
                   <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
                   <div style={{ fontWeight: 600, fontSize: 14, color: '#18181b', marginBottom: 4 }}>All clear!</div>
                   <div style={{ fontSize: 12, color: '#71717a', marginBottom: 16 }}>No bookings on this day.</div>
-                  <a href={slug ? `/book/${slug}` : '/book'} style={{ background: accentColor, color: '#fff', fontWeight: 600, fontSize: 13, padding: '8px 18px', borderRadius: 8, textDecoration: 'none', display: 'inline-block' }}>
+                  <a href={`${slug ? `/book/${slug}` : '/book'}?date=${toDs(selDay)}`} style={{ background: accentColor, color: '#fff', fontWeight: 600, fontSize: 13, padding: '8px 18px', borderRadius: 8, textDecoration: 'none', display: 'inline-block' }}>
                     Book this day →
                   </a>
                 </div>
