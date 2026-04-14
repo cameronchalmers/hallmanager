@@ -382,8 +382,18 @@ export default function Users() {
                         <div style={{ fontWeight: 600 }}>{b.event}</div>
                         <div style={{ color: 'var(--text-muted)', marginTop: 1 }}>{b.date} · {b.start_time}–{b.end_time}</div>
                       </div>
-                      <span className={`badge ${b.status === 'confirmed' ? 'badge-approved' : b.status === 'denied' ? 'badge-denied' : 'badge-pending'}`}>
-                        {b.status === 'confirmed' ? '✓ Approved' : b.status === 'denied' ? '✗ Denied' : '⏳ Pending'}
+                      <span className={`badge ${
+                        b.status === 'confirmed' ? 'badge-approved'
+                        : b.status === 'approved' ? 'badge-pending'
+                        : b.status === 'denied' ? 'badge-denied'
+                        : b.status === 'cancelled' ? 'badge-denied'
+                        : 'badge-pending'
+                      }`}>
+                        {b.status === 'confirmed' ? '✓ Confirmed'
+                          : b.status === 'approved' ? '💳 Awaiting payment'
+                          : b.status === 'denied' ? '✗ Denied'
+                          : b.status === 'cancelled' ? 'Cancelled'
+                          : '⏳ Pending'}
                       </span>
                     </div>
                   ))}
