@@ -129,7 +129,8 @@ export default function QuickFile() {
   const connLabel = { checking: 'Checking…', connected: 'Connected', error: 'Connection error', unconfigured: 'Not configured' }[connStatus]
 
   return (
-    <div style={{ maxWidth: 700 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, alignItems: 'start' }}>
+    <div>
       {/* Status card */}
       <div className="card" style={{ marginBottom: 16, overflow: 'hidden' }}>
         <div className="qf-header">
@@ -298,38 +299,44 @@ npx supabase functions deploy quickfile --no-verify-jwt`}</pre>
           <span className="card-title">Invoices</span>
           {unsynced.length > 0 && <span className="badge badge-pending">{unsynced.length} unsynced</span>}
         </div>
-        <div className="inv-row" style={{ background: 'var(--surface2)', fontWeight: 700, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)' }}>
-          <span>Invoice</span><span>Description</span><span>Amount</span><span>Date</span><span>QF Status</span><span>Payment</span>
+        <div className="inv-row" style={{ background: 'var(--surface2)', fontWeight: 700, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)', gridTemplateColumns: '1fr 1.4fr 1fr 0.8fr 0.8fr 1fr 90px' }}>
+          <span>Invoice</span><span>Description</span><span>Group</span><span>Amount</span><span>Date</span><span>QF Status</span><span>Payment</span>
         </div>
         {loading && <div className="empty"><div className="empty-title">Loading…</div></div>}
         {!loading && invoices.length === 0 && <div className="empty"><div className="empty-title">No invoices yet</div></div>}
-        {invoices.map(inv => (
-          <div key={inv.id} className="inv-row">
+        {invoices.map(inv => {
+          const invUser = users.find(u => u.id === inv.user_id)
+          return (
+          <div key={inv.id} className="inv-row" style={{ gridTemplateColumns: '1fr 1.4fr 1fr 0.8fr 0.8fr 1fr 90px' }}>
             <span style={{ fontWeight: 700, color: 'var(--accent-text)', fontSize: 12 }}>{inv.id.slice(0, 8).toUpperCase()}</span>
             <span style={{ fontSize: 12 }}>{inv.description}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{invUser ? (invUser.group_name ?? invUser.name) : '—'}</span>
             <span style={{ fontWeight: 700 }}>£{inv.amount}</span>
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{format(new Date(inv.date), 'dd MMM yy')}</span>
             <span>{inv.qf_synced ? <span className="badge badge-qf">🔗 {inv.qf_ref ?? 'Synced'}</span> : <span className="badge badge-pending">Not synced</span>}</span>
             <span><span className={`badge ${inv.status === 'paid' ? 'badge-approved' : 'badge-pending'}`}>{inv.status === 'paid' ? '✓ Paid' : '⏳ Due'}</span></span>
           </div>
-        ))}
+          )
+        })}
       </div>
 
-      {/* Sync log */}
-      {syncLog.length > 0 && (
-        <div className="card">
-          <div className="card-header"><span className="card-title">Sync Log</span></div>
-          {syncLog.map((l, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 18px', borderBottom: i < syncLog.length - 1 ? '1px solid var(--border)' : 'none' }}>
-              <span style={{ fontSize: 13, color: l.ok ? 'var(--green)' : '#ef4444' }}>{l.ok ? '✓' : '✗'}</span>
-              <div>
-                <div style={{ fontSize: 12 }}>{l.action}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{l.time}</div>
-              </div>
-            </div>
-          ))}
+    </div>
+
+    {/* Right column: Sync log */}
+    <div className="card" style={{ position: 'sticky', top: 16 }}>
+      <div className="card-header"><span className="card-title">Sync Log</span></div>
+      {syncLog.length === 0 ? (
+        <div style={{ padding: '14px 18px', fontSize: 12, color: 'var(--text-muted)' }}>No activity yet this session</div>
+      ) : syncLog.map((l, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 18px', borderBottom: i < syncLog.length - 1 ? '1px solid var(--border)' : 'none' }}>
+          <span style={{ fontSize: 13, flexShrink: 0, color: l.ok ? 'var(--green)' : '#ef4444' }}>{l.ok ? '✓' : '✗'}</span>
+          <div>
+            <div style={{ fontSize: 12 }}>{l.action}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{l.time}</div>
+          </div>
         </div>
-      )}
+      ))}
+    </div>
     </div>
   )
 }

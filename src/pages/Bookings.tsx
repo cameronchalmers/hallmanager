@@ -57,7 +57,8 @@ export default function Bookings() {
   const [sites, setSites] = useState<Site[]>([])
   const [regularUsers, setRegularUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('active')
+  const [tab, setTab] = useState<'oneoff' | 'recurring'>('oneoff')
+  const [statusFilter, setStatusFilter] = useState('active')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<BookingWithSite | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -333,16 +334,24 @@ export default function Bookings() {
     setSaving(false)
   }
 
+  const todayStr = new Date().toISOString().split('T')[0]
   const filtered = bookings.filter(b => {
-    const ms = filter === 'active' ? !['cancelled', 'denied'].includes(b.status)
-      : filter === 'recurring' ? b.type === 'recurring'
-      : filter === 'oneoff' ? b.type === 'oneoff'
-      : b.status === filter
-    const mq = !search || b.name.toLowerCase().includes(search.toLowerCase()) || b.event.toLowerCase().includes(search.toLowerCase())
-    return ms && mq
-  })
+    if (b.type !== tab) return false
+    const active = !['cancelled', 'denied'].includes(b.status)
+    if (tab === 'recurring') {
+      if (statusFilter === 'cancelled') return !active
+      return active
+    } else {
+      if (statusFilter === 'pending') return b.status === 'pending'
+      if (statusFilter === 'upcoming') return active && b.date >= todayStr
+      if (statusFilter === 'past') return active && b.date < todayStr
+      if (statusFilter === 'cancelled') return !active
+      return active // 'active'
+    }
+  }).filter(b => !search || b.name.toLowerCase().includes(search.toLowerCase()) || b.event.toLowerCase().includes(search.toLowerCase()))
 
-  const FILTERS = ['active', 'pending', 'approved', 'confirmed', 'cancelled', 'denied', 'recurring', 'oneoff']
+  const pendingCount = bookings.filter(b => b.type === 'oneoff' && b.status === 'pending').length
+  const recurringActive = bookings.filter(b => b.type === 'recurring' && !['cancelled','denied'].includes(b.status)).length
   const formSite = sites.find(s => s.id === form.site_id)
   const formHours = calcHours(form.start_time, form.end_time)
   const formLinkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
@@ -352,7 +361,38 @@ export default function Bookings() {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 7, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* Tab switcher */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 0, borderBottom: '2px solid var(--border)' }}>
+        {([['oneoff', 'One-off'], ['recurring', '↻ Recurring']] as const).map(([t, label]) => (
+          <button
+            key={t}
+            className="btn btn-ghost"
+            style={{
+              borderRadius: '6px 6px 0 0',
+              borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent',
+              marginBottom: -2,
+              fontWeight: tab === t ? 700 : 400,
+              color: tab === t ? 'var(--accent)' : undefined,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+            onClick={() => { setTab(t); setStatusFilter('active') }}
+          >
+            {label}
+            {t === 'oneoff' && pendingCount > 0 && (
+              <span style={{ background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4 }}>{pendingCount}</span>
+            )}
+            {t === 'recurring' && (
+              <span style={{ background: 'var(--surface2)', color: 'var(--text-muted)', fontSize: 10, fontWeight: 700, borderRadius: 10, padding: '1px 6px', lineHeight: 1.4 }}>{recurringActive}</span>
+            )}
+          </button>
+        ))}
+        <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto', alignSelf: 'center', marginBottom: 4 }} onClick={() => setShowCreate(true)}>
+          + New Booking
+        </button>
+      </div>
+
+      {/* Sub-filters + search */}
+      <div style={{ display: 'flex', gap: 7, marginBottom: 16, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           className="form-input"
           style={{ width: 180 }}
@@ -360,19 +400,25 @@ export default function Bookings() {
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
-        {FILTERS.map(f => (
-          <button
-            key={f}
-            className="btn btn-ghost btn-sm"
-            style={filter === f ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : {}}
-            onClick={() => setFilter(f)}
-          >
-            {f.charAt(0).toUpperCase() + f.slice(1)}
-          </button>
-        ))}
-        <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>
-          + New Booking
-        </button>
+        {tab === 'recurring' ? (
+          [['active', 'Active'], ['cancelled', 'Cancelled']].map(([f, label]) => (
+            <button
+              key={f}
+              className="btn btn-ghost btn-sm"
+              style={statusFilter === f ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : {}}
+              onClick={() => setStatusFilter(f)}
+            >{label}</button>
+          ))
+        ) : (
+          [['active', 'All active'], ['pending', 'Pending'], ['upcoming', 'Upcoming'], ['past', 'Past'], ['cancelled', 'Cancelled']].map(([f, label]) => (
+            <button
+              key={f}
+              className="btn btn-ghost btn-sm"
+              style={statusFilter === f ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : {}}
+              onClick={() => setStatusFilter(f)}
+            >{label}</button>
+          ))
+        )}
       </div>
 
       <div className="card">
@@ -392,7 +438,7 @@ export default function Bookings() {
           const allDates = b.type === 'recurring' ? expandRecurring(b) : []
           const cancelledSet = new Set(b.cancelled_sessions ?? [])
           const checked = checkedSessions.get(b.id) ?? new Set<string>()
-          const today = new Date().toISOString().split('T')[0]
+          const today = todayStr
           return (
             <div key={b.id}>
               <div className="tbl-row cols-bookings" onClick={() => setSelected(b)}>
