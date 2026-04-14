@@ -87,7 +87,9 @@ export default function CalendarWidget({ showSiteFilter = true, compact = false 
   const sessionMap = buildSessionMap(filtered, cal.year, cal.month)
   const days = getDays(cal.year, cal.month)
 
-  const getForDay = (d: Date) => sessionMap.get(d.toISOString().split('T')[0]) ?? []
+  const localDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const getForDay = (d: Date) => sessionMap.get(localDateStr(d)) ?? []
   const selBookings = selDay ? getForDay(selDay) : []
 
   const gridCard = (
