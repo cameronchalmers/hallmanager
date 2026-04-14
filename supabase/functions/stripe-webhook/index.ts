@@ -60,21 +60,6 @@ serve(async (req) => {
     stripe_payment_status: 'paid',
   }).eq('id', bookingId)
 
-  // Create a paid invoice
-  const siteName = (booking.sites as { name: string } | null)?.name ?? 'Unknown venue'
-  const dateFormatted = new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'long', year: 'numeric',
-  })
-
-  await supabase.from('invoices').insert({
-    booking_id: bookingId,
-    user_id: booking.user_id ?? null,
-    description: `${booking.event} — ${siteName}, ${dateFormatted}`,
-    amount: booking.total,
-    status: 'paid',
-    date: new Date().toISOString().split('T')[0],
-  })
-
-  console.log(`Booking ${bookingId} confirmed and invoice created`)
+  console.log(`Booking ${bookingId} confirmed`)
   return new Response(JSON.stringify({ received: true }), { status: 200 })
 })
