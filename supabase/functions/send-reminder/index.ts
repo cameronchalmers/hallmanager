@@ -130,7 +130,8 @@ function reminderEmail(name: string, event: string, date: string, time: string, 
         <p style="margin:20px 0 0;font-size:13px;color:#9ca3af;">This is an automated reminder — please do not reply to this email.</p>
       </div>
     </div>
-    <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;">
+    <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;line-height:1.6;">
+      <p style="margin:0 0 8px;"><a href="https://wa.me/447466214530" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: 07466 214530</a></p>
       <p style="margin:0;">HallManager · This email was sent automatically.</p>
     </div>
   </div>

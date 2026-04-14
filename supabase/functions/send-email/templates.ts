@@ -46,6 +46,7 @@ function layout(content: string) {
 
     <!-- Footer -->
     <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;line-height:1.6;">
+      <p style="margin:0 0 8px;"><a href="https://wa.me/447466214530" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: 07466 214530</a></p>
       <p style="margin:0;">HallManager · <a href="https://hallmanager.co.uk" style="color:#9ca3af;">hallmanager.co.uk</a></p>
       <p style="margin:4px 0 0;">This email was sent automatically — please do not reply.</p>
     </div>
