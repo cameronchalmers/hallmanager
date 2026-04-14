@@ -8,11 +8,39 @@ import { format } from 'date-fns'
 
 type BookingWithSite = Booking & { sites?: Site }
 
+const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function dateDow(dateStr: string): number {
+  return (new Date(dateStr + 'T12:00:00').getDay() + 6) % 7
+}
+
 function expandRecurring(b: BookingWithSite): string[] {
   if (b.type !== 'recurring' || !b.recurrence) return []
+  const max = new Date(); max.setFullYear(max.getFullYear() + 1)
+  const toDs = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  const isMultiDay = b.recurrence === 'Weekly' && b.recurrence_days && b.recurrence_days.length > 1
+
+  if (isMultiDay) {
+    const days = [...(b.recurrence_days as number[])].sort()
+    const start = new Date(b.date + 'T12:00:00')
+    const startDow = (start.getDay() + 6) % 7
+    const weekCur = new Date(start)
+    weekCur.setDate(weekCur.getDate() - startDow)
+    const dates: string[] = []
+    while (weekCur <= max) {
+      for (const dayIdx of days) {
+        const d = new Date(weekCur)
+        d.setDate(d.getDate() + dayIdx)
+        const ds = toDs(d)
+        if (ds >= b.date && d <= max) dates.push(ds)
+      }
+      weekCur.setDate(weekCur.getDate() + 7)
+    }
+    return dates.sort()
+  }
+
   const dates: string[] = []
   const cur = new Date(b.date + 'T12:00:00')
-  const max = new Date(); max.setFullYear(max.getFullYear() + 1)
   while (cur <= max) {
     dates.push(cur.toISOString().split('T')[0])
     if (b.recurrence === 'Weekly') cur.setDate(cur.getDate() + 7)
@@ -35,6 +63,7 @@ const DEFAULT_FORM = {
   end_time: '',
   type: 'oneoff',
   recurrence: '',
+  recurrence_days: [] as number[],
   notes: '',
   status: 'confirmed',
 }
@@ -166,6 +195,7 @@ export default function Bookings() {
       end_time: b.end_time,
       type: b.type,
       recurrence: b.recurrence ?? '',
+      recurrence_days: b.recurrence_days ?? (b.date ? [dateDow(b.date)] : []),
       notes: b.notes ?? '',
       status: b.status,
     })
@@ -191,6 +221,7 @@ export default function Bookings() {
       hours,
       type: editForm.type,
       recurrence: editForm.type === 'recurring' ? editForm.recurrence : null,
+      recurrence_days: editForm.type === 'recurring' && editForm.recurrence === 'Weekly' && editForm.recurrence_days.length > 0 ? editForm.recurrence_days : null,
       notes: editForm.notes || null,
       total,
     }).eq('id', selected.id)
@@ -323,6 +354,7 @@ export default function Bookings() {
       hours,
       type: form.type,
       recurrence: isRecurring ? form.recurrence : null,
+      recurrence_days: isRecurring && form.recurrence === 'Weekly' && form.recurrence_days.length > 0 ? form.recurrence_days : null,
       notes: form.notes || null,
       status: form.status,
       deposit: isRecurring ? 0 : site.deposit,
@@ -454,7 +486,9 @@ export default function Bookings() {
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name ?? '—'}</div>
                 <div>
                   <span className={`badge ${b.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>
-                    {b.type === 'recurring' ? `↻ ${b.recurrence ?? ''}` : 'One-off'}
+                    {b.type === 'recurring'
+                      ? `↻ ${b.recurrence ?? ''}${b.recurrence_days && b.recurrence_days.length > 1 ? ' · ' + b.recurrence_days.slice().sort((a,c)=>a-c).map(d => WEEK_DAYS[d]).join(', ') : ''}`
+                      : 'One-off'}
                   </span>
                 </div>
                 <div><Badge status={b.status} /></div>
@@ -627,7 +661,11 @@ export default function Bookings() {
           </div>
           <div>
             <label className="form-label">Date</label>
-            <input className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+            <input className="form-input" type="date" value={form.date} onChange={e => {
+              const d = e.target.value
+              const dow = d ? dateDow(d) : null
+              setForm(f => ({ ...f, date: d, recurrence_days: dow !== null ? [dow, ...f.recurrence_days.filter(x => x !== dow)].sort((a, b) => a - b) : f.recurrence_days }))
+            }} />
           </div>
         </div>
         {form.type === 'recurring' && (
@@ -640,6 +678,37 @@ export default function Bookings() {
                 <option value="Monthly">Monthly</option>
               </select>
             </div>
+            {form.recurrence === 'Weekly' && (
+              <div className="form-row">
+                <label className="form-label">Days of week</label>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {WEEK_DAYS.map((day, idx) => {
+                    const isPrimary = form.date ? dateDow(form.date) === idx : false
+                    const isOn = form.recurrence_days.includes(idx)
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        className="btn btn-sm"
+                        style={{ background: isOn ? 'var(--accent)' : 'var(--surface2)', color: isOn ? '#fff' : 'var(--text)', border: '1px solid var(--border)', minWidth: 42 }}
+                        onClick={() => {
+                          if (isPrimary) return
+                          setForm(f => ({
+                            ...f,
+                            recurrence_days: isOn
+                              ? f.recurrence_days.filter(d => d !== idx)
+                              : [...f.recurrence_days, idx].sort((a, b) => a - b),
+                          }))
+                        }}
+                      >
+                        {day}{isPrimary ? ' ·' : ''}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>The date's day is always included (·). Select additional days.</div>
+              </div>
+            )}
             <div className="form-row">
               <label className="form-label">Linked booker <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional — applies custom rate)</span></label>
               <select className="form-input" value={form.user_id} onChange={e => setForm(f => ({ ...f, user_id: e.target.value }))}>
@@ -758,7 +827,7 @@ export default function Bookings() {
               <div><div className="detail-label">Phone</div><div className="detail-value" style={{ fontSize: 12 }}>{selected.phone}</div></div>
               <div><div className="detail-label">Date</div><div className="detail-value">{format(new Date(selected.date), 'dd MMM yyyy')}</div></div>
               <div><div className="detail-label">Time</div><div className="detail-value">{selected.start_time}–{selected.end_time} ({selected.hours}h)</div></div>
-              <div><div className="detail-label">Type</div><div className="detail-value"><span className={`badge ${selected.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>{selected.type === 'recurring' ? `↻ ${selected.recurrence}` : 'One-off'}</span></div></div>
+              <div><div className="detail-label">Type</div><div className="detail-value"><span className={`badge ${selected.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>{selected.type === 'recurring' ? `↻ ${selected.recurrence}${selected.recurrence_days && selected.recurrence_days.length > 1 ? ' · ' + selected.recurrence_days.slice().sort((a,c)=>a-c).map(d => WEEK_DAYS[d]).join(', ') : ''}` : 'One-off'}</span></div></div>
               <div><div className="detail-label">Capacity</div><div className="detail-value">Up to {selected.sites?.capacity} guests</div></div>
             </div>
             <div style={{ marginBottom: 12 }}>
@@ -838,15 +907,47 @@ export default function Bookings() {
                 </div>
               </div>
               {editForm.type === 'recurring' && (
-                <div className="form-row">
-                  <label className="form-label">Recurrence</label>
-                  <select className="form-input" value={editForm.recurrence} onChange={e => setEditForm(f => ({ ...f, recurrence: e.target.value }))}>
-                    <option value="">Select…</option>
-                    <option value="Weekly">Weekly</option>
-                    <option value="Fortnightly">Fortnightly</option>
-                    <option value="Monthly">Monthly</option>
-                  </select>
-                </div>
+                <>
+                  <div className="form-row">
+                    <label className="form-label">Recurrence</label>
+                    <select className="form-input" value={editForm.recurrence} onChange={e => setEditForm(f => ({ ...f, recurrence: e.target.value }))}>
+                      <option value="">Select…</option>
+                      <option value="Weekly">Weekly</option>
+                      <option value="Fortnightly">Fortnightly</option>
+                      <option value="Monthly">Monthly</option>
+                    </select>
+                  </div>
+                  {editForm.recurrence === 'Weekly' && (
+                    <div className="form-row">
+                      <label className="form-label">Days of week</label>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {WEEK_DAYS.map((day, idx) => {
+                          const isPrimary = editForm.date ? dateDow(editForm.date) === idx : false
+                          const isOn = editForm.recurrence_days.includes(idx)
+                          return (
+                            <button
+                              key={day}
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ background: isOn ? 'var(--accent)' : 'var(--surface2)', color: isOn ? '#fff' : 'var(--text)', border: '1px solid var(--border)', minWidth: 42 }}
+                              onClick={() => {
+                                if (isPrimary) return
+                                setEditForm(f => ({
+                                  ...f,
+                                  recurrence_days: isOn
+                                    ? f.recurrence_days.filter(d => d !== idx)
+                                    : [...f.recurrence_days, idx].sort((a, b) => a - b),
+                                }))
+                              }}
+                            >
+                              {day}{isPrimary ? ' ·' : ''}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
               <div className="form-grid-2">
                 <div>

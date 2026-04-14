@@ -31,6 +31,9 @@ alter table public.sites add column if not exists photos          text[];
 -- ── users: add group_name ─────────────────────────────────────────────────────
 alter table public.users add column if not exists group_name text;
 
+-- ── bookings: add recurrence_days for multi-day weekly bookings ──────────────
+alter table public.bookings add column if not exists recurrence_days integer[];
+
 -- ── bookings: add Stripe + attendance + recurring columns ─────────────────────
 alter table public.bookings add column if not exists stripe_session_id     text;
 alter table public.bookings add column if not exists stripe_payment_url    text;

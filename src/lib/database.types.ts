@@ -73,6 +73,7 @@ export interface Database {
           total: number
           user_id: string | null
           recurrence: string | null
+          recurrence_days: number[] | null
           created_at: string
           stripe_session_id: string | null
           stripe_payment_url: string | null
@@ -99,6 +100,7 @@ export interface Database {
           total: number
           user_id?: string | null
           recurrence?: string | null
+          recurrence_days?: number[] | null
           created_at?: string
           stripe_session_id?: string | null
           stripe_payment_url?: string | null
@@ -125,6 +127,7 @@ export interface Database {
           total?: number
           user_id?: string | null
           recurrence?: string | null
+          recurrence_days?: number[] | null
           created_at?: string
           stripe_session_id?: string | null
           stripe_payment_url?: string | null

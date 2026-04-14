@@ -32,19 +32,44 @@ function buildSessionMap(bookings: Booking[], year: number, month: number): Map<
       }
     } else {
       const cancelled = new Set(b.cancelled_sessions ?? [])
-      const cur = new Date(b.date + 'T12:00:00')
-      const max = new Date(monthEnd + 'T12:00:00')
-      while (cur <= max) {
-        const ds = cur.toISOString().split('T')[0]
-        if (ds >= monthStart && !cancelled.has(ds)) {
-          const list = map.get(ds) ?? []
-          list.push(b)
-          map.set(ds, list)
+      const isMultiDay = b.recurrence === 'Weekly' && b.recurrence_days && b.recurrence_days.length > 1
+      const toDs = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
+      if (isMultiDay) {
+        const days = [...(b.recurrence_days as number[])].sort()
+        const start = new Date(b.date + 'T12:00:00')
+        const startDow = (start.getDay() + 6) % 7
+        const weekCur = new Date(start)
+        weekCur.setDate(weekCur.getDate() - startDow)
+        const max = new Date(monthEnd + 'T12:00:00')
+        while (weekCur <= max) {
+          for (const dayIdx of days) {
+            const d = new Date(weekCur)
+            d.setDate(d.getDate() + dayIdx)
+            const ds = toDs(d)
+            if (ds >= monthStart && ds <= monthEnd && ds >= b.date && !cancelled.has(ds)) {
+              const list = map.get(ds) ?? []
+              list.push(b)
+              map.set(ds, list)
+            }
+          }
+          weekCur.setDate(weekCur.getDate() + 7)
         }
-        if (b.recurrence === 'Weekly') cur.setDate(cur.getDate() + 7)
-        else if (b.recurrence === 'Fortnightly') cur.setDate(cur.getDate() + 14)
-        else if (b.recurrence === 'Monthly') cur.setMonth(cur.getMonth() + 1)
-        else break
+      } else {
+        const cur = new Date(b.date + 'T12:00:00')
+        const max = new Date(monthEnd + 'T12:00:00')
+        while (cur <= max) {
+          const ds = cur.toISOString().split('T')[0]
+          if (ds >= monthStart && !cancelled.has(ds)) {
+            const list = map.get(ds) ?? []
+            list.push(b)
+            map.set(ds, list)
+          }
+          if (b.recurrence === 'Weekly') cur.setDate(cur.getDate() + 7)
+          else if (b.recurrence === 'Fortnightly') cur.setDate(cur.getDate() + 14)
+          else if (b.recurrence === 'Monthly') cur.setMonth(cur.getMonth() + 1)
+          else break
+        }
       }
     }
   }
