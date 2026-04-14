@@ -300,23 +300,25 @@ serve(async (req) => {
       const { data: existing } = await supabase.from('invoices').select('qf_ref').eq('user_id', user_id)
       const existingRefs = new Set((existing ?? []).map((i: any) => String(i.qf_ref)))
 
-      // Search QF for all invoices for this client
+      // Search QF for invoices — filter by ClientID from results (API doesn't support it as a search param)
       let body: Record<string, unknown>
       try {
         body = await qf('invoice', 'search', {
           SearchParameters: {
-            ClientID: Number(clientId),
+            OrderResultsBy: 'InvoiceDate',
+            OrderDirection: 'DESC',
             ReturnCount: 100,
             Offset: 0,
           },
         })
       } catch (e) {
-        // Return the real error so we can diagnose the QF response
         return json({ ok: false, error: String(e) })
       }
 
       const raw = (body as any)?.InvoiceResult?.InvoiceResultSet ?? []
-      const invoices = Array.isArray(raw) ? raw : (raw ? [raw] : [])
+      const all = Array.isArray(raw) ? raw : (raw ? [raw] : [])
+      // Filter to only this client's invoices
+      const invoices = all.filter((inv: any) => String(inv.ClientID) === String(clientId))
 
       let imported = 0
       let skipped = 0
