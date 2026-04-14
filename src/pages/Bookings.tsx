@@ -81,6 +81,8 @@ function calcHours(start: string, end: string) {
   return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
 }
 
+function round2(n: number) { return Math.round(n * 100) / 100 }
+
 export default function Bookings() {
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
   const [sites, setSites] = useState<Site[]>([])
@@ -207,7 +209,7 @@ export default function Bookings() {
     setSaving(true)
     const hours = calcHours(editForm.start_time, editForm.end_time)
     const site = selected.sites
-    const total = site ? hours * site.rate + selected.deposit : selected.total
+    const total = site ? round2(hours * site.rate + selected.deposit) : selected.total
     const totalChanged = total !== selected.total
 
     await supabase.from('bookings').update({
@@ -248,7 +250,7 @@ export default function Bookings() {
     if (userId && booking?.type === 'recurring' && booking.site_id && booking.hours) {
       const user = regularUsers.find(u => u.id === userId)
       const customRate = (user?.custom_rates as Record<string, number> | null)?.[booking.site_id]
-      if (customRate) updates.total = booking.hours * customRate
+      if (customRate) updates.total = round2(booking.hours * customRate)
     }
 
     await supabase.from('bookings').update(updates).eq('id', bookingId)
@@ -358,7 +360,7 @@ export default function Bookings() {
       notes: form.notes || null,
       status: form.status,
       deposit: isRecurring ? 0 : site.deposit,
-      total: isRecurring ? hours * effectiveRate : hours * site.rate + site.deposit,
+      total: isRecurring ? round2(hours * effectiveRate) : round2(hours * site.rate + site.deposit),
     })
     await fetchBookings()
     setShowCreate(false)
@@ -739,7 +741,7 @@ export default function Bookings() {
             {form.type === 'recurring'
               ? <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
               : <div><div className="pi-label">Deposit</div><div className="pi-value">£{formSite.deposit}</div></div>}
-            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{form.type === 'recurring' ? formHours * formEffectiveRate : formHours * formSite.rate + formSite.deposit}</div></div>
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{form.type === 'recurring' ? round2(formHours * formEffectiveRate) : round2(formHours * formSite.rate + formSite.deposit)}</div></div>
           </div>
         )}
       </Modal>
@@ -859,7 +861,7 @@ export default function Bookings() {
         )}
         {selected && editMode && (() => {
           const editHours = calcHours(editForm.start_time, editForm.end_time)
-          const editTotal = selected.sites ? editHours * selected.sites.rate + selected.deposit : selected.total
+          const editTotal = selected.sites ? round2(editHours * selected.sites.rate + selected.deposit) : selected.total
           const totalChanged = editTotal !== selected.total
           return (
             <>
