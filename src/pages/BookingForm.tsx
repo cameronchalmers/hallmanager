@@ -248,6 +248,7 @@ export default function BookingForm() {
                   <div>
                     <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1.1 }}>{lockedSite.name}</div>
                     <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 3 }}>{lockedSite.address}</div>
+                    <a href="/availability" style={{ fontSize: 12, color: 'var(--accent,#7c3aed)', fontWeight: 600, textDecoration: 'none', marginTop: 4, display: 'inline-block' }}>📅 View availability →</a>
                   </div>
                 </div>
 
