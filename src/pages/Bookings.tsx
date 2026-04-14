@@ -69,6 +69,9 @@ export default function Bookings() {
   const [editForm, setEditForm] = useState(DEFAULT_FORM)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [checkedSessions, setCheckedSessions] = useState<Map<string, Set<string>>>(new Map())
+  const [showInvoice, setShowInvoice] = useState(false)
+  const [invoiceForm, setInvoiceForm] = useState({ description: '', amount: '', date: '', status: 'paid' })
+  const [invoiceSaving, setInvoiceSaving] = useState(false)
 
   useEffect(() => { fetchBookings() }, [])
 
@@ -266,6 +269,34 @@ export default function Bookings() {
     const updated = (booking.cancelled_sessions ?? []).filter(d => d !== date)
     await supabase.from('bookings').update({ cancelled_sessions: updated }).eq('id', bookingId)
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, cancelled_sessions: updated } : b))
+  }
+
+  function openInvoiceModal(b: BookingWithSite) {
+    const dateFormatted = new Date(b.date + 'T12:00:00').toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    })
+    setInvoiceForm({
+      description: `${b.event} — ${b.sites?.name ?? 'venue'}, ${dateFormatted}`,
+      amount: String(b.total ?? ''),
+      date: new Date().toISOString().split('T')[0],
+      status: 'paid',
+    })
+    setShowInvoice(true)
+  }
+
+  async function createInvoice() {
+    if (!selected) return
+    setInvoiceSaving(true)
+    await supabase.from('invoices').insert({
+      booking_id: selected.id,
+      user_id: selected.user_id ?? null,
+      description: invoiceForm.description,
+      amount: parseFloat(invoiceForm.amount) || 0,
+      status: invoiceForm.status,
+      date: invoiceForm.date,
+    })
+    setInvoiceSaving(false)
+    setShowInvoice(false)
   }
 
   async function createBooking() {
@@ -651,11 +682,12 @@ export default function Bookings() {
               </button>
               {selected.stripe_payment_status === 'deposit_refunded' ? (
                 <span className="badge badge-neutral" style={{ alignSelf: 'center' }}>Deposit refunded</span>
-              ) : (
+              ) : selected.stripe_payment_status === 'paid' ? (
                 <button className="btn btn-primary btn-sm" onClick={() => refundDeposit(selected.id)} disabled={!!actionLoading}>
                   {actionLoading === 'refund' ? 'Refunding…' : `Refund Deposit (£${selected.deposit})`}
                 </button>
-              )}
+              ) : null}
+              <button className="btn btn-ghost btn-sm" onClick={() => openInvoiceModal(selected)}>+ Invoice</button>
               <button className="btn btn-ghost btn-sm" onClick={() => startEdit(selected)}>Edit</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setSelected(null)}>Close</button>
             </div>
@@ -801,6 +833,44 @@ export default function Bookings() {
             </>
           )
         })()}
+      </Modal>
+
+      <Modal
+        open={showInvoice}
+        title="Create Invoice"
+        onClose={() => setShowInvoice(false)}
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowInvoice(false)}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={createInvoice} disabled={invoiceSaving}>
+              {invoiceSaving ? 'Saving…' : 'Create Invoice'}
+            </button>
+          </div>
+        }
+      >
+        <div className="form-row">
+          <label className="form-label">Description</label>
+          <input className="form-input" value={invoiceForm.description} onChange={e => setInvoiceForm(f => ({ ...f, description: e.target.value }))} />
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div className="form-row" style={{ flex: 1 }}>
+            <label className="form-label">Amount (£)</label>
+            <input className="form-input" type="number" min="0" step="0.01" value={invoiceForm.amount} onChange={e => setInvoiceForm(f => ({ ...f, amount: e.target.value }))} />
+          </div>
+          <div className="form-row" style={{ flex: 1 }}>
+            <label className="form-label">Date</label>
+            <input className="form-input" type="date" value={invoiceForm.date} onChange={e => setInvoiceForm(f => ({ ...f, date: e.target.value }))} />
+          </div>
+        </div>
+        <div className="form-row">
+          <label className="form-label">Status</label>
+          <select className="form-input" value={invoiceForm.status} onChange={e => setInvoiceForm(f => ({ ...f, status: e.target.value }))}>
+            <option value="draft">Draft</option>
+            <option value="sent">Sent</option>
+            <option value="paid">Paid</option>
+            <option value="overdue">Overdue</option>
+          </select>
+        </div>
       </Modal>
     </div>
   )
