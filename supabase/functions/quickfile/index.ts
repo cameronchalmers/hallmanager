@@ -289,6 +289,66 @@ serve(async (req) => {
       return json({ ok: true, credit_ref: String(creditRef) })
     }
 
+    // ── Pull invoices from QF into Supabase ──────────────────────────────────
+    if (action === 'pull_invoices') {
+      const { data: user } = await supabase.from('users').select('qf_client_id').eq('id', user_id).single()
+      if (!user?.qf_client_id) return json({ ok: false, error: 'No QuickFile client linked for this user' })
+
+      const clientId = user.qf_client_id
+
+      // Fetch existing qf_refs so we don't duplicate
+      const { data: existing } = await supabase.from('invoices').select('qf_ref').eq('user_id', user_id)
+      const existingRefs = new Set((existing ?? []).map((i: any) => String(i.qf_ref)))
+
+      // Search QF for all invoices for this client
+      const body = await qf('invoice', 'search', {
+        SearchParameters: {
+          ClientID: clientId,
+          ReturnCount: 100,
+          Offset: 0,
+          OrderResultsBy: 'InvoiceDate',
+          OrderDirection: 'DESC',
+        },
+      })
+
+      const raw = (body as any)?.InvoiceResult?.InvoiceResultSet ?? []
+      const invoices = Array.isArray(raw) ? raw : (raw ? [raw] : [])
+
+      let imported = 0
+      let skipped = 0
+
+      for (const inv of invoices) {
+        const qfRef = String(inv.InvoiceID ?? inv.InvoiceNumber ?? '')
+        if (!qfRef || existingRefs.has(qfRef)) { skipped++; continue }
+
+        // Map QF status to our status
+        const qfStatus = String(inv.InvoiceStatus ?? '').toLowerCase()
+        const status = qfStatus === 'paid' ? 'paid'
+          : qfStatus === 'overdue' ? 'overdue'
+          : qfStatus === 'sent' ? 'sent'
+          : 'draft'
+
+        const amount = parseFloat(inv.GrossAmount ?? inv.TotalAmount ?? '0') || 0
+        const date = inv.InvoiceDate
+          ? String(inv.InvoiceDate).split('T')[0]
+          : new Date().toISOString().split('T')[0]
+        const description = inv.NominalDescription ?? inv.InvoiceNumber ?? `Invoice ${qfRef}`
+
+        await supabase.from('invoices').insert({
+          user_id,
+          description,
+          amount,
+          status,
+          date,
+          qf_ref: qfRef,
+          qf_synced: true,
+        })
+        imported++
+      }
+
+      return json({ ok: true, imported, skipped })
+    }
+
     return json({ ok: false, error: `Unknown action: ${action}` })
   } catch (err) {
     console.error('quickfile error:', err)

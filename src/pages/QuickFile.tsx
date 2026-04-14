@@ -18,6 +18,7 @@ export default function QuickFile() {
   const [syncLog, setSyncLog] = useState<SyncEntry[]>([])
   const [linkingUser, setLinkingUser] = useState<string | null>(null)
   const [findResults, setFindResults] = useState<Record<string, { clients: any[]; open: boolean }>>({})
+  const [pullingUser, setPullingUser] = useState<string | null>(null)
 
   useEffect(() => {
     fetchData()
@@ -107,6 +108,19 @@ export default function QuickFile() {
     }
     setFindResults(prev => ({ ...prev, [userId]: { ...prev[userId], open: false } }))
     setLinkingUser(null)
+  }
+
+  async function pullInvoices(userId: string) {
+    setPullingUser(userId)
+    const u = users.find(u => u.id === userId)
+    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'pull_invoices', user_id: userId } })
+    if (error || !data?.ok) {
+      addLog(`Failed to pull invoices for ${u?.group_name ?? u?.name}: ${data?.error ?? error?.message}`, false)
+    } else {
+      addLog(`Pulled ${data.imported} invoice(s) for ${u?.group_name ?? u?.name} (${data.skipped} already existed)`, true)
+      await fetchData()
+    }
+    setPullingUser(null)
   }
 
   const unsynced = invoices.filter(i => !i.qf_synced)
@@ -221,6 +235,13 @@ npx supabase functions deploy quickfile --no-verify-jwt`}</pre>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <span className="badge badge-qf">🔗 #{u.qf_client_id}</span>
                     <span className="badge badge-approved">✓ Linked</span>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      disabled={pullingUser === u.id || connStatus !== 'connected'}
+                      onClick={() => pullInvoices(u.id)}
+                    >
+                      {pullingUser === u.id ? 'Pulling…' : '↓ Pull invoices'}
+                    </button>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: 6 }}>
