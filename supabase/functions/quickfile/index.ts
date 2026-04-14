@@ -317,9 +317,7 @@ serve(async (req) => {
         return json({ ok: false, error: String(e) })
       }
 
-      // Log the full body so we can see the actual QF response structure
-      console.log('QF invoice search body:', JSON.stringify(body))
-      const raw = (body as any)?.InvoiceResult?.InvoiceResultSet ?? []
+      const raw = (body as any)?.Record ?? []
       const all = Array.isArray(raw) ? raw : (raw ? [raw] : [])
       // Filter to only this client's invoices
       const invoices = all.filter((inv: any) => String(inv.ClientID) === String(clientId))
@@ -328,21 +326,20 @@ serve(async (req) => {
       let skipped = 0
 
       for (const inv of invoices) {
-        const qfRef = String(inv.InvoiceID ?? inv.InvoiceNumber ?? '')
+        const qfRef = String(inv.InvoiceNumber ?? inv.InvoiceID ?? '')
         if (!qfRef || existingRefs.has(qfRef)) { skipped++; continue }
 
-        // Map QF status to our status
-        const qfStatus = String(inv.InvoiceStatus ?? '').toLowerCase()
-        const status = qfStatus === 'paid' ? 'paid'
-          : qfStatus === 'overdue' ? 'overdue'
-          : qfStatus === 'sent' ? 'sent'
+        const qfStatus = String(inv.Status ?? '').toUpperCase()
+        const status = qfStatus === 'PAIDFULL' ? 'paid'
+          : qfStatus === 'SENT' ? 'sent'
+          : qfStatus === 'OVERDUE' ? 'overdue'
           : 'draft'
 
-        const amount = parseFloat(inv.GrossAmount ?? inv.TotalAmount ?? '0') || 0
-        const date = inv.InvoiceDate
-          ? String(inv.InvoiceDate).split('T')[0]
+        const amount = parseFloat(inv.Amount ?? '0') || 0
+        const date = inv.IssueDate
+          ? String(inv.IssueDate).split('T')[0]
           : new Date().toISOString().split('T')[0]
-        const description = inv.NominalDescription ?? inv.InvoiceNumber ?? `Invoice ${qfRef}`
+        const description = inv.Description ?? qfRef
 
         await supabase.from('invoices').insert({
           user_id,
