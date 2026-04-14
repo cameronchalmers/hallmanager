@@ -301,15 +301,19 @@ serve(async (req) => {
       const existingRefs = new Set((existing ?? []).map((i: any) => String(i.qf_ref)))
 
       // Search QF for all invoices for this client
-      const body = await qf('invoice', 'search', {
-        SearchParameters: {
-          ClientID: clientId,
-          ReturnCount: 100,
-          Offset: 0,
-          OrderResultsBy: 'InvoiceDate',
-          OrderDirection: 'DESC',
-        },
-      })
+      let body: Record<string, unknown>
+      try {
+        body = await qf('invoice', 'search', {
+          SearchParameters: {
+            ClientID: Number(clientId),
+            ReturnCount: 100,
+            Offset: 0,
+          },
+        })
+      } catch (e) {
+        // Return the real error so we can diagnose the QF response
+        return json({ ok: false, error: String(e) })
+      }
 
       const raw = (body as any)?.InvoiceResult?.InvoiceResultSet ?? []
       const invoices = Array.isArray(raw) ? raw : (raw ? [raw] : [])
