@@ -290,7 +290,7 @@ export default function BookingForm() {
                 )}
 
                 <a
-                  href={`/availability/${lockedSite.slug ?? ''}`}
+                  href={`/availability/${toSlug(lockedSite.name)}`}
                   style={{ display: 'block', width: '100%', background: 'var(--surface2,#f4f4f6)', color: 'var(--text,#18181b)', border: '1px solid var(--border,#e5e7eb)', borderRadius: 10, padding: '13px', fontWeight: 700, fontSize: 14, textAlign: 'center', textDecoration: 'none', marginBottom: 16, boxSizing: 'border-box' }}
                 >
                   📅 View availability calendar

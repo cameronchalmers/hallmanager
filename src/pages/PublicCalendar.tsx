@@ -18,7 +18,10 @@ interface SlotBooking {
 interface Site {
   id: string
   name: string
-  slug?: string | null
+}
+
+function toSlug(name: string) {
+  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 }
 
 function toDs(d: Date) {
@@ -114,13 +117,13 @@ export default function PublicCalendar() {
   }, [cal, site])
 
   async function loadSite() {
+    const { data } = await (supabase as any).from('sites').select('id, name')
+    const all: Site[] = data ?? []
     if (slug) {
-      const { data } = await (supabase as any).from('sites').select('id, name, slug').eq('slug', slug).maybeSingle()
-      setSite(data ?? null)
+      const match = all.find(s => toSlug(s.name) === slug)
+      setSite(match ?? null)
     } else {
-      // No slug — load first site
-      const { data } = await (supabase as any).from('sites').select('id, name, slug').limit(1).maybeSingle()
-      setSite(data ?? null)
+      setSite(all[0] ?? null)
     }
   }
 
