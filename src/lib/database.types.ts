@@ -19,6 +19,7 @@ export interface Database {
           description: string | null
           amenities: string[] | null
           photos: string[] | null
+          slug: string | null
         }
         Insert: {
           id?: string
@@ -35,6 +36,7 @@ export interface Database {
           description?: string | null
           amenities?: string[] | null
           photos?: string[] | null
+          slug?: string | null
         }
         Update: {
           id?: string
@@ -51,6 +53,7 @@ export interface Database {
           description?: string | null
           amenities?: string[] | null
           photos?: string[] | null
+          slug?: string | null
         }
         Relationships: []
       }

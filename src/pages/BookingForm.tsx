@@ -248,7 +248,6 @@ export default function BookingForm() {
                   <div>
                     <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1.1 }}>{lockedSite.name}</div>
                     <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 3 }}>{lockedSite.address}</div>
-                    <a href="/availability" style={{ fontSize: 12, color: 'var(--accent,#7c3aed)', fontWeight: 600, textDecoration: 'none', marginTop: 4, display: 'inline-block' }}>📅 View availability →</a>
                   </div>
                 </div>
 
@@ -289,6 +288,13 @@ export default function BookingForm() {
                     )}
                   </div>
                 )}
+
+                <a
+                  href={`/availability/${lockedSite.slug ?? ''}`}
+                  style={{ display: 'block', width: '100%', background: 'var(--surface2,#f4f4f6)', color: 'var(--text,#18181b)', border: '1px solid var(--border,#e5e7eb)', borderRadius: 10, padding: '13px', fontWeight: 700, fontSize: 14, textAlign: 'center', textDecoration: 'none', marginBottom: 16, boxSizing: 'border-box' }}
+                >
+                  📅 View availability calendar
+                </a>
 
                 {lockedSite.description && (
                   <p style={{ fontSize: 14, color: 'var(--text-muted,#71717a)', marginTop: 0, marginBottom: 16, lineHeight: 1.7 }}>{lockedSite.description}</p>

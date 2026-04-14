@@ -48,6 +48,7 @@ export default function App() {
       <Route path="/book" element={<BookingForm />} />
       <Route path="/book/:slug" element={<BookingForm />} />
       <Route path="/availability" element={<PublicCalendar />} />
+      <Route path="/availability/:slug" element={<PublicCalendar />} />
 
       {/* Protected routes */}
       <Route

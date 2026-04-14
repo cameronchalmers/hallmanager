@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -95,28 +96,32 @@ function fmt12(t: string) {
 }
 
 export default function PublicCalendar() {
+  const { slug } = useParams<{ slug?: string }>()
   const today = new Date()
   const [cal, setCal] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const [bookings, setBookings] = useState<SlotBooking[]>([])
-  const [sites, setSites] = useState<Site[]>([])
-  const [siteFilter, setSiteFilter] = useState('all')
+  const [site, setSite] = useState<Site | null>(null)
   const [selDay, setSelDay] = useState<Date | null>(null)
-  const [, setLoading] = useState(true)
   const [accentColor, setAccentColor] = useState('#7c3aed')
 
   useEffect(() => {
-    loadSites()
+    loadSite()
     loadAccent()
-  }, [])
+  }, [slug])
 
   useEffect(() => {
-    if (sites.length > 0 || siteFilter === 'all') fetchMonth()
-  }, [cal, siteFilter, sites])
+    if (site) fetchMonth()
+  }, [cal, site])
 
-  async function loadSites() {
-    const { data } = await (supabase as any).from('sites').select('id, name, slug')
-    setSites(data ?? [])
-    setLoading(false)
+  async function loadSite() {
+    if (slug) {
+      const { data } = await (supabase as any).from('sites').select('id, name, slug').eq('slug', slug).maybeSingle()
+      setSite(data ?? null)
+    } else {
+      // No slug — load first site
+      const { data } = await (supabase as any).from('sites').select('id, name, slug').limit(1).maybeSingle()
+      setSite(data ?? null)
+    }
   }
 
   async function loadAccent() {
@@ -125,15 +130,9 @@ export default function PublicCalendar() {
   }
 
   async function fetchMonth() {
-    const targetSites = siteFilter === 'all' ? sites : sites.filter(s => s.id === siteFilter)
-    if (siteFilter !== 'all' && targetSites.length === 0) return
-
-    const results: SlotBooking[] = []
-    for (const site of (siteFilter === 'all' ? sites : targetSites)) {
-      const { data } = await (supabase as any).rpc('get_site_bookings', { p_site_id: site.id })
-      if (data) results.push(...data)
-    }
-    setBookings(results)
+    if (!site) return
+    const { data } = await (supabase as any).rpc('get_site_bookings', { p_site_id: site.id })
+    setBookings(data ?? [])
   }
 
   const slotMap = buildSlotMap(bookings, cal.year, cal.month)
@@ -155,9 +154,12 @@ export default function PublicCalendar() {
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 32, height: 32, borderRadius: 9, background: accentColor, color: '#fff', fontWeight: 800, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>H</div>
-            <span style={{ fontWeight: 700, fontSize: 15, color: '#18181b' }}>Availability Calendar</span>
+            <div>
+              <span style={{ fontWeight: 700, fontSize: 15, color: '#18181b' }}>{site?.name ?? 'Availability'}</span>
+              <span style={{ fontSize: 13, color: '#71717a', marginLeft: 8 }}>Availability Calendar</span>
+            </div>
           </div>
-          <a href="/book" style={{ background: accentColor, color: '#fff', fontWeight: 600, fontSize: 13, padding: '7px 16px', borderRadius: 8, textDecoration: 'none' }}>
+          <a href={slug ? `/book/${slug}` : '/book'} style={{ background: accentColor, color: '#fff', fontWeight: 600, fontSize: 13, padding: '7px 16px', borderRadius: 8, textDecoration: 'none' }}>
             Book a slot →
           </a>
         </div>
@@ -171,17 +173,6 @@ export default function PublicCalendar() {
             <span style={{ fontWeight: 700, fontSize: 16, minWidth: 160, textAlign: 'center', color: '#18181b' }}>{MONTHS[cal.month]} {cal.year}</span>
             <button onClick={nextMonth} style={{ border: '1px solid #e5e7eb', background: '#fff', borderRadius: 7, width: 32, height: 32, cursor: 'pointer', fontSize: 16, color: '#71717a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>›</button>
           </div>
-
-          {sites.length > 1 && (
-            <select
-              value={siteFilter}
-              onChange={e => { setSiteFilter(e.target.value); setSelDay(null) }}
-              style={{ border: '1px solid #e5e7eb', background: '#fff', borderRadius: 7, padding: '5px 10px', fontSize: 13, color: '#18181b', cursor: 'pointer' }}
-            >
-              <option value="all">All venues</option>
-              {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          )}
 
           <button
             onClick={() => { setCal({ year: today.getFullYear(), month: today.getMonth() }); setSelDay(null) }}
@@ -336,7 +327,7 @@ export default function PublicCalendar() {
                   <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
                   <div style={{ fontWeight: 600, fontSize: 14, color: '#18181b', marginBottom: 4 }}>All clear!</div>
                   <div style={{ fontSize: 12, color: '#71717a', marginBottom: 16 }}>No bookings on this day.</div>
-                  <a href="/book" style={{ background: accentColor, color: '#fff', fontWeight: 600, fontSize: 13, padding: '8px 18px', borderRadius: 8, textDecoration: 'none', display: 'inline-block' }}>
+                  <a href={slug ? `/book/${slug}` : '/book'} style={{ background: accentColor, color: '#fff', fontWeight: 600, fontSize: 13, padding: '8px 18px', borderRadius: 8, textDecoration: 'none', display: 'inline-block' }}>
                     Book this day →
                   </a>
                 </div>
@@ -370,7 +361,7 @@ export default function PublicCalendar() {
                   <div style={{ fontSize: 12, color: '#71717a', marginBottom: 8 }}>
                     Want a different time? You can still submit a request — we'll confirm availability.
                   </div>
-                  <a href="/book" style={{ background: accentColor, color: '#fff', fontWeight: 600, fontSize: 13, padding: '7px 16px', borderRadius: 8, textDecoration: 'none', display: 'inline-block' }}>
+                  <a href={slug ? `/book/${slug}` : '/book'} style={{ background: accentColor, color: '#fff', fontWeight: 600, fontSize: 13, padding: '7px 16px', borderRadius: 8, textDecoration: 'none', display: 'inline-block' }}>
                     Request a slot →
                   </a>
                 </div>
