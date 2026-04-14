@@ -68,11 +68,6 @@ const DEFAULT_FORM = {
   status: 'confirmed',
 }
 
-const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
-  const h = Math.floor(i / 4).toString().padStart(2, '0')
-  const m = ((i % 4) * 15).toString().padStart(2, '0')
-  return `${h}:${m}`
-})
 
 function calcHours(start: string, end: string) {
   if (!start || !end) return 0
@@ -209,7 +204,10 @@ export default function Bookings() {
     setSaving(true)
     const hours = calcHours(editForm.start_time, editForm.end_time)
     const site = selected.sites
-    const total = site ? round2(hours * site.rate + selected.deposit) : selected.total
+    const linkedUser = selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
+    const customRate = linkedUser ? (linkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
+    const effectiveRate = customRate ?? site?.rate ?? 0
+    const total = site ? round2(hours * effectiveRate + selected.deposit) : selected.total
     const totalChanged = total !== selected.total
 
     await supabase.from('bookings').update({
@@ -861,7 +859,10 @@ export default function Bookings() {
         )}
         {selected && editMode && (() => {
           const editHours = calcHours(editForm.start_time, editForm.end_time)
-          const editTotal = selected.sites ? round2(editHours * selected.sites.rate + selected.deposit) : selected.total
+          const editLinkedUser = selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
+          const editCustomRate = editLinkedUser ? (editLinkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
+          const editEffectiveRate = editCustomRate ?? selected.sites?.rate ?? 0
+          const editTotal = selected.sites ? round2(editHours * editEffectiveRate + selected.deposit) : selected.total
           const totalChanged = editTotal !== selected.total
           return (
             <>
@@ -954,17 +955,11 @@ export default function Bookings() {
               <div className="form-grid-2">
                 <div>
                   <label className="form-label">Start time</label>
-                  <select className="form-input" value={editForm.start_time} onChange={e => setEditForm(f => ({ ...f, start_time: e.target.value }))}>
-                    <option value="">Select…</option>
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <input className="form-input" type="time" value={editForm.start_time} onChange={e => setEditForm(f => ({ ...f, start_time: e.target.value }))} />
                 </div>
                 <div>
                   <label className="form-label">End time</label>
-                  <select className="form-input" value={editForm.end_time} onChange={e => setEditForm(f => ({ ...f, end_time: e.target.value }))}>
-                    <option value="">Select…</option>
-                    {TIME_SLOTS.filter(t => !editForm.start_time || t > editForm.start_time).map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <input className="form-input" type="time" value={editForm.end_time} onChange={e => setEditForm(f => ({ ...f, end_time: e.target.value }))} />
                 </div>
               </div>
               <div className="form-row">
@@ -973,7 +968,7 @@ export default function Bookings() {
               </div>
               {editHours > 0 && selected.sites && (
                 <div className="price-bar" style={{ marginTop: 4 }}>
-                  <div><div className="pi-label">Rate</div><div className="pi-value">£{selected.sites.rate}/hr</div></div>
+                  <div><div className="pi-label">Rate</div><div className="pi-value">£{editEffectiveRate}/hr{editCustomRate ? ' ✦' : ''}</div></div>
                   <div><div className="pi-label">Hours</div><div className="pi-value">{editHours}</div></div>
                   <div><div className="pi-label">Deposit</div><div className="pi-value">£{selected.deposit}</div></div>
                   <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{editTotal}</div></div>
