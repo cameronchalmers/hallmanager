@@ -14,7 +14,7 @@ import {
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
 const FROM = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
-const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL') ?? ''
+const ADMIN_EMAILS = (Deno.env.get('ADMIN_EMAIL') ?? '').split(',').map(e => e.trim()).filter(Boolean)
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -119,9 +119,9 @@ serve(async (req) => {
       if (type === 'booking_submitted') {
         const bookerEmail = bookingSubmitted(b)
         await sendEmail(b.email, bookerEmail.subject, bookerEmail.html)
-        if (ADMIN_EMAIL) {
+        if (ADMIN_EMAILS.length > 0) {
           const adminEmail = bookingSubmittedAdmin(b)
-          await sendEmail(ADMIN_EMAIL, adminEmail.subject, adminEmail.html)
+          await Promise.all(ADMIN_EMAILS.map(email => sendEmail(email, adminEmail.subject, adminEmail.html)))
         }
       } else if (type === 'booking_approved') {
         const email = bookingApproved(b)
@@ -180,11 +180,11 @@ serve(async (req) => {
     // ── Test emails (send dummy version to admin) ─────────────────────────────
 
     else if (type === 'test') {
-      if (!ADMIN_EMAIL) throw new Error('ADMIN_EMAIL not configured')
+      if (ADMIN_EMAILS.length === 0) throw new Error('ADMIN_EMAIL not configured')
 
       const dummyBooking: BookingData = {
         name: 'Jane Smith',
-        email: ADMIN_EMAIL,
+        email: ADMIN_EMAILS[0],
         event: 'Community Yoga',
         date: 'Wednesday, 30 July 2025',
         start_time: '09:00',
@@ -199,7 +199,7 @@ serve(async (req) => {
 
       const dummySlot: ExtraSlotData = {
         name: 'Jane Smith',
-        email: ADMIN_EMAIL,
+        email: ADMIN_EMAILS[0],
         site_name: 'The Old Town Hall',
         date: 'Wednesday, 30 July 2025',
         start_time: '09:00',
@@ -219,7 +219,7 @@ serve(async (req) => {
       else if (template === 'slot_denied')        email = extraSlotDenied(dummySlot)
       else throw new Error(`Unknown template: ${template}`)
 
-      await sendEmail(ADMIN_EMAIL, `[TEST] ${email.subject}`, email.html)
+      await Promise.all(ADMIN_EMAILS.map(addr => sendEmail(addr, `[TEST] ${email.subject}`, email.html)))
     }
 
     else {
