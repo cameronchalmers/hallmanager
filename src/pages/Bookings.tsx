@@ -184,7 +184,9 @@ export default function Bookings() {
     const { data, error } = await supabase.functions.invoke('stripe-action', {
       body: { action: 'create_payment', booking_id: id },
     })
-    if (!error && data?.url) {
+    if (error || !data?.url) {
+      alert(`Failed to regenerate payment link: ${error?.message ?? data?.error ?? 'Unknown error'}`)
+    } else {
       setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_url: data.url } : b))
       if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_url: data.url } : null)
     }
