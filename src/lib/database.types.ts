@@ -87,6 +87,7 @@ export interface Database {
           attended: boolean | null
           session_attendance: Record<string, boolean> | null
           cancelled_sessions: string[] | null
+          assigned_to: string | null
         }
         Insert: {
           id?: string
@@ -114,6 +115,7 @@ export interface Database {
           attended?: boolean | null
           session_attendance?: Record<string, boolean> | null
           cancelled_sessions?: string[] | null
+          assigned_to?: string | null
         }
         Update: {
           id?: string
@@ -141,6 +143,7 @@ export interface Database {
           attended?: boolean | null
           session_attendance?: Record<string, boolean> | null
           cancelled_sessions?: string[] | null
+          assigned_to?: string | null
         }
         Relationships: []
       }

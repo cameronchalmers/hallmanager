@@ -82,6 +82,7 @@ export default function Bookings() {
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
   const [sites, setSites] = useState<Site[]>([])
   const [regularUsers, setRegularUsers] = useState<AppUser[]>([])
+  const [staffUsers, setStaffUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'oneoff' | 'recurring'>('oneoff')
   const [statusFilter, setStatusFilter] = useState('active')
@@ -104,10 +105,11 @@ export default function Bookings() {
 
   async function fetchBookings() {
     setLoading(true)
-    const [bRes, sRes, uRes] = await Promise.all([
+    const [bRes, sRes, uRes, staffRes] = await Promise.all([
       supabase.from('bookings').select('*').order('date', { ascending: false }),
       supabase.from('sites').select('*'),
       supabase.from('users').select('*').eq('role', 'regular'),
+      supabase.from('users').select('*').in('role', ['admin', 'manager']),
     ])
     const allSites = sRes.data ?? []
     const bookingsWithSites = (bRes.data ?? []).map(b => ({
@@ -117,6 +119,7 @@ export default function Bookings() {
     setBookings(bookingsWithSites)
     setSites(allSites)
     setRegularUsers((uRes.data ?? []) as unknown as AppUser[])
+    setStaffUsers((staffRes.data ?? []) as unknown as AppUser[])
     setLoading(false)
   }
 
@@ -268,6 +271,12 @@ export default function Bookings() {
     await supabase.from('bookings').update(updates).eq('id', bookingId)
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, ...updates } : b))
     if (selected?.id === bookingId) setSelected(prev => prev ? { ...prev, ...updates } : null)
+  }
+
+  async function assignStaff(bookingId: string, userId: string | null) {
+    await supabase.from('bookings').update({ assigned_to: userId }).eq('id', bookingId)
+    setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, assigned_to: userId } : b))
+    if (selected?.id === bookingId) setSelected(prev => prev ? { ...prev, assigned_to: userId } : null)
   }
 
   function toggleExpanded(id: string) {
@@ -492,6 +501,7 @@ export default function Bookings() {
                   <div style={{ fontWeight: 600 }}>{b.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
                   {b.user_id && (() => { const u = regularUsers.find(u => u.id === b.user_id); return u ? <div style={{ fontSize: 10, color: 'var(--accent-text)', fontWeight: 600, marginTop: 1 }}>🔗 {u.group_name ?? u.name}</div> : null })()}
+                  {b.assigned_to && (() => { const u = staffUsers.find(u => u.id === b.assigned_to); return u ? <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>👤 {u.name}</div> : null })()}
                 </div>
                 <div>
                   <div>{format(new Date(b.date), 'dd MMM yyyy')}</div>
@@ -848,18 +858,33 @@ export default function Bookings() {
               <div><div className="detail-label">Type</div><div className="detail-value"><span className={`badge ${selected.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>{selected.type === 'recurring' ? `↻ ${selected.recurrence}${selected.recurrence_days && selected.recurrence_days.length > 1 ? ' · ' + selected.recurrence_days.slice().sort((a,c)=>a-c).map(d => WEEK_DAYS[d]).join(', ') : ''}` : 'One-off'}</span></div></div>
               <div><div className="detail-label">Capacity</div><div className="detail-value">Up to {selected.sites?.capacity} guests</div></div>
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <label className="form-label" style={{ display: 'block', marginBottom: 5 }}>Linked hirer</label>
-              <select
-                className="form-input"
-                value={selected.user_id ?? ''}
-                onChange={e => linkUser(selected.id, e.target.value || null)}
-              >
-                <option value="">— No linked hirer —</option>
-                {regularUsers.map(u => (
-                  <option key={u.id} value={u.id}>{u.group_name ?? u.name} ({u.email})</option>
-                ))}
-              </select>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div>
+                <label className="form-label" style={{ display: 'block', marginBottom: 5 }}>Linked hirer</label>
+                <select
+                  className="form-input"
+                  value={selected.user_id ?? ''}
+                  onChange={e => linkUser(selected.id, e.target.value || null)}
+                >
+                  <option value="">— No linked hirer —</option>
+                  {regularUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.group_name ?? u.name} ({u.email})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="form-label" style={{ display: 'block', marginBottom: 5 }}>Assigned to</label>
+                <select
+                  className="form-input"
+                  value={selected.assigned_to ?? ''}
+                  onChange={e => assignStaff(selected.id, e.target.value || null)}
+                >
+                  <option value="">— Unassigned —</option>
+                  {staffUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             {selected.notes && (
               <div style={{ background: '#fafafa', borderRadius: 7, padding: '9px 12px', fontSize: 12, color: '#3f3f46', marginBottom: 12, border: '1px solid var(--border)' }}>
