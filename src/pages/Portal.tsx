@@ -104,7 +104,7 @@ export default function Portal() {
 
   const mySites = sites.filter(s => (profile?.site_ids ?? []).includes(s.id))
   const confirmedBookings = bookings.filter(b => b.status === 'confirmed').length
-  const totalSpend = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount, 0)
+
   const customRates = profile?.custom_rates as Record<string, number> | null
 
   function sessionTotal(b: Booking) {
@@ -180,7 +180,6 @@ export default function Portal() {
             { label: 'Total Bookings', value: bookings.length },
             { label: 'Confirmed', value: confirmedBookings },
             { label: 'Extra Slots', value: slots.length },
-            { label: 'Total Spend', value: formatPence(totalSpend) },
           ].map(({ label, value }) => (
             <div key={label} className="ph-stat">
               <div className="ph-stat-val">{value}</div>

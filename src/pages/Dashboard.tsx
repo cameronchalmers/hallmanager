@@ -85,7 +85,7 @@ export default function Dashboard() {
   const pending = bookings.filter(b => b.status === 'pending')
   const pendingSlots = slots.filter(s => s.status === 'pending')
   const confirmed = bookings.filter(b => b.status === 'confirmed' || b.status === 'approved')
-  const revenue = confirmed.reduce((s, b) => s + ((b as BookingWithSite).effective_total ?? b.total ?? 0), 0)
+  const revenue = confirmed.filter(b => b.type === 'oneoff').reduce((s, b) => s + (b.total ?? 0), 0)
 
   if (loading) return <div className="empty"><div className="empty-icon">⏳</div><div className="empty-title">Loading…</div></div>
 
@@ -106,7 +106,7 @@ export default function Dashboard() {
         <div className="stat-card">
           <div className="stat-label">Revenue</div>
           <div className="stat-value">{formatPence(revenue)}</div>
-          <div className="stat-sub">Confirmed bookings</div>
+          <div className="stat-sub">One-off bookings</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Active Sites</div>
