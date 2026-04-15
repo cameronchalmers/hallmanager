@@ -96,6 +96,7 @@ export interface BookingData {
   end_time: string
   hours: number
   site_name: string
+  site_id?: string
   deposit: number
   total: number
   notes?: string | null

@@ -185,6 +185,7 @@ export default function BookingForm() {
           end_time: form.end_time,
           hours,
           site_name: activeSite.name,
+          site_id: activeSite.id,
           deposit,
           total,
           notes: form.notes || null,

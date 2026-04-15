@@ -14,11 +14,29 @@ import {
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
 const FROM = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
-const ADMIN_EMAILS = (Deno.env.get('ADMIN_EMAIL') ?? '').split(',').map(e => e.trim()).filter(Boolean)
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getAdminEmailsForSite(supabase: any, siteId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('users')
+    .select('email')
+    .in('role', ['admin', 'manager'])
+    .contains('site_ids', [siteId])
+  return (data ?? []).map((u: { email: string }) => u.email).filter(Boolean)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getAllAdminEmails(supabase: any): Promise<string[]> {
+  const { data } = await supabase
+    .from('users')
+    .select('email')
+    .in('role', ['admin', 'manager'])
+  return (data ?? []).map((u: { email: string }) => u.email).filter(Boolean)
 }
 
 async function sendEmail(to: string, subject: string, html: string) {
@@ -109,6 +127,7 @@ serve(async (req) => {
           end_time: booking.end_time,
           hours: booking.hours,
           site_name: site?.name ?? 'Unknown venue',
+          site_id: booking.site_id,
           deposit: booking.deposit,
           total: booking.total,
           notes: booking.notes,
@@ -119,9 +138,12 @@ serve(async (req) => {
       if (type === 'booking_submitted') {
         const bookerEmail = bookingSubmitted(b)
         await sendEmail(b.email, bookerEmail.subject, bookerEmail.html)
-        if (ADMIN_EMAILS.length > 0) {
-          const adminEmail = bookingSubmittedAdmin(b)
-          await Promise.all(ADMIN_EMAILS.map(email => sendEmail(email, adminEmail.subject, adminEmail.html)))
+        if (b.site_id) {
+          const adminEmails = await getAdminEmailsForSite(supabase, b.site_id)
+          if (adminEmails.length > 0) {
+            const adminEmail = bookingSubmittedAdmin(b)
+            await Promise.all(adminEmails.map(email => sendEmail(email, adminEmail.subject, adminEmail.html)))
+          }
         }
       } else if (type === 'booking_approved') {
         const email = bookingApproved(b)
@@ -180,11 +202,12 @@ serve(async (req) => {
     // ── Test emails (send dummy version to admin) ─────────────────────────────
 
     else if (type === 'test') {
-      if (ADMIN_EMAILS.length === 0) throw new Error('ADMIN_EMAIL not configured')
+      const allAdmins = await getAllAdminEmails(supabase)
+      if (allAdmins.length === 0) throw new Error('No admin or manager users found')
 
       const dummyBooking: BookingData = {
         name: 'Jane Smith',
-        email: ADMIN_EMAILS[0],
+        email: allAdmins[0],
         event: 'Community Yoga',
         date: 'Wednesday, 30 July 2025',
         start_time: '09:00',
@@ -199,7 +222,7 @@ serve(async (req) => {
 
       const dummySlot: ExtraSlotData = {
         name: 'Jane Smith',
-        email: ADMIN_EMAILS[0],
+        email: allAdmins[0],
         site_name: 'The Old Town Hall',
         date: 'Wednesday, 30 July 2025',
         start_time: '09:00',
@@ -219,7 +242,7 @@ serve(async (req) => {
       else if (template === 'slot_denied')        email = extraSlotDenied(dummySlot)
       else throw new Error(`Unknown template: ${template}`)
 
-      await Promise.all(ADMIN_EMAILS.map(addr => sendEmail(addr, `[TEST] ${email.subject}`, email.html)))
+      await Promise.all(allAdmins.map(addr => sendEmail(addr, `[TEST] ${email.subject}`, email.html)))
     }
 
     else {
