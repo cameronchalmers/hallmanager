@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Site } from '../lib/database.types'
 import { DEFAULT_AVAILABILITY, type WeekAvailability } from '../lib/database.types'
+import { formatPence, poundsToPence } from '../lib/money'
 import Modal from '../components/ui/Modal'
 
 const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿']
@@ -176,8 +177,8 @@ export default function Sites() {
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>{site.address}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 10 }}>
                   {[
-                    { label: 'per hour', value: `£${site.rate}` },
-                    { label: 'deposit', value: `£${site.deposit}` },
+                    { label: 'per hour', value: formatPence(site.rate) },
+                    { label: 'deposit', value: formatPence(site.deposit) },
                     { label: 'capacity', value: String(site.capacity) },
                   ].map(({ label, value }) => (
                     <div key={label} style={{ background: 'var(--surface2)', borderRadius: 7, padding: '8px 6px', textAlign: 'center' }}>
@@ -288,11 +289,11 @@ export default function Sites() {
           </div>
           <div>
             <label className="form-label">Rate (£/hr)</label>
-            <input className="form-input" type="number" min="0" value={form.rate} onChange={e => setForm(f => ({ ...f, rate: Number(e.target.value) }))} />
+            <input className="form-input" type="number" min="0" step="0.01" value={form.rate / 100} onChange={e => setForm(f => ({ ...f, rate: poundsToPence(Number(e.target.value)) }))} />
           </div>
           <div>
             <label className="form-label">Deposit (£)</label>
-            <input className="form-input" type="number" min="0" value={form.deposit} onChange={e => setForm(f => ({ ...f, deposit: Number(e.target.value) }))} />
+            <input className="form-input" type="number" min="0" step="0.01" value={form.deposit / 100} onChange={e => setForm(f => ({ ...f, deposit: poundsToPence(Number(e.target.value)) }))} />
           </div>
         </div>
 

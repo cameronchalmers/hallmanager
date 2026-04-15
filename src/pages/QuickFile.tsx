@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Invoice, AppUser } from '../lib/database.types'
+import { formatPence } from '../lib/money'
 import { format } from 'date-fns'
 
 interface SyncEntry { time: string; action: string; ok: boolean }
@@ -311,7 +312,7 @@ npx supabase functions deploy quickfile --no-verify-jwt`}</pre>
             <span style={{ fontWeight: 700, color: 'var(--accent-text)', fontSize: 12 }}>{inv.id.slice(0, 8).toUpperCase()}</span>
             <span style={{ fontSize: 12 }}>{inv.description}</span>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{invUser ? (invUser.group_name ?? invUser.name) : '—'}</span>
-            <span style={{ fontWeight: 700 }}>£{inv.amount}</span>
+            <span style={{ fontWeight: 700 }}>{formatPence(inv.amount)}</span>
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{format(new Date(inv.date), 'dd MMM yy')}</span>
             <span>{inv.qf_synced ? <span className="badge badge-qf">🔗 {inv.qf_ref ?? 'Synced'}</span> : <span className="badge badge-pending">Not synced</span>}</span>
             <span><span className={`badge ${inv.status === 'paid' ? 'badge-approved' : 'badge-pending'}`}>{inv.status === 'paid' ? '✓ Paid' : '⏳ Due'}</span></span>

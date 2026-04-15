@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
 import type { AppUser, Booking, Site } from '../lib/database.types'
+import { formatPence, poundsToPence } from '../lib/money'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
 import { format } from 'date-fns'
@@ -76,7 +77,6 @@ function calcHours(start: string, end: string) {
   return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
 }
 
-function round2(n: number) { return Math.round(n * 100) / 100 }
 
 export default function Bookings() {
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
@@ -207,7 +207,7 @@ export default function Bookings() {
     const linkedUser = selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
     const customRate = linkedUser ? (linkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
     const effectiveRate = customRate ?? site?.rate ?? 0
-    const total = site ? round2(hours * effectiveRate + selected.deposit) : selected.total
+    const total = site ? Math.round(hours * effectiveRate) + selected.deposit : selected.total
     const totalChanged = total !== selected.total
 
     await supabase.from('bookings').update({
@@ -248,7 +248,7 @@ export default function Bookings() {
     if (userId && booking?.type === 'recurring' && booking.site_id && booking.hours) {
       const user = regularUsers.find(u => u.id === userId)
       const customRate = (user?.custom_rates as Record<string, number> | null)?.[booking.site_id]
-      if (customRate) updates.total = round2(booking.hours * customRate)
+      if (customRate) updates.total = Math.round(booking.hours * customRate)
     }
 
     await supabase.from('bookings').update(updates).eq('id', bookingId)
@@ -309,7 +309,7 @@ export default function Bookings() {
     })
     setInvoiceForm({
       description: `${b.event} — ${b.sites?.name ?? 'venue'}, ${dateFormatted}`,
-      amount: String(b.total ?? ''),
+      amount: b.total != null ? String(b.total / 100) : '',
       date: new Date().toISOString().split('T')[0],
       status: 'paid',
     })
@@ -323,7 +323,7 @@ export default function Bookings() {
       booking_id: selected.id,
       user_id: selected.user_id ?? null,
       description: invoiceForm.description,
-      amount: parseFloat(invoiceForm.amount) || 0,
+      amount: poundsToPence(parseFloat(invoiceForm.amount) || 0),
       status: invoiceForm.status,
       date: invoiceForm.date,
     })
@@ -358,7 +358,7 @@ export default function Bookings() {
       notes: form.notes || null,
       status: form.status,
       deposit: isRecurring ? 0 : site.deposit,
-      total: isRecurring ? round2(hours * effectiveRate) : round2(hours * site.rate + site.deposit),
+      total: isRecurring ? Math.round(hours * effectiveRate) : Math.round(hours * site.rate) + site.deposit,
     })
     await fetchBookings()
     setShowCreate(false)
@@ -734,12 +734,12 @@ export default function Bookings() {
         </div>
         {formSite && formHours > 0 && (
           <div className="price-bar" style={{ marginTop: 4 }}>
-            <div><div className="pi-label">Rate</div><div className="pi-value">£{formEffectiveRate}/hr{formEffectiveRate !== formSite.rate ? ' ✦' : ''}</div></div>
+            <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(formEffectiveRate)}/hr{formEffectiveRate !== formSite.rate ? ' ✦' : ''}</div></div>
             <div><div className="pi-label">Hours</div><div className="pi-value">{formHours}</div></div>
             {form.type === 'recurring'
               ? <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
-              : <div><div className="pi-label">Deposit</div><div className="pi-value">£{formSite.deposit}</div></div>}
-            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{form.type === 'recurring' ? round2(formHours * formEffectiveRate) : round2(formHours * formSite.rate + formSite.deposit)}</div></div>
+              : <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(formSite.deposit)}</div></div>}
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(form.type === 'recurring' ? Math.round(formHours * formEffectiveRate) : Math.round(formHours * formSite.rate) + formSite.deposit)}</div></div>
           </div>
         )}
       </Modal>
@@ -800,7 +800,7 @@ export default function Bookings() {
                 <span className="badge badge-neutral" style={{ alignSelf: 'center' }}>Deposit refunded</span>
               ) : selected.stripe_payment_status === 'paid' ? (
                 <button className="btn btn-primary btn-sm" onClick={() => refundDeposit(selected.id)} disabled={!!actionLoading}>
-                  {actionLoading === 'refund' ? 'Refunding…' : `Refund Deposit (£${selected.deposit})`}
+                  {actionLoading === 'refund' ? 'Refunding…' : `Refund Deposit (${formatPence(selected.deposit)})`}
                 </button>
               ) : null}
               <button className="btn btn-ghost btn-sm" onClick={() => openInvoiceModal(selected)}>+ Invoice</button>
@@ -851,10 +851,10 @@ export default function Bookings() {
               </div>
             )}
             <div className="price-bar">
-              <div><div className="pi-label">Rate</div><div className="pi-value">£{selected.sites?.rate ?? 0}/hr</div></div>
+              <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(selected.sites?.rate ?? 0)}/hr</div></div>
               <div><div className="pi-label">Hours</div><div className="pi-value">{selected.hours}</div></div>
-              <div><div className="pi-label">Deposit</div><div className="pi-value">£{selected.deposit}</div></div>
-              <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{selected.total}</div></div>
+              <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(selected.deposit)}</div></div>
+              <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(selected.total)}</div></div>
             </div>
           </>
         )}
@@ -863,18 +863,18 @@ export default function Bookings() {
           const editLinkedUser = selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
           const editCustomRate = editLinkedUser ? (editLinkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
           const editEffectiveRate = editCustomRate ?? selected.sites?.rate ?? 0
-          const editTotal = selected.sites ? round2(editHours * editEffectiveRate + selected.deposit) : selected.total
+          const editTotal = selected.sites ? Math.round(editHours * editEffectiveRate) + selected.deposit : selected.total
           const totalChanged = editTotal !== selected.total
           return (
             <>
               {selected.status === 'confirmed' && totalChanged && (
                 <div className="notice notice-warn" style={{ marginBottom: 12, fontSize: 12 }}>
-                  Total has changed from £{selected.total} to £{editTotal}. Since this booking is already paid, send a new payment link manually if additional payment is needed.
+                  Total has changed from {formatPence(selected.total)} to {formatPence(editTotal)}. Since this booking is already paid, send a new payment link manually if additional payment is needed.
                 </div>
               )}
               {selected.status === 'approved' && totalChanged && (
                 <div className="notice notice-accent" style={{ marginBottom: 12, fontSize: 12 }}>
-                  Total will change from £{selected.total} to £{editTotal}. The Stripe payment link will be regenerated automatically.
+                  Total will change from {formatPence(selected.total)} to {formatPence(editTotal)}. The Stripe payment link will be regenerated automatically.
                 </div>
               )}
               <div className="form-grid-2">
@@ -969,10 +969,10 @@ export default function Bookings() {
               </div>
               {editHours > 0 && selected.sites && (
                 <div className="price-bar" style={{ marginTop: 4 }}>
-                  <div><div className="pi-label">Rate</div><div className="pi-value">£{editEffectiveRate}/hr{editCustomRate ? ' ✦' : ''}</div></div>
+                  <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(editEffectiveRate)}/hr{editCustomRate ? ' ✦' : ''}</div></div>
                   <div><div className="pi-label">Hours</div><div className="pi-value">{editHours}</div></div>
-                  <div><div className="pi-label">Deposit</div><div className="pi-value">£{selected.deposit}</div></div>
-                  <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{editTotal}</div></div>
+                  <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(selected.deposit)}</div></div>
+                  <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(editTotal)}</div></div>
                 </div>
               )}
             </>

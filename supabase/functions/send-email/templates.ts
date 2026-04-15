@@ -1,3 +1,8 @@
+function fp(pence: number): string {
+  const v = pence / 100
+  return v % 1 === 0 ? String(v) : v.toFixed(2)
+}
+
 function esc(text: string | null | undefined): string {
   if (!text) return ''
   return String(text)
@@ -67,8 +72,8 @@ function bookingTable(b: BookingData) {
     ['Time', `${esc(b.start_time)} – ${esc(b.end_time)}`],
     ['Duration', `${Number(b.hours)} hours`],
     ['Venue', esc(b.site_name)],
-    ['Deposit', `£${Number(b.deposit)}`],
-    ['Total', `£${Number(b.total)}`],
+    ['Deposit', `£${fp(b.deposit)}`],
+    ['Total', `£${fp(b.total)}`],
   ]
   return `
     <table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:16px;">
@@ -171,12 +176,12 @@ export function bookingApproved(b: BookingData): { subject: string; html: string
         </div>
         ${b.payment_url ? `
         <div style="margin-top:24px;text-align:center;">
-          <a href="${b.payment_url}" style="display:inline-block;background:${ACCENT};color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">Pay now — £${b.total}</a>
+          <a href="${b.payment_url}" style="display:inline-block;background:${ACCENT};color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">Pay now — £${fp(b.total)}</a>
           <p style="margin:10px 0 0;font-size:12px;color:#9ca3af;">Secure payment powered by Stripe</p>
         </div>
         ` : `
         <div style="margin-top:16px;padding:16px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;">
-          <p style="margin:0;font-size:14px;color:#166534;font-weight:500;">💳 A deposit of <strong>£${b.deposit}</strong> is due to secure your booking. Please arrange payment within 14 days.</p>
+          <p style="margin:0;font-size:14px;color:#166534;font-weight:500;">💳 A deposit of <strong>£${fp(b.deposit)}</strong> is due to secure your booking. Please arrange payment within 14 days.</p>
         </div>
         `}
         <p style="margin:20px 0 0;font-size:13px;color:#9ca3af;">Once payment is received you'll receive a confirmation email. If you have any questions please get in touch.</p>
@@ -227,7 +232,7 @@ export function extraSlotApproved(s: ExtraSlotData): { subject: string; html: st
             ['Time', `${esc(s.start_time)} – ${esc(s.end_time)}`],
             ['Duration', `${Number(s.hours)} hours`],
             ['Reason', esc(s.reason)],
-            ['Total', `£${Number(s.total)}`],
+            ['Total', `£${fp(s.total)}`],
           ].map(([label, value], i) => `
             <tr style="background:${i % 2 === 0 ? '#f9fafb' : '#ffffff'};">
               <td style="padding:10px 14px;color:#6b7280;font-weight:500;width:40%;">${label}</td>

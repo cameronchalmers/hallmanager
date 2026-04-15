@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Booking, ExtraSlot, Invoice, Site } from '../lib/database.types'
 import { useAuth } from '../context/AuthContext'
+import { formatPence } from '../lib/money'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
 import { format } from 'date-fns'
@@ -93,7 +94,7 @@ export default function Portal() {
       reason: slotForm.reason,
       status: 'pending',
       rate,
-      total: rate * hours,
+      total: Math.round(rate * hours),
     })
     await fetchData()
     setShowRequest(false)
@@ -109,7 +110,7 @@ export default function Portal() {
   function sessionTotal(b: Booking) {
     const site = sites.find(s => s.id === b.site_id)
     const rate = customRates?.[b.site_id] ?? site?.rate ?? 0
-    return b.hours * rate
+    return Math.round(b.hours * rate)
   }
 
   const today = new Date().toISOString().split('T')[0]
@@ -155,7 +156,7 @@ export default function Portal() {
     ? ((profile?.custom_rates as Record<string, number>)?.[slotForm.site_id] ?? selectedSite.rate)
     : null
   const previewHours = calcHours(slotForm.start_time, slotForm.end_time)
-  const previewTotal = previewRate && previewHours > 0 ? previewRate * previewHours : null
+  const previewTotal = previewRate && previewHours > 0 ? Math.round(previewRate * previewHours) : null
 
   return (
     <div>
@@ -179,7 +180,7 @@ export default function Portal() {
             { label: 'Total Bookings', value: bookings.length },
             { label: 'Confirmed', value: confirmedBookings },
             { label: 'Extra Slots', value: slots.length },
-            { label: 'Total Spend', value: `£${totalSpend.toLocaleString()}` },
+            { label: 'Total Spend', value: formatPence(totalSpend) },
           ].map(({ label, value }) => (
             <div key={label} className="ph-stat">
               <div className="ph-stat-val">{value}</div>
@@ -225,7 +226,7 @@ export default function Portal() {
                       <div key={b.id + s.date} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                           <div style={{ fontWeight: 600, fontSize: 13 }}>{b.event}</div>
-                          <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap' }}>£{sessionTotal(b)}</div>
+                          <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap' }}>{formatPence(sessionTotal(b))}</div>
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{format(new Date(s.date + 'T12:00:00'), 'dd MMM yyyy')} · {b.start_time}–{b.end_time}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{site?.name ?? '—'}</div>
@@ -257,7 +258,7 @@ export default function Portal() {
                       <div key={b.id + s.date} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4, opacity: cancelled ? 0.5 : 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                           <div style={{ fontWeight: 600, fontSize: 13 }}>{b.event}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>£{sessionTotal(b)}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatPence(sessionTotal(b))}</div>
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{format(new Date(s.date + 'T12:00:00'), 'dd MMM yyyy')} · {b.start_time}–{b.end_time}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{site?.name ?? '—'}</div>
@@ -303,7 +304,7 @@ export default function Portal() {
                   <div style={{ fontWeight: 600 }}>{sl.hours}h</div>
                   <div><Badge status={sl.status} /></div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</div>
-                  <div style={{ fontWeight: 700 }}>£{sl.total}</div>
+                  <div style={{ fontWeight: 700 }}>{formatPence(sl.total)}</div>
                 </div>
               )
             })}
@@ -322,7 +323,7 @@ export default function Portal() {
               <div key={inv.id} className="inv-row">
                 <span style={{ fontWeight: 700, color: 'var(--accent-text)', fontSize: 12 }}>{inv.id.slice(0, 8).toUpperCase()}</span>
                 <span style={{ fontSize: 12 }}>{inv.description}</span>
-                <span style={{ fontWeight: 700 }}>£{inv.amount}</span>
+                <span style={{ fontWeight: 700 }}>{formatPence(inv.amount)}</span>
                 <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{format(new Date(inv.date), 'dd MMM yy')}</span>
                 <span>{inv.qf_synced ? <span className="badge badge-qf">🔗 Synced</span> : <span className="badge badge-pending">Not synced</span>}</span>
                 <span><span className={`badge ${inv.status === 'paid' ? 'badge-approved' : 'badge-pending'}`}>{inv.status === 'paid' ? '✓ Paid' : '⏳ Due'}</span></span>
@@ -346,7 +347,7 @@ export default function Portal() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Your rate</span>
-                        <span style={{ fontWeight: 700, color: 'var(--accent-text)' }}>£{rate}/hr</span>
+                        <span style={{ fontWeight: 700, color: 'var(--accent-text)' }}>{formatPence(rate)}/hr</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-muted)' }}>No deposit</span>
@@ -426,12 +427,12 @@ export default function Portal() {
             style={{ resize: 'none' }}
           />
         </div>
-        {previewTotal !== null && (
+        {previewRate != null && previewTotal != null && (
           <div className="price-bar" style={{ marginTop: 8 }}>
-            <div><div className="pi-label">Rate</div><div className="pi-value">£{previewRate}/hr</div></div>
+            <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(previewRate)}/hr</div></div>
             <div><div className="pi-label">Hours</div><div className="pi-value">{previewHours}</div></div>
             <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
-            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{previewTotal}</div></div>
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(previewTotal)}</div></div>
           </div>
         )}
       </Modal>

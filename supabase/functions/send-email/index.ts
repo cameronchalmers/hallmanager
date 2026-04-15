@@ -191,8 +191,8 @@ serve(async (req) => {
         end_time: '11:00',
         hours: 2,
         site_name: 'The Old Town Hall',
-        deposit: 50,
-        total: 130,
+        deposit: 5000,
+        total: 13000,
         notes: 'Please ensure the mats are set out in advance.',
         payment_url: null,
       }
@@ -206,7 +206,7 @@ serve(async (req) => {
         end_time: '11:00',
         hours: 2,
         reason: 'We have a visiting instructor and need an extra session this week.',
-        total: 80,
+        total: 8000,
       }
 
       let email: { subject: string; html: string }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
 import type { Booking, ExtraSlot, Site } from '../lib/database.types'
+import { formatPence } from '../lib/money'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
 import CalendarWidget from '../components/CalendarWidget'
@@ -37,7 +38,7 @@ export default function Dashboard() {
         ...b,
         sites: allSites.find(s => s.id === b.site_id),
         user_group_name: linkedUser?.group_name ?? null,
-        effective_total: b.type === 'recurring' && customRate ? b.hours * customRate : (b.total ?? 0),
+        effective_total: b.type === 'recurring' && customRate ? Math.round(b.hours * customRate) : (b.total ?? 0),
       }
     }) as BookingWithSite[]
     setBookings(bookingsWithSites)
@@ -104,7 +105,7 @@ export default function Dashboard() {
         </div>
         <div className="stat-card">
           <div className="stat-label">Revenue</div>
-          <div className="stat-value">£{revenue.toLocaleString()}</div>
+          <div className="stat-value">{formatPence(revenue)}</div>
           <div className="stat-sub">Confirmed bookings</div>
         </div>
         <div className="stat-card">
@@ -283,10 +284,10 @@ export default function Dashboard() {
               </div>
             )}
             <div className="price-bar">
-              <div><div className="pi-label">Rate</div><div className="pi-value">£{preview.sites?.rate ?? 0}/hr</div></div>
+              <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(preview.sites?.rate ?? 0)}/hr</div></div>
               <div><div className="pi-label">Hours</div><div className="pi-value">{preview.hours}</div></div>
-              <div><div className="pi-label">Deposit</div><div className="pi-value">£{preview.deposit}</div></div>
-              <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{preview.total}</div></div>
+              <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(preview.deposit)}</div></div>
+              <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(preview.total)}</div></div>
             </div>
           </>
         )}

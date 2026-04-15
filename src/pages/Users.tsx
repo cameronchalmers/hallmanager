@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { AppUser, Booking, Site } from '../lib/database.types'
+import { formatPence, poundsToPence } from '../lib/money'
 import Modal from '../components/ui/Modal'
 
 function RoleBadge({ role }: { role: string }) {
@@ -353,17 +354,17 @@ export default function Users() {
                   {sites.map((s, i) => (
                     <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: i < sites.length - 1 ? '1px solid var(--border)' : 'none', fontSize: 13 }}>
                       <span style={{ flex: 1 }}>{s.emoji} {s.name}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 4 }}>Standard £{s.rate}/hr</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 4 }}>Standard {formatPence(s.rate)}/hr</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-text)' }}>Custom:</span>
                         <input
                           key={selUser.id + s.id}
                           className="form-input"
                           type="number"
-                          defaultValue={selUser.custom_rates?.[s.id] ?? ''}
-                          placeholder={String(s.rate)}
+                          defaultValue={selUser.custom_rates?.[s.id] != null ? selUser.custom_rates[s.id] / 100 : ''}
+                          placeholder={String(s.rate / 100)}
                           style={{ width: 65, padding: '4px 7px', fontSize: 12 }}
-                          onBlur={e => { if (e.target.value) saveCustomRate(selUser.id, s.id, Number(e.target.value)) }}
+                          onBlur={e => { if (e.target.value) saveCustomRate(selUser.id, s.id, poundsToPence(Number(e.target.value))) }}
                         />
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>/hr</span>
                       </div>

@@ -61,7 +61,7 @@ serve(async (req) => {
               name: booking.event,
               description: `${booking.hours} hour${booking.hours !== 1 ? 's' : ''} at ${site?.name ?? 'venue'} · ${booking.date}`,
             },
-            unit_amount: Math.round(booking.total * 100),
+            unit_amount: booking.total,
           },
           quantity: 1,
         }],
@@ -100,7 +100,7 @@ serve(async (req) => {
 
       await stripe.refunds.create({
         payment_intent: paymentIntentId,
-        amount: Math.round(booking.deposit * 100),
+        amount: booking.deposit,
         reason: 'requested_by_customer',
       })
 

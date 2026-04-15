@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Booking, Invoice, Site } from '../lib/database.types'
+import { formatPence } from '../lib/money'
 import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -197,7 +198,7 @@ export default function Insights() {
         </div>
         <div className="stat-card">
           <div className="stat-label">Revenue this year</div>
-          <div className="stat-value">£{revenueThisYear.toLocaleString()}</div>
+          <div className="stat-value">{formatPence(revenueThisYear)}</div>
           <div className="stat-sub">Paid invoices</div>
         </div>
         <div className="stat-card">
@@ -237,7 +238,7 @@ export default function Insights() {
               labelA="Revenue"
             />
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-              Peak: £{Math.max(...revenueChartData.map(d => d.a)).toLocaleString()} · Avg: £{Math.round(revenueChartData.reduce((s, d) => s + d.a, 0) / 6).toLocaleString()}
+              Peak: {formatPence(Math.max(...revenueChartData.map(d => d.a)))} · Avg: {formatPence(Math.round(revenueChartData.reduce((s, d) => s + d.a, 0) / 6))}
             </div>
           </div>
         </div>

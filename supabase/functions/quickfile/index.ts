@@ -75,10 +75,10 @@ function buildItemLines(booking: Record<string, unknown>, siteRate: number) {
   const event  = String(booking.event   ?? 'Hall hire')
 
   if (hours > 0 && siteRate > 0) {
-    lines.push({ ItemDescription: `${event} — ${hours}h @ £${siteRate}/hr`, UnitCost: siteRate, Qty: hours })
+    lines.push({ ItemDescription: `${event} — ${hours}h @ £${siteRate / 100}/hr`, UnitCost: siteRate / 100, Qty: hours })
   }
   if (deposit > 0) {
-    lines.push({ ItemDescription: 'Refundable deposit', UnitCost: deposit, Qty: 1 })
+    lines.push({ ItemDescription: 'Refundable deposit', UnitCost: deposit / 100, Qty: 1 })
   }
   return lines
 }
@@ -201,7 +201,7 @@ serve(async (req) => {
           lines = buildItemLines(booking, site?.rate ?? 0)
         }
       }
-      if (lines.length === 0) lines = [{ ItemDescription: inv.description, UnitCost: inv.amount, Qty: 1 }]
+      if (lines.length === 0) lines = [{ ItemDescription: inv.description, UnitCost: inv.amount / 100, Qty: 1 }]
 
       const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines))
       const qfRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
@@ -237,7 +237,7 @@ serve(async (req) => {
             lines = buildItemLines(booking, site?.rate ?? 0)
           }
         }
-        if (lines.length === 0) lines = [{ ItemDescription: inv.description, UnitCost: inv.amount, Qty: 1 }]
+        if (lines.length === 0) lines = [{ ItemDescription: inv.description, UnitCost: inv.amount / 100, Qty: 1 }]
 
         try {
           const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines))
@@ -280,7 +280,7 @@ serve(async (req) => {
       if (inv?.qf_ref) creditNote.ParentInvoiceId = inv.qf_ref
 
       const today = new Date().toISOString().split('T')[0]
-      const lines = [{ ItemDescription: desc, UnitCost: booking.deposit, Qty: 1 }]
+      const lines = [{ ItemDescription: desc, UnitCost: booking.deposit / 100, Qty: 1 }]
       const respBody = await qf('invoice', 'create', invoiceBody(clientId, today, lines, creditNote))
 
       const creditRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
@@ -335,7 +335,7 @@ serve(async (req) => {
           : qfStatus === 'OVERDUE' ? 'overdue'
           : 'draft'
 
-        const amount = parseFloat(inv.Amount ?? '0') || 0
+        const amount = Math.round((parseFloat(inv.Amount ?? '0') || 0) * 100)
         const date = inv.IssueDate
           ? String(inv.IssueDate).split('T')[0]
           : new Date().toISOString().split('T')[0]

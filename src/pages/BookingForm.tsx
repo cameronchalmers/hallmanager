@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Site, WeekAvailability } from '../lib/database.types'
+import { formatPence } from '../lib/money'
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
 
@@ -119,7 +120,7 @@ export default function BookingForm() {
   const activeSite = lockedSite ?? sites.find(s => s.id === form.site_id)
   const hours = calcHours(form.start_time, form.end_time)
   const deposit = activeSite?.deposit ?? 0
-  const total = activeSite ? hours * activeSite.rate + deposit : 0
+  const total = activeSite ? Math.round(hours * activeSite.rate) + deposit : 0
 
   function set(key: keyof typeof form, value: string) {
     setForm(f => ({ ...f, [key]: value }))
@@ -219,7 +220,7 @@ export default function BookingForm() {
           <div style={{ background: 'var(--surface2,#f4f4f6)', borderRadius: 10, padding: '12px 16px', fontSize: 13, textAlign: 'left', marginBottom: 24 }}>
             <div style={{ fontWeight: 700, marginBottom: 4, color: 'var(--text,#111)' }}>{form.event}</div>
             <div style={{ color: 'var(--text-muted,#71717a)' }}>{activeSite?.name} · {form.date} · {form.start_time}–{form.end_time}</div>
-            <div style={{ marginTop: 6, fontWeight: 700, color: 'var(--text,#111)' }}>Total: £{total} <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(deposit: £{deposit})</span></div>
+            <div style={{ marginTop: 6, fontWeight: 700, color: 'var(--text,#111)' }}>Total: {formatPence(total)} <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(deposit: {formatPence(deposit)})</span></div>
           </div>
           <button
             style={{ background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
@@ -253,8 +254,8 @@ export default function BookingForm() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 16 }}>
-                  <span className="badge badge-accent">£{lockedSite.rate}/hr</span>
-                  <span className="badge badge-neutral">£{lockedSite.deposit} deposit</span>
+                  <span className="badge badge-accent">{formatPence(lockedSite.rate)}/hr</span>
+                  <span className="badge badge-neutral">{formatPence(lockedSite.deposit)} deposit</span>
                   <span className="badge badge-neutral">Up to {lockedSite.capacity} guests</span>
                   {lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
                 </div>
@@ -343,8 +344,8 @@ export default function BookingForm() {
                   </div>
                   {activeSite && (
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                      <span className="badge badge-accent">£{activeSite.rate}/hr</span>
-                      <span className="badge badge-neutral">£{activeSite.deposit} deposit</span>
+                      <span className="badge badge-accent">{formatPence(activeSite.rate)}/hr</span>
+                      <span className="badge badge-neutral">{formatPence(activeSite.deposit)} deposit</span>
                       <span className="badge badge-neutral">Up to {activeSite.capacity} guests</span>
                       {activeSite.min_hours && <span className="badge badge-neutral">Min. {activeSite.min_hours}hr</span>}
                       {activeSite.available_from && activeSite.available_until && (
@@ -469,10 +470,10 @@ export default function BookingForm() {
               {/* Price summary */}
               {activeSite && hours > 0 && (
                 <div className="price-bar" style={{ marginBottom: 14 }}>
-                  <div><div className="pi-label">Rate</div><div className="pi-value">£{activeSite.rate}/hr</div></div>
+                  <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(activeSite.rate)}/hr</div></div>
                   <div><div className="pi-label">Hours</div><div className="pi-value">{hours}</div></div>
-                  <div><div className="pi-label">Deposit</div><div className="pi-value">£{deposit}</div></div>
-                  <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{total}</div></div>
+                  <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(deposit)}</div></div>
+                  <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(total)}</div></div>
                 </div>
               )}
 

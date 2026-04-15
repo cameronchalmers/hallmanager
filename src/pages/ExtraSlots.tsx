@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
 import type { ExtraSlot, Site } from '../lib/database.types'
+import { formatPence } from '../lib/money'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
 import { format } from 'date-fns'
@@ -82,7 +83,7 @@ export default function ExtraSlots() {
                 <div>{format(new Date(sl.date), 'dd MMM yyyy')}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{sl.start_time}–{sl.end_time}</div>
               </div>
-              <div style={{ fontWeight: 600 }}>{sl.hours}h · £{sl.total}</div>
+              <div style={{ fontWeight: 600 }}>{sl.hours}h · {formatPence(sl.total)}</div>
               <div><Badge status={sl.status} /></div>
               <div className="approve-deny" onClick={e => e.stopPropagation()}>
                 {sl.status === 'pending' ? (
@@ -130,7 +131,7 @@ export default function ExtraSlots() {
                 <div><strong>{site?.name}</strong><div style={{ fontSize: 11, marginTop: 1 }}>{site?.address}</div></div>
               </div>
               <div className="notice notice-info" style={{ marginBottom: 12 }}>
-                ℹ️ This is a one-off extra slot for a regular booker. Their custom rate of <strong>£{selected.rate}/hr</strong> applies automatically.
+                ℹ️ This is a one-off extra slot for a regular booker. Their custom rate of <strong>{formatPence(selected.rate)}/hr</strong> applies automatically.
               </div>
               <div className="detail-grid">
                 <div><div className="detail-label">Booker</div><div className="detail-value">{selected.name}</div></div>
@@ -143,10 +144,10 @@ export default function ExtraSlots() {
                 {selected.reason}
               </div>
               <div className="price-bar">
-                <div><div className="pi-label">Custom Rate</div><div className="pi-value">£{selected.rate}/hr</div></div>
+                <div><div className="pi-label">Custom Rate</div><div className="pi-value">{formatPence(selected.rate)}/hr</div></div>
                 <div><div className="pi-label">Hours</div><div className="pi-value">{selected.hours}</div></div>
                 <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
-                <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>£{selected.total}</div></div>
+                <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(selected.total)}</div></div>
               </div>
             </>
           )
