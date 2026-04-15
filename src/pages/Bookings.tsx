@@ -179,6 +179,18 @@ export default function Bookings() {
     setActionLoading(null)
   }
 
+  async function regeneratePaymentLink(id: string) {
+    setActionLoading('regenerate')
+    const { data, error } = await supabase.functions.invoke('stripe-action', {
+      body: { action: 'create_payment', booking_id: id },
+    })
+    if (!error && data?.url) {
+      setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_url: data.url } : b))
+      if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_url: data.url } : null)
+    }
+    setActionLoading(null)
+  }
+
   function startEdit(b: BookingWithSite) {
     setEditForm({
       site_id: b.site_id,
@@ -773,6 +785,9 @@ export default function Bookings() {
                   <input readOnly className="form-input" value={selected.stripe_payment_url} style={{ flex: 1, fontSize: 11 }} />
                   <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(selected.stripe_payment_url!); setCopiedPayment(true); setTimeout(() => setCopiedPayment(false), 2000) }}>
                     {copiedPayment ? '✓ Copied' : 'Copy link'}
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => regeneratePaymentLink(selected.id)} disabled={!!actionLoading}>
+                    {actionLoading === 'regenerate' ? 'Regenerating…' : '↺ Regenerate'}
                   </button>
                 </div>
               )}
