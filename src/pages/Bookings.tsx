@@ -356,6 +356,13 @@ export default function Bookings() {
     setShowInvoice(false)
   }
 
+  async function deleteBooking(id: string) {
+    if (!window.confirm('Permanently delete this booking? No email will be sent.')) return
+    await supabase.from('bookings').delete().eq('id', id)
+    setBookings(prev => prev.filter(b => b.id !== id))
+    setSelected(null)
+  }
+
   async function createBooking() {
     const site = sites.find(s => s.id === form.site_id)
     if (!site) return
@@ -800,6 +807,7 @@ export default function Bookings() {
             <div style={{ display: 'flex', gap: 7, width: '100%' }}>
               <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { updateStatus(selected.id, 'denied'); setSelected(null) }} disabled={!!actionLoading}>✗ Deny</button>
               <button className="btn btn-ghost btn-sm" onClick={() => startEdit(selected)}>Edit</button>
+              <button className="btn btn-ghost btn-sm" style={{ color: '#ef4444' }} onClick={() => deleteBooking(selected.id)} disabled={!!actionLoading}>Delete</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => approveBooking(selected.id)} disabled={!!actionLoading}>
                 {actionLoading === 'approve' ? 'Approving…' : '✓ Approve & Send Payment'}
               </button>
