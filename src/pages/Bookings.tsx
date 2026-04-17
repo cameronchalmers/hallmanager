@@ -213,6 +213,7 @@ export default function Bookings() {
       recurrence_days: b.recurrence_days ?? (b.date ? [dateDow(b.date)] : []),
       notes: b.notes ?? '',
       status: b.status,
+      waive_deposit: false,
     })
     setEditMode(true)
   }
