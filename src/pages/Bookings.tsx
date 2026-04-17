@@ -67,6 +67,7 @@ const DEFAULT_FORM = {
   recurrence_days: [] as number[],
   notes: '',
   status: 'confirmed',
+  waive_deposit: false,
 }
 
 
@@ -380,8 +381,8 @@ export default function Bookings() {
       recurrence_days: isRecurring && form.recurrence === 'Weekly' && form.recurrence_days.length > 0 ? form.recurrence_days : null,
       notes: form.notes || null,
       status: form.status,
-      deposit: isRecurring ? 0 : site.deposit,
-      total: isRecurring ? Math.round(hours * effectiveRate) : Math.round(hours * site.rate) + site.deposit,
+      deposit: isRecurring || form.waive_deposit ? 0 : site.deposit,
+      total: isRecurring || form.waive_deposit ? Math.round(hours * effectiveRate) : Math.round(hours * site.rate) + site.deposit,
     })
     await fetchBookings()
     setShowCreate(false)
@@ -756,14 +757,26 @@ export default function Bookings() {
           <label className="form-label">Notes <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
           <textarea className="form-input" rows={2} style={{ resize: 'none' }} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
         </div>
+        {form.type === 'oneoff' && (
+          <div className="form-row">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={form.waive_deposit}
+                onChange={e => setForm(f => ({ ...f, waive_deposit: e.target.checked }))}
+              />
+              <span>Waive deposit for this booking</span>
+            </label>
+          </div>
+        )}
         {formSite && formHours > 0 && (
           <div className="price-bar" style={{ marginTop: 4 }}>
             <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(formEffectiveRate)}/hr{formEffectiveRate !== formSite.rate ? ' ✦' : ''}</div></div>
             <div><div className="pi-label">Hours</div><div className="pi-value">{formHours}</div></div>
-            {form.type === 'recurring'
+            {form.type === 'recurring' || form.waive_deposit
               ? <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
               : <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(formSite.deposit)}</div></div>}
-            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(form.type === 'recurring' ? Math.round(formHours * formEffectiveRate) : Math.round(formHours * formSite.rate) + formSite.deposit)}</div></div>
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(form.type === 'recurring' || form.waive_deposit ? Math.round(formHours * formEffectiveRate) : Math.round(formHours * formSite.rate) + formSite.deposit)}</div></div>
           </div>
         )}
       </Modal>
