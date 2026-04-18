@@ -245,7 +245,7 @@ export default function Dashboard() {
             let group = confirmed.filter(b => type === 'recurring' ? b.type === 'recurring' : b.type !== 'recurring')
             if (type === 'recurring') {
               group = group
-                .map(b => ({ ...b, _next: nextOccurrence(b, nowIso) }))
+                .map(b => ({ ...b, _next: `${nextOccurrence(b, nowIso)}T${b.start_time}` }))
                 .sort((a, b) => (a as typeof a & { _next: string })._next.localeCompare((b as typeof b & { _next: string })._next)) as typeof group
             } else {
               group = group.filter(b => b.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date))
