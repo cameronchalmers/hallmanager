@@ -93,6 +93,7 @@ export default function Bookings() {
   const [form, setForm] = useState(DEFAULT_FORM)
   const [saving, setSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [refundInput, setRefundInput] = useState<string | null>(null)
   const [copiedPayment, setCopiedPayment] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState(DEFAULT_FORM)
@@ -175,15 +176,15 @@ export default function Bookings() {
     }
   }
 
-  async function refundDeposit(id: string) {
+  async function refundDeposit(id: string, amountPence: number) {
     setActionLoading('refund')
     const { error } = await supabase.functions.invoke('stripe-action', {
-      body: { action: 'refund_deposit', booking_id: id },
+      body: { action: 'refund_deposit', booking_id: id, amount: amountPence },
     })
     if (!error) {
-      setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_status: 'deposit_refunded' } : b))
-      if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_status: 'deposit_refunded' } : null)
-      // Notify QuickFile — creates a credit note for the deposit (fails silently if QF not connected)
+      setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_status: 'deposit_refunded', refunded_amount: amountPence } : b))
+      if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_status: 'deposit_refunded', refunded_amount: amountPence } : null)
+      setRefundInput(null)
       supabase.functions.invoke('quickfile', { body: { action: 'refund_deposit', booking_id: id } })
         .catch(() => {/* QF not configured — ignore */})
     }
@@ -516,7 +517,7 @@ export default function Bookings() {
           const today = todayStr
           return (
             <div key={b.id}>
-              <div className="tbl-row cols-bookings" onClick={() => setSelected(b)}>
+              <div className="tbl-row cols-bookings" onClick={() => { setSelected(b); setRefundInput(null) }}>
                 <div>
                   <div style={{ fontWeight: 600 }}>{b.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.event}</div>
@@ -857,11 +858,35 @@ export default function Bookings() {
                 {actionLoading === 'cancel' ? 'Cancelling…' : 'Cancel Booking'}
               </button>
               {selected.stripe_payment_status === 'deposit_refunded' ? (
-                <span className="badge badge-neutral" style={{ alignSelf: 'center' }}>Deposit refunded</span>
+                <span className="badge badge-neutral" style={{ alignSelf: 'center' }}>
+                  {formatPence((selected as BookingWithSite & { refunded_amount?: number }).refunded_amount ?? selected.deposit)} refunded
+                </span>
               ) : selected.stripe_payment_status === 'paid' ? (
-                <button className="btn btn-primary btn-sm" onClick={() => refundDeposit(selected.id)} disabled={!!actionLoading}>
-                  {actionLoading === 'refund' ? 'Refunding…' : `Refund Deposit (${formatPence(selected.deposit)})`}
-                </button>
+                refundInput !== null ? (
+                  <>
+                    <span style={{ fontSize: 12, alignSelf: 'center', color: 'var(--text-muted)' }}>£</span>
+                    <input
+                      className="form-input"
+                      style={{ width: 80, padding: '4px 8px', fontSize: 13 }}
+                      value={refundInput}
+                      onChange={e => setRefundInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Escape' && setRefundInput(null)}
+                      autoFocus
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={!!actionLoading || !refundInput || isNaN(parseFloat(refundInput)) || parseFloat(refundInput) <= 0}
+                      onClick={() => refundDeposit(selected.id, Math.round(parseFloat(refundInput!) * 100))}
+                    >
+                      {actionLoading === 'refund' ? 'Refunding…' : 'Confirm'}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setRefundInput(null)}>Cancel</button>
+                  </>
+                ) : (
+                  <button className="btn btn-primary btn-sm" onClick={() => setRefundInput((selected.deposit / 100).toFixed(2))} disabled={!!actionLoading}>
+                    Issue Refund
+                  </button>
+                )
               ) : null}
               <button className="btn btn-ghost btn-sm" onClick={() => openInvoiceModal(selected)}>+ Invoice</button>
               <button className="btn btn-ghost btn-sm" onClick={() => startEdit(selected)}>Edit</button>

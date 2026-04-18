@@ -192,3 +192,6 @@ end $$;
 
 -- ── bookings: Google Calendar event ID ───────────────────────────────────────
 alter table public.bookings add column if not exists google_calendar_event_id text;
+
+-- ── bookings: track refunded amount ──────────────────────────────────────────
+alter table public.bookings add column if not exists refunded_amount integer;

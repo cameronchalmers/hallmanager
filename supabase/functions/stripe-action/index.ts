@@ -42,7 +42,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
     }
 
-    const { action, booking_id } = await req.json()
+    const { action, booking_id, amount: customAmount } = await req.json()
 
     // ── Create payment link ───────────────────────────────────────────────────
 
@@ -98,13 +98,14 @@ serve(async (req) => {
       const paymentIntentId = session.payment_intent as string
       if (!paymentIntentId) throw new Error('Payment has not been completed yet')
 
+      const refundAmount = customAmount ?? booking.deposit
       await stripe.refunds.create({
         payment_intent: paymentIntentId,
-        amount: booking.deposit,
+        amount: refundAmount,
         reason: 'requested_by_customer',
       })
 
-      await supabase.from('bookings').update({ stripe_payment_status: 'deposit_refunded' }).eq('id', booking_id)
+      await supabase.from('bookings').update({ stripe_payment_status: 'deposit_refunded', refunded_amount: refundAmount }).eq('id', booking_id)
 
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
