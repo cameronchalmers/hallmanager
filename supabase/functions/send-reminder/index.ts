@@ -139,6 +139,48 @@ function reminderEmail(name: string, event: string, date: string, time: string, 
 </html>`
 }
 
+function reviewEmail(name: string, event: string, siteName: string): string {
+  const reviewUrl = 'https://g.page/r/CcKq1-BztAehEAE/review'
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet" />
+</head>
+<body style="font-family:'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f9fc;margin:0;padding:0;">
+  <div style="max-width:600px;margin:32px auto;padding:0 16px;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="display:inline-flex;align-items:center;gap:10px;">
+        <div style="width:36px;height:36px;background:#7c3aed;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;">
+          <span style="color:white;font-weight:700;font-size:18px;line-height:1;">H</span>
+        </div>
+        <span style="font-size:20px;font-weight:700;color:#111827;letter-spacing:-0.3px;">HallManager</span>
+      </div>
+    </div>
+    <div style="background:#fff;border-radius:16px;border:1px solid #e5e7eb;overflow:hidden;">
+      <div style="padding:32px 32px 0;border-bottom:3px solid #f59e0b;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#d97706;letter-spacing:0.5px;text-transform:uppercase;">We hope it went well!</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">How was your event?</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(name)}, we hope ${esc(event)} went brilliantly at ${esc(siteName)} yesterday.</p>
+      </div>
+      <div style="padding:24px 32px;">
+        <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">If you enjoyed using our venue, we'd really appreciate a quick Google review — it takes less than a minute and makes a huge difference to us.</p>
+        <div style="text-align:center;margin:28px 0;">
+          <a href="${reviewUrl}" style="display:inline-block;background:#f59e0b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">⭐ Leave a Google Review</a>
+        </div>
+        <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">It only takes a moment and means the world to us. Thank you!</p>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;line-height:1.6;">
+      <p style="margin:0 0 8px;"><a href="https://wa.me/447466214530" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: 07466 214530</a></p>
+      <p style="margin:0;">HallManager · This email was sent automatically.</p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -204,6 +246,10 @@ serve(async (req) => {
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
   const tomorrowStr = tomorrow.toISOString().split('T')[0]
+
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayStr = yesterday.toISOString().split('T')[0]
 
   // Fetch admin/manager emails to CC on each booking reminder
   const { data: adminUsers } = await supabase
@@ -280,6 +326,39 @@ serve(async (req) => {
       }
     } catch (e) {
       errors.push(`Email for ${booking.id}: ${String(e)}`)
+    }
+  }
+
+  // Review emails for yesterday's completed one-off bookings
+  const { data: reviewBookings } = await supabase
+    .from('bookings')
+    .select('*, sites(name)')
+    .eq('type', 'oneoff')
+    .eq('status', 'confirmed')
+    .eq('date', yesterdayStr)
+    .not('review_sent', 'eq', true)
+
+  for (const booking of reviewBookings ?? []) {
+    try {
+      const siteName = (booking.sites as { name: string } | null)?.name ?? 'our venue'
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: FROM,
+          to: booking.email,
+          subject: `How was your event at ${siteName}?`,
+          html: reviewEmail(booking.name, booking.event, siteName),
+        }),
+      })
+      if (res.ok) {
+        await supabase.from('bookings').update({ review_sent: true }).eq('id', booking.id)
+        sent++
+      } else {
+        errors.push(`Review email for ${booking.id}: ${await res.text()}`)
+      }
+    } catch (e) {
+      errors.push(`Review email for ${booking.id}: ${String(e)}`)
     }
   }
 

@@ -8,6 +8,7 @@ import {
   extraSlotApproved,
   extraSlotDenied,
   bookingSubmittedAdmin,
+  bookingReview,
   type BookingData,
   type ExtraSlotData,
 } from './templates.ts'
@@ -240,6 +241,7 @@ serve(async (req) => {
       else if (template === 'booking_cancelled')  email = bookingCancelled(dummyBooking)
       else if (template === 'slot_approved')      email = extraSlotApproved(dummySlot)
       else if (template === 'slot_denied')        email = extraSlotDenied(dummySlot)
+      else if (template === 'booking_review')     email = bookingReview('Jane Smith', 'Community Yoga', 'The Old Town Hall')
       else throw new Error(`Unknown template: ${template}`)
 
       await Promise.all(allAdmins.map(addr => sendEmail(addr, `[TEST] ${email.subject}`, email.html)))

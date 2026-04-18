@@ -176,6 +176,14 @@ export default function Settings() {
                   </button>
                 )
               })}
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ color: testResult['booking_review'] === 'ok' ? 'var(--green)' : testResult['booking_review'] === 'error' ? '#ef4444' : undefined }}
+                disabled={testSending === 'booking_review'}
+                onClick={() => sendTestEmail('booking_review')}
+              >
+                {testSending === 'booking_review' ? 'Sending…' : testResult['booking_review'] === 'ok' ? '✓ Sent!' : testResult['booking_review'] === 'error' ? '✗ Failed' : 'Test review email'}
+              </button>
             </div>
           </div>
         )}

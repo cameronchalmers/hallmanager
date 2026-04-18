@@ -281,6 +281,29 @@ export function extraSlotDenied(s: ExtraSlotData): { subject: string; html: stri
   }
 }
 
+// ── Review request ────────────────────────────────────────────────────────────
+
+export function bookingReview(name: string, event: string, siteName: string): { subject: string; html: string } {
+  const reviewUrl = 'https://g.page/r/CcKq1-BztAehEAE/review'
+  return {
+    subject: `How was your event at ${siteName}?`,
+    html: layout(`
+      <div style="padding:32px 32px 0;border-bottom:3px solid #f59e0b;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#d97706;letter-spacing:0.5px;text-transform:uppercase;">We hope it went well!</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">How was your event?</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(name)}, we hope ${esc(event)} went brilliantly at ${esc(siteName)} yesterday.</p>
+      </div>
+      <div style="padding:24px 32px;">
+        <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">If you enjoyed using our venue, we'd really appreciate a quick Google review — it takes less than a minute and makes a huge difference to us.</p>
+        <div style="text-align:center;margin:28px 0;">
+          <a href="${reviewUrl}" style="display:inline-block;background:#f59e0b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">⭐ Leave a Google Review</a>
+        </div>
+        <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">It only takes a moment and means the world to us. Thank you!</p>
+      </div>
+    `),
+  }
+}
+
 // ── Booking cancelled ─────────────────────────────────────────────────────────
 
 export function bookingCancelled(b: BookingData): { subject: string; html: string } {

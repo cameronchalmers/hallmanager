@@ -195,3 +195,6 @@ alter table public.bookings add column if not exists google_calendar_event_id te
 
 -- ── bookings: track refunded amount ──────────────────────────────────────────
 alter table public.bookings add column if not exists refunded_amount integer;
+
+-- ── bookings: track review email sent ────────────────────────────────────────
+alter table public.bookings add column if not exists review_sent boolean default false;
