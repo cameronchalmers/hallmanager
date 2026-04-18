@@ -11,6 +11,41 @@ import { format } from 'date-fns'
 
 type BookingWithSite = Booking & { sites?: Site; user_group_name?: string | null; effective_total?: number }
 
+function nextOccurrence(b: Booking, today: string): string {
+  if (b.type !== 'recurring' || !b.recurrence) return b.date
+  if (b.date >= today) return b.date
+
+  const toDs = (d: Date) => d.toISOString().split('T')[0]
+  const isMultiDay = b.recurrence === 'Weekly' && b.recurrence_days && (b.recurrence_days as number[]).length > 1
+
+  if (isMultiDay) {
+    const days = [...(b.recurrence_days as number[])].sort()
+    const todayDate = new Date(today + 'T12:00:00')
+    const weekStart = new Date(todayDate)
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7))
+    for (let w = 0; w < 53; w++) {
+      for (const dayIdx of days) {
+        const d = new Date(weekStart)
+        d.setDate(d.getDate() + dayIdx + w * 7)
+        const ds = toDs(d)
+        if (ds >= today && ds >= b.date) return ds
+      }
+    }
+    return b.date
+  }
+
+  const cur = new Date(b.date + 'T12:00:00')
+  let i = 0
+  while (toDs(cur) < today && i < 500) {
+    if (b.recurrence === 'Weekly') cur.setDate(cur.getDate() + 7)
+    else if (b.recurrence === 'Fortnightly') cur.setDate(cur.getDate() + 14)
+    else if (b.recurrence === 'Monthly') cur.setMonth(cur.getMonth() + 1)
+    else break
+    i++
+  }
+  return toDs(cur)
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
@@ -204,7 +239,15 @@ export default function Dashboard() {
             </div>
           )}
           {(['recurring', 'one-off'] as const).map(type => {
-            const group = confirmed.filter(b => type === 'recurring' ? b.type === 'recurring' : b.type !== 'recurring')
+            const todayStr = new Date().toISOString().split('T')[0]
+            let group = confirmed.filter(b => type === 'recurring' ? b.type === 'recurring' : b.type !== 'recurring')
+            if (type === 'recurring') {
+              group = group
+                .map(b => ({ ...b, _next: nextOccurrence(b, todayStr) }))
+                .sort((a, b) => (a as typeof a & { _next: string })._next.localeCompare((b as typeof b & { _next: string })._next)) as typeof group
+            } else {
+              group = group.filter(b => b.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date))
+            }
             if (group.length === 0) return null
             return (
               <div key={type} style={{ marginBottom: 12 }}>
@@ -216,6 +259,7 @@ export default function Dashboard() {
                     const site = (b as BookingWithSite).sites
                     const label = b.type === 'recurring' ? (b.user_group_name ?? b.event) : b.name
                     const sub = b.type === 'recurring' ? `${b.name} · ${site?.name}` : `${b.event} · ${site?.name}`
+                    const displayDate = b.type === 'recurring' ? nextOccurrence(b, todayStr) : b.date
                     return (
                       <div key={b.id} className="tbl-row" style={{ cursor: 'pointer', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }} onClick={() => setPreview(b as BookingWithSite)}>
                         <div>
@@ -223,7 +267,7 @@ export default function Dashboard() {
                           <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{sub}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 12, fontWeight: 600 }}>{format(new Date(b.date), 'dd MMM')}</div>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{format(new Date(displayDate + 'T12:00:00'), 'dd MMM')}</div>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
                         </div>
                       </div>
