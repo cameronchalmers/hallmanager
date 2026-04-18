@@ -158,6 +158,8 @@ export default function Bookings() {
     sendEmail('booking_cancelled', id)
     setSelected(null)
     setActionLoading(null)
+    supabase.functions.invoke('manage-calendar-event', { body: { action: 'delete', booking_id: id } })
+      .catch(() => {/* Calendar not configured */})
   }
 
   async function markAsPaid(id: string) {
@@ -166,6 +168,11 @@ export default function Bookings() {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed', stripe_payment_status: 'paid' } : b))
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'confirmed', stripe_payment_status: 'paid' } : null)
     setActionLoading(null)
+    const booking = bookings.find(b => b.id === id)
+    if (booking?.type === 'oneoff') {
+      supabase.functions.invoke('manage-calendar-event', { body: { action: 'create', booking_id: id } })
+        .catch(() => {/* Calendar not configured */})
+    }
   }
 
   async function refundDeposit(id: string) {
@@ -373,7 +380,7 @@ export default function Bookings() {
     const effectiveRate = isRecurring && linkedUser
       ? ((linkedUser.custom_rates as Record<string, number> | null)?.[form.site_id] ?? site.rate)
       : site.rate
-    await supabase.from('bookings').insert({
+    const { data: newBooking } = await supabase.from('bookings').insert({
       name: form.name,
       email: form.email,
       phone: form.phone,
@@ -391,11 +398,15 @@ export default function Bookings() {
       status: form.status,
       deposit: isRecurring || form.waive_deposit ? 0 : site.deposit,
       total: isRecurring || form.waive_deposit ? Math.round(hours * effectiveRate) : Math.round(hours * site.rate) + site.deposit,
-    })
+    }).select('id').single()
     await fetchBookings()
     setShowCreate(false)
     setForm(DEFAULT_FORM)
     setSaving(false)
+    if (newBooking?.id && form.status === 'confirmed' && form.type === 'oneoff') {
+      supabase.functions.invoke('manage-calendar-event', { body: { action: 'create', booking_id: newBooking.id } })
+        .catch(() => {/* Calendar not configured */})
+    }
   }
 
   const todayStr = new Date().toISOString().split('T')[0]

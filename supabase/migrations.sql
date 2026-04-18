@@ -189,3 +189,6 @@ do $$ begin
     create policy "bookings: anon insert" on public.bookings for insert to anon with check (true);
   end if;
 end $$;
+
+-- ── bookings: Google Calendar event ID ───────────────────────────────────────
+alter table public.bookings add column if not exists google_calendar_event_id text;

@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import Stripe from 'https://esm.sh/stripe@13.3.0?target=deno&no-check=true'
+import { getGoogleAccessToken, createCalendarEvent } from '../_shared/google-calendar.ts'
 
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY')!
 const STRIPE_WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET')!
@@ -42,7 +43,6 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
 
-  // Fetch the booking
   const { data: booking, error: bookingErr } = await supabase
     .from('bookings')
     .select('*, sites(name)')
@@ -54,12 +54,43 @@ serve(async (req) => {
     return new Response('Booking not found', { status: 404 })
   }
 
-  // Mark booking as confirmed and paid
   await supabase.from('bookings').update({
     status: 'confirmed',
     stripe_payment_status: 'paid',
   }).eq('id', bookingId)
 
   console.log(`Booking ${bookingId} confirmed`)
+
+  // Add to Google Calendar — non-blocking, fails silently if not configured
+  if (booking.type === 'oneoff') {
+    try {
+      const serviceAccountKeyRaw = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_KEY')
+      if (serviceAccountKeyRaw) {
+        const { data: calSetting } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'google_calendar_id')
+          .single()
+        const calendarId = calSetting?.value as string | undefined
+        if (calendarId) {
+          const accessToken = await getGoogleAccessToken(JSON.parse(serviceAccountKeyRaw))
+          const eventId = await createCalendarEvent(accessToken, calendarId, {
+            name: booking.name,
+            event: booking.event,
+            date: booking.date,
+            start_time: booking.start_time,
+            end_time: booking.end_time,
+            site_name: (booking.sites as { name: string } | null)?.name ?? 'Unknown venue',
+            notes: booking.notes,
+          })
+          await supabase.from('bookings').update({ google_calendar_event_id: eventId }).eq('id', bookingId)
+          console.log(`Calendar event created: ${eventId}`)
+        }
+      }
+    } catch (calErr) {
+      console.error('Calendar event creation failed (non-fatal):', calErr)
+    }
+  }
+
   return new Response(JSON.stringify({ received: true }), { status: 200 })
 })

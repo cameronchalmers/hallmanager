@@ -37,12 +37,27 @@ export default function Settings() {
   const [testResult, setTestResult] = useState<Record<string, 'ok' | 'error'>>({})
   const [remindersEnabled, setRemindersEnabled] = useState(true)
   const [reminderToggleSaving, setReminderToggleSaving] = useState(false)
+  const [calendarId, setCalendarId] = useState('')
+  const [calendarSaving, setCalendarSaving] = useState(false)
+  const [calendarSaved, setCalendarSaved] = useState(false)
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(supabase as any).from('app_settings').select('value').eq('key', 'reminders_enabled').single()
       .then(({ data }: { data: { value: unknown } | null }) => { if (data) setRemindersEnabled(data.value !== false && data.value !== 'false') })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(supabase as any).from('app_settings').select('value').eq('key', 'google_calendar_id').single()
+      .then(({ data }: { data: { value: unknown } | null }) => { if (data && typeof data.value === 'string') setCalendarId(data.value) })
   }, [])
+
+  async function saveCalendarId() {
+    setCalendarSaving(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('app_settings').upsert({ key: 'google_calendar_id', value: calendarId.trim() })
+    setCalendarSaving(false)
+    setCalendarSaved(true)
+    setTimeout(() => setCalendarSaved(false), 2000)
+  }
 
   async function toggleReminders(enabled: boolean) {
     setRemindersEnabled(enabled)
@@ -249,6 +264,36 @@ export default function Settings() {
             </div>
           </div>
         </div>
+
+        {/* Google Calendar — admin only */}
+        {!isRegular && (
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Google Calendar</span>
+            </div>
+            <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Confirmed one-off bookings are automatically added to your Google Calendar.
+                Enter your Calendar ID below, then share that calendar with your service account email (Editor access).
+              </div>
+              <input
+                className="input"
+                placeholder="your-calendar-id@group.calendar.google.com"
+                value={calendarId}
+                onChange={e => setCalendarId(e.target.value)}
+              />
+              <div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={saveCalendarId}
+                  disabled={calendarSaving}
+                >
+                  {calendarSaving ? 'Saving…' : calendarSaved ? '✓ Saved!' : 'Save Calendar ID'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* About */}
         <div className="card">
