@@ -277,7 +277,7 @@ export default function Settings() {
                 Enter your Calendar ID below, then share that calendar with your service account email (Editor access).
               </div>
               <input
-                className="input"
+                className="form-input"
                 placeholder="your-calendar-id@group.calendar.google.com"
                 value={calendarId}
                 onChange={e => setCalendarId(e.target.value)}
