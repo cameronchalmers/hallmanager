@@ -11,24 +11,25 @@ import { format } from 'date-fns'
 
 type BookingWithSite = Booking & { sites?: Site; user_group_name?: string | null; effective_total?: number }
 
-function nextOccurrence(b: Booking, today: string): string {
+function nextOccurrence(b: Booking, nowIso: string): string {
   if (b.type !== 'recurring' || !b.recurrence) return b.date
-  if (b.date >= today) return b.date
 
   const toDs = (d: Date) => d.toISOString().split('T')[0]
+  // A session is past if its end datetime has already passed
+  const isPast = (dateStr: string) => `${dateStr}T${b.end_time}` <= nowIso
+
   const isMultiDay = b.recurrence === 'Weekly' && b.recurrence_days && (b.recurrence_days as number[]).length > 1
 
   if (isMultiDay) {
     const days = [...(b.recurrence_days as number[])].sort()
-    const todayDate = new Date(today + 'T12:00:00')
-    const weekStart = new Date(todayDate)
+    const weekStart = new Date(nowIso)
     weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7))
     for (let w = 0; w < 53; w++) {
       for (const dayIdx of days) {
         const d = new Date(weekStart)
         d.setDate(d.getDate() + dayIdx + w * 7)
         const ds = toDs(d)
-        if (ds >= today && ds >= b.date) return ds
+        if (ds >= b.date && !isPast(ds)) return ds
       }
     }
     return b.date
@@ -36,7 +37,7 @@ function nextOccurrence(b: Booking, today: string): string {
 
   const cur = new Date(b.date + 'T12:00:00')
   let i = 0
-  while (toDs(cur) < today && i < 500) {
+  while (isPast(toDs(cur)) && i < 500) {
     if (b.recurrence === 'Weekly') cur.setDate(cur.getDate() + 7)
     else if (b.recurrence === 'Fortnightly') cur.setDate(cur.getDate() + 14)
     else if (b.recurrence === 'Monthly') cur.setMonth(cur.getMonth() + 1)
@@ -239,11 +240,12 @@ export default function Dashboard() {
             </div>
           )}
           {(['recurring', 'one-off'] as const).map(type => {
-            const todayStr = new Date().toISOString().split('T')[0]
+            const nowIso = new Date().toISOString().slice(0, 16)
+            const todayStr = nowIso.split('T')[0]
             let group = confirmed.filter(b => type === 'recurring' ? b.type === 'recurring' : b.type !== 'recurring')
             if (type === 'recurring') {
               group = group
-                .map(b => ({ ...b, _next: nextOccurrence(b, todayStr) }))
+                .map(b => ({ ...b, _next: nextOccurrence(b, nowIso) }))
                 .sort((a, b) => (a as typeof a & { _next: string })._next.localeCompare((b as typeof b & { _next: string })._next)) as typeof group
             } else {
               group = group.filter(b => b.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date))
@@ -259,7 +261,7 @@ export default function Dashboard() {
                     const site = (b as BookingWithSite).sites
                     const label = b.type === 'recurring' ? (b.user_group_name ?? b.event) : b.name
                     const sub = b.type === 'recurring' ? `${b.name} · ${site?.name}` : `${b.event} · ${site?.name}`
-                    const displayDate = b.type === 'recurring' ? nextOccurrence(b, todayStr) : b.date
+                    const displayDate = b.type === 'recurring' ? nextOccurrence(b, nowIso) : b.date
                     return (
                       <div key={b.id} className="tbl-row" style={{ cursor: 'pointer', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }} onClick={() => setPreview(b as BookingWithSite)}>
                         <div>
