@@ -177,7 +177,8 @@ export default function SiteSettings() {
     const { error } = await supabase.from('sites').update(payload).eq('id', currentSite.id)
     if (error) { setSaveError(error.message); setSaving(false); return }
     if (Object.values(creds).some(v => v)) {
-      await supabase.from('site_credentials').upsert({ site_id: currentSite.id, ...creds, updated_at: new Date().toISOString() })
+      const { error: credsError } = await supabase.from('site_credentials').upsert({ site_id: currentSite.id, ...creds, updated_at: new Date().toISOString() })
+      if (credsError) { setSaveError(credsError.message); setSaving(false); return }
     }
     setCurrentSite({ ...currentSite, ...payload })
     setSaving(false)
