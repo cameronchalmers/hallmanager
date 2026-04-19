@@ -123,6 +123,7 @@ export interface Database {
           stripe_session_id: string | null
           stripe_payment_url: string | null
           stripe_payment_status: string | null
+          stripe_payment_intent_id: string | null
           attended: boolean | null
           session_attendance: Record<string, boolean> | null
           cancelled_sessions: string[] | null
@@ -151,6 +152,7 @@ export interface Database {
           stripe_session_id?: string | null
           stripe_payment_url?: string | null
           stripe_payment_status?: string | null
+          stripe_payment_intent_id?: string | null
           attended?: boolean | null
           session_attendance?: Record<string, boolean> | null
           cancelled_sessions?: string[] | null
@@ -179,6 +181,7 @@ export interface Database {
           stripe_session_id?: string | null
           stripe_payment_url?: string | null
           stripe_payment_status?: string | null
+          stripe_payment_intent_id?: string | null
           attended?: boolean | null
           session_attendance?: Record<string, boolean> | null
           cancelled_sessions?: string[] | null
