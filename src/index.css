@@ -152,7 +152,7 @@ body {
 
 /* ── Forms ── */
 .form-row { margin-bottom: 13px; }
-.form-label { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-label { font-size: 10px; font-weight: 700; color: var(--text); margin-bottom: 4px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
 .form-input {
   width: 100%; padding: 8px 10px; border: 1px solid var(--border);
   border-radius: var(--radius); font-size: 13px; font-family: 'Figtree', sans-serif;

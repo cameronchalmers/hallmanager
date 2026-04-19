@@ -304,11 +304,6 @@ export default function SiteSettings() {
               <span className="card-title">Stripe</span>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Payment processing</span>
             </div>
-            <div style={{ padding: '14px 18px 6px' }}>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-                Leave blank to use the global Stripe account from environment variables.
-              </p>
-            </div>
             <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label className="form-label">Secret key</label>
@@ -325,11 +320,6 @@ export default function SiteSettings() {
             <div className="card-header">
               <span className="card-title">QuickFile</span>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Invoicing & accounts</span>
-            </div>
-            <div style={{ padding: '14px 18px 6px' }}>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-                Leave blank to use the global QuickFile account from environment variables.
-              </p>
             </div>
             <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="form-grid-3">
