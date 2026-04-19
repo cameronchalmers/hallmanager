@@ -228,7 +228,7 @@ export default function PayBooking() {
           <div style={{ margin: '0 32px 24px', background: '#f9fafb', borderRadius: 10, overflow: 'hidden', border: '1px solid #f3f4f6' }}>
             {[
               ['Date', booking.date],
-              ['Time', `${booking.start_time} – ${booking.end_time}`],
+              ['Time', `${booking.start_time.slice(0, 5)} – ${booking.end_time.slice(0, 5)}`],
               ['Deposit', formatPence(booking.deposit)],
               ['Total', formatPence(booking.total)],
             ].map(([label, value], i) => (
