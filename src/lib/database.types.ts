@@ -21,6 +21,8 @@ export interface Database {
           photos: string[] | null
           slug: string | null
           blocked_dates: string[] | null
+          whatsapp_number: string | null
+          google_review_url: string | null
         }
         Insert: {
           id?: string
@@ -39,6 +41,8 @@ export interface Database {
           photos?: string[] | null
           slug?: string | null
           blocked_dates?: string[] | null
+          whatsapp_number?: string | null
+          google_review_url?: string | null
         }
         Update: {
           id?: string
@@ -57,6 +61,38 @@ export interface Database {
           photos?: string[] | null
           slug?: string | null
           blocked_dates?: string[] | null
+          whatsapp_number?: string | null
+          google_review_url?: string | null
+        }
+        Relationships: []
+      }
+      site_credentials: {
+        Row: {
+          site_id: string
+          stripe_secret_key: string | null
+          stripe_publishable_key: string | null
+          qf_account_num: string | null
+          qf_app_id: string | null
+          qf_api_key: string | null
+          updated_at: string
+        }
+        Insert: {
+          site_id: string
+          stripe_secret_key?: string | null
+          stripe_publishable_key?: string | null
+          qf_account_num?: string | null
+          qf_app_id?: string | null
+          qf_api_key?: string | null
+          updated_at?: string
+        }
+        Update: {
+          site_id?: string
+          stripe_secret_key?: string | null
+          stripe_publishable_key?: string | null
+          qf_account_num?: string | null
+          qf_app_id?: string | null
+          qf_api_key?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -285,6 +321,7 @@ export interface Database {
 
 // Convenience types
 export type Site = Database['public']['Tables']['sites']['Row']
+export type SiteCredentials = Database['public']['Tables']['site_credentials']['Row']
 export type Booking = Database['public']['Tables']['bookings']['Row']
 export type Invoice = Database['public']['Tables']['invoices']['Row']
 export type ExtraSlot = Database['public']['Tables']['extra_slots']['Row']

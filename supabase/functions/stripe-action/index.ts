@@ -26,11 +26,6 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser()
     if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
 
-    const stripe = new Stripe(STRIPE_SECRET_KEY, {
-      apiVersion: '2023-10-16',
-      httpClient: Stripe.createFetchHttpClient(),
-    })
-
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -51,6 +46,11 @@ serve(async (req) => {
       if (!booking) throw new Error('Booking not found')
 
       const { data: site } = await supabase.from('sites').select('name').eq('id', booking.site_id).single()
+      const { data: siteCreds } = await supabase.from('site_credentials').select('stripe_secret_key').eq('site_id', booking.site_id).single()
+      const stripe = new Stripe(siteCreds?.stripe_secret_key || STRIPE_SECRET_KEY, {
+        apiVersion: '2023-10-16',
+        httpClient: Stripe.createFetchHttpClient(),
+      })
 
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
@@ -88,6 +88,11 @@ serve(async (req) => {
     if (action === 'refund_deposit') {
       const { data: booking } = await supabase.from('bookings').select('*').eq('id', booking_id).single()
       if (!booking?.stripe_session_id) throw new Error('No Stripe session found for this booking')
+      const { data: refundCreds } = await supabase.from('site_credentials').select('stripe_secret_key').eq('site_id', booking.site_id).single()
+      const stripe = new Stripe(refundCreds?.stripe_secret_key || STRIPE_SECRET_KEY, {
+        apiVersion: '2023-10-16',
+        httpClient: Stripe.createFetchHttpClient(),
+      })
       if (booking.stripe_payment_status === 'deposit_refunded') {
         return new Response(JSON.stringify({ error: 'Deposit already refunded' }), {
           status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

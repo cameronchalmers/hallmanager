@@ -4,9 +4,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import md5 from 'https://esm.sh/md5@2.3.0'
 
 const QF_BASE = 'https://api.quickfile.co.uk/1_2'
-const ACC_NUM = Deno.env.get('QF_ACCOUNT_NUM') ?? ''
-const APP_ID  = Deno.env.get('QF_APP_ID') ?? ''
-const API_KEY = Deno.env.get('QF_API_KEY') ?? ''
+const GLOBAL_ACC_NUM = Deno.env.get('QF_ACCOUNT_NUM') ?? ''
+const GLOBAL_APP_ID  = Deno.env.get('QF_APP_ID') ?? ''
+const GLOBAL_API_KEY = Deno.env.get('QF_API_KEY') ?? ''
+
+type QFCreds = { acc: string; appId: string; apiKey: string }
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,23 +28,34 @@ function submissionNum() {
   return Array.from(bytes).map(b => b.toString(36)).join('').toUpperCase().substring(0, 12)
 }
 
-function buildHeader() {
+function buildHeader(creds: QFCreds) {
   const sub = submissionNum()
   return {
     MessageType: 'Request',
     SubmissionNumber: sub,
     Authentication: {
-      AccNumber: ACC_NUM,
-      MD5Value: md5(ACC_NUM + API_KEY + sub) as string,
-      ApplicationID: APP_ID,
+      AccNumber: creds.acc,
+      MD5Value: md5(creds.acc + creds.apiKey + sub) as string,
+      ApplicationID: creds.appId,
     },
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getSiteCreds(supabase: any, siteId: string | null): Promise<QFCreds> {
+  if (siteId) {
+    const { data } = await supabase.from('site_credentials').select('qf_account_num, qf_app_id, qf_api_key').eq('site_id', siteId).single()
+    if (data?.qf_account_num && data?.qf_app_id && data?.qf_api_key) {
+      return { acc: data.qf_account_num, appId: data.qf_app_id, apiKey: data.qf_api_key }
+    }
+  }
+  return { acc: GLOBAL_ACC_NUM, appId: GLOBAL_APP_ID, apiKey: GLOBAL_API_KEY }
+}
+
 // Returns { body, raw } where body is the response Body for this service/action
-async function qf(service: string, action: string, reqBody: Record<string, unknown>) {
+async function qf(service: string, action: string, reqBody: Record<string, unknown>, creds: QFCreds) {
   const url = `${QF_BASE}/${service}/${action}`
-  const payload = { payload: { Header: buildHeader(), Body: reqBody } }
+  const payload = { payload: { Header: buildHeader(creds), Body: reqBody } }
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -112,10 +125,6 @@ serve(async (req) => {
   const { data: { user }, error: authError } = await userClient.auth.getUser()
   if (authError || !user) return json({ ok: false, error: 'Unauthorized' }, 401)
 
-  if (!ACC_NUM || !APP_ID || !API_KEY) {
-    return json({ ok: false, error: 'QuickFile credentials not configured. Set QF_ACCOUNT_NUM, QF_APP_ID and QF_API_KEY as Supabase secrets.' })
-  }
-
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -129,24 +138,27 @@ serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { action, user_id, invoice_id, booking_id, qf_client_id } = body
+    const { action, user_id, invoice_id, booking_id, qf_client_id, site_id: siteIdHint = null } = body
 
     // ── Test connection ──────────────────────────────────────────────────────
     if (action === 'test') {
+      const creds = await getSiteCreds(supabase, siteIdHint)
+      if (!creds.acc || !creds.appId || !creds.apiKey) return json({ ok: false, error: 'QuickFile credentials not configured for this site.' })
       await qf('client', 'search', {
         SearchParameters: { ReturnCount: 1, Offset: 0, OrderResultsBy: 'CreatedDate', OrderDirection: 'DESC' },
-      })
+      }, creds)
       // qf() throws on error, so reaching here means success
       return json({ ok: true })
     }
 
     // ── Find QF client by email ──────────────────────────────────────────────
     if (action === 'find_client') {
+      const creds = await getSiteCreds(supabase, siteIdHint)
       const { data: user } = await supabase.from('users').select('*').eq('id', user_id).single()
       if (!user) return json({ ok: false, error: 'User not found' })
       const body = await qf('client', 'search', {
         SearchParameters: { Email: user.email, ReturnCount: 5, Offset: 0, OrderResultsBy: 'CreatedDate', OrderDirection: 'DESC' },
-      })
+      }, creds)
       // Body.Record is a single object or array
       const raw = (body as any)?.Record ?? []
       const clients = Array.isArray(raw) ? raw : (raw ? [raw] : [])
@@ -161,6 +173,7 @@ serve(async (req) => {
 
     // ── Create QF client for a user ──────────────────────────────────────────
     if (action === 'create_client') {
+      const creds = await getSiteCreds(supabase, siteIdHint)
       const { data: user } = await supabase.from('users').select('*').eq('id', user_id).single()
       if (!user) return json({ ok: false, error: 'User not found' })
       const nameParts = (user.name as string).split(' ')
@@ -173,7 +186,7 @@ serve(async (req) => {
             Email:     user.email,
           },
         },
-      })
+      }, creds)
       const clientId = (body as any)?.ClientID
       if (!clientId) return json({ ok: false, error: 'Failed to create client — no ClientID in response' })
       await supabase.from('users').update({ qf_client_id: String(clientId) }).eq('id', user_id)
@@ -194,16 +207,19 @@ serve(async (req) => {
       if (!clientId) return json({ ok: false, error: 'No QuickFile client linked. Link the booker first.' })
 
       let lines: Record<string, unknown>[] = []
+      let invSiteId: string | null = null
       if (inv.booking_id) {
         const { data: booking } = await supabase.from('bookings').select('*').eq('id', inv.booking_id).single()
         if (booking) {
+          invSiteId = booking.site_id
           const { data: site } = await supabase.from('sites').select('rate').eq('id', booking.site_id).single()
           lines = buildItemLines(booking, site?.rate ?? 0)
         }
       }
       if (lines.length === 0) lines = [{ ItemDescription: inv.description, UnitCost: inv.amount / 100, Qty: 1 }]
 
-      const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines))
+      const creds = await getSiteCreds(supabase, invSiteId ?? siteIdHint)
+      const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines), creds)
       const qfRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
       if (!qfRef) return json({ ok: false, error: `Unexpected QF invoice response: ${JSON.stringify(respBody).slice(0, 200)}` })
 
@@ -230,9 +246,11 @@ serve(async (req) => {
         if (!clientId) { skipped++; continue }
 
         let lines: Record<string, unknown>[] = []
+        let syncSiteId: string | null = null
         if (inv.booking_id) {
           const { data: booking } = await supabase.from('bookings').select('*').eq('id', inv.booking_id).single()
           if (booking) {
+            syncSiteId = booking.site_id
             const { data: site } = await supabase.from('sites').select('rate').eq('id', booking.site_id).single()
             lines = buildItemLines(booking, site?.rate ?? 0)
           }
@@ -240,7 +258,8 @@ serve(async (req) => {
         if (lines.length === 0) lines = [{ ItemDescription: inv.description, UnitCost: inv.amount / 100, Qty: 1 }]
 
         try {
-          const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines))
+          const syncCreds = await getSiteCreds(supabase, syncSiteId)
+          const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines), syncCreds)
           const qfRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
           if (qfRef) {
             await supabase.from('invoices').update({ qf_synced: true, qf_ref: String(qfRef) }).eq('id', inv.id)
@@ -281,7 +300,8 @@ serve(async (req) => {
 
       const today = new Date().toISOString().split('T')[0]
       const lines = [{ ItemDescription: desc, UnitCost: booking.deposit / 100, Qty: 1 }]
-      const respBody = await qf('invoice', 'create', invoiceBody(clientId, today, lines, creditNote))
+      const refundCreds = await getSiteCreds(supabase, booking.site_id)
+      const respBody = await qf('invoice', 'create', invoiceBody(clientId, today, lines, creditNote), refundCreds)
 
       const creditRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
       if (!creditRef) return json({ ok: false, error: `QF did not return a credit note ID: ${JSON.stringify(respBody).slice(0, 200)}` })
@@ -301,6 +321,7 @@ serve(async (req) => {
       const existingRefs = new Set((existing ?? []).map((i: any) => String(i.qf_ref)))
 
       // Search QF for invoices — filter by ClientID from results (API doesn't support it as a search param)
+      const pullCreds = await getSiteCreds(supabase, siteIdHint)
       let body: Record<string, unknown>
       try {
         body = await qf('invoice', 'search', {
@@ -312,7 +333,7 @@ serve(async (req) => {
             Offset: 0,
             ReturnCount: 100,
           },
-        })
+        }, pullCreds)
       } catch (e) {
         return json({ ok: false, error: String(e) })
       }

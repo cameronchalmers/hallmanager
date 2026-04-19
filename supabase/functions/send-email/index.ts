@@ -115,7 +115,7 @@ serve(async (req) => {
 
         const { data: site } = await supabase
           .from('sites')
-          .select('name')
+          .select('name, whatsapp_number')
           .eq('id', booking.site_id)
           .single()
 
@@ -133,6 +133,7 @@ serve(async (req) => {
           total: booking.total,
           notes: booking.notes,
           payment_url: booking.stripe_payment_url ?? null,
+          whatsapp_number: site?.whatsapp_number ?? null,
         }
       }
 

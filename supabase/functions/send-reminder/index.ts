@@ -77,7 +77,7 @@ function adminReminderEmail(event: string, date: string, time: string, bookerNam
 </html>`
 }
 
-function reminderEmail(name: string, event: string, date: string, time: string, siteName: string, address: string): string {
+function reminderEmail(name: string, event: string, date: string, time: string, siteName: string, address: string, whatsappNumber?: string | null): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -131,7 +131,7 @@ function reminderEmail(name: string, event: string, date: string, time: string, 
       </div>
     </div>
     <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;line-height:1.6;">
-      <p style="margin:0 0 8px;"><a href="https://wa.me/447466214530" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: 07466 214530</a></p>
+      ${whatsappNumber ? `<p style="margin:0 0 8px;"><a href="https://wa.me/${whatsappNumber.replace(/\D/g, '')}" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: ${esc(whatsappNumber)}</a></p>` : ''}
       <p style="margin:0;">HallManager · This email was sent automatically.</p>
     </div>
   </div>
@@ -139,8 +139,8 @@ function reminderEmail(name: string, event: string, date: string, time: string, 
 </html>`
 }
 
-function reviewEmail(name: string, event: string, siteName: string): string {
-  const reviewUrl = 'https://g.page/r/CcKq1-BztAehEAE/review'
+function reviewEmail(name: string, event: string, siteName: string, reviewUrl?: string | null, whatsappNumber?: string | null): string {
+  const url = reviewUrl || 'https://g.page/r/CcKq1-BztAehEAE/review'
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -167,13 +167,13 @@ function reviewEmail(name: string, event: string, siteName: string): string {
       <div style="padding:24px 32px;">
         <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">If you enjoyed using our venue, we'd really appreciate a quick Google review — it takes less than a minute and makes a huge difference to us.</p>
         <div style="text-align:center;margin:28px 0;">
-          <a href="${reviewUrl}" style="display:inline-block;background:#f59e0b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">⭐ Leave a Google Review</a>
+          <a href="${url}" style="display:inline-block;background:#f59e0b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">⭐ Leave a Google Review</a>
         </div>
         <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">It only takes a moment and means the world to us. Thank you!</p>
       </div>
     </div>
     <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;line-height:1.6;">
-      <p style="margin:0 0 8px;"><a href="https://wa.me/447466214530" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: 07466 214530</a></p>
+      ${whatsappNumber ? `<p style="margin:0 0 8px;"><a href="https://wa.me/${whatsappNumber.replace(/\D/g, '')}" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: ${esc(whatsappNumber)}</a></p>` : ''}
       <p style="margin:0;">HallManager · This email was sent automatically.</p>
     </div>
   </div>
@@ -260,7 +260,7 @@ serve(async (req) => {
 
   const { data: bookings, error } = await supabase
     .from('bookings')
-    .select('*, sites(name, address)')
+    .select('*, sites(name, address, whatsapp_number)')
     .eq('type', 'oneoff')
     .in('status', ['confirmed', 'approved'])
     .eq('date', tomorrowStr)
@@ -286,8 +286,10 @@ serve(async (req) => {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
       })
       const time = `${booking.start_time} – ${booking.end_time}`
-      const siteName = (booking.sites as { name: string; address: string } | null)?.name ?? 'Unknown venue'
-      const address = (booking.sites as { name: string; address: string } | null)?.address ?? ''
+      const siteData = booking.sites as { name: string; address: string; whatsapp_number: string | null } | null
+      const siteName = siteData?.name ?? 'Unknown venue'
+      const address = siteData?.address ?? ''
+      const whatsappNumber = siteData?.whatsapp_number ?? null
 
       // Email to hirer
       const hirerRes = await fetch('https://api.resend.com/emails', {
@@ -297,7 +299,7 @@ serve(async (req) => {
           from: FROM,
           to: booking.email,
           subject: `Reminder: your booking is tomorrow — ${booking.event}`,
-          html: reminderEmail(booking.name, booking.event, date, time, siteName, address),
+          html: reminderEmail(booking.name, booking.event, date, time, siteName, address, whatsappNumber),
         }),
       })
       if (!hirerRes.ok) {
@@ -332,7 +334,7 @@ serve(async (req) => {
   // Review emails for yesterday's completed one-off bookings
   const { data: reviewBookings } = await supabase
     .from('bookings')
-    .select('*, sites(name)')
+    .select('*, sites(name, whatsapp_number, google_review_url)')
     .eq('type', 'oneoff')
     .eq('status', 'confirmed')
     .eq('date', yesterdayStr)
@@ -340,7 +342,10 @@ serve(async (req) => {
 
   for (const booking of reviewBookings ?? []) {
     try {
-      const siteName = (booking.sites as { name: string } | null)?.name ?? 'our venue'
+      const reviewSite = booking.sites as { name: string; whatsapp_number: string | null; google_review_url: string | null } | null
+      const siteName = reviewSite?.name ?? 'our venue'
+      const reviewUrl = reviewSite?.google_review_url ?? null
+      const reviewWhatsapp = reviewSite?.whatsapp_number ?? null
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
@@ -348,7 +353,7 @@ serve(async (req) => {
           from: FROM,
           to: booking.email,
           subject: `How was your event at ${siteName}?`,
-          html: reviewEmail(booking.name, booking.event, siteName),
+          html: reviewEmail(booking.name, booking.event, siteName, reviewUrl, reviewWhatsapp),
         }),
       })
       if (res.ok) {

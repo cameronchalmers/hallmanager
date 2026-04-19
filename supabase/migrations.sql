@@ -197,3 +197,27 @@ alter table public.bookings add column if not exists refunded_amount integer;
 
 -- ── bookings: track review email sent ────────────────────────────────────────
 alter table public.bookings add column if not exists review_sent boolean default false;
+
+-- ── sites: per-site contact and review settings ───────────────────────────────
+alter table public.sites add column if not exists whatsapp_number  text;
+alter table public.sites add column if not exists google_review_url text;
+
+-- ── site_credentials: per-site Stripe and QuickFile API credentials ───────────
+create table if not exists public.site_credentials (
+  site_id              uuid primary key references public.sites(id) on delete cascade,
+  stripe_secret_key    text,
+  stripe_publishable_key text,
+  qf_account_num       text,
+  qf_app_id            text,
+  qf_api_key           text,
+  updated_at           timestamptz default now()
+);
+alter table public.site_credentials enable row level security;
+do $$ begin
+  if not exists (select 1 from pg_policies where tablename = 'site_credentials' and policyname = 'site_credentials: admin read/write') then
+    create policy "site_credentials: admin read/write" on public.site_credentials
+      for all to authenticated
+      using (public.is_admin_or_manager()) with check (public.is_admin_or_manager());
+  end if;
+end $$;
+grant all on public.site_credentials to authenticated, service_role;

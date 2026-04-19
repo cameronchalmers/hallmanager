@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Site } from '../lib/database.types'
+import type { Site, SiteCredentials } from '../lib/database.types'
 import { DEFAULT_AVAILABILITY, type WeekAvailability } from '../lib/database.types'
 import { formatPence, poundsToPence } from '../lib/money'
 import Modal from '../components/ui/Modal'
@@ -46,6 +46,12 @@ export default function Sites() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [copied, setCopied] = useState<string | null>(null) // stores slug, not id
+  const [whatsappNumber, setWhatsappNumber] = useState('')
+  const [googleReviewUrl, setGoogleReviewUrl] = useState('')
+  const [creds, setCreds] = useState<Omit<SiteCredentials, 'site_id' | 'updated_at'>>({
+    stripe_secret_key: null, stripe_publishable_key: null,
+    qf_account_num: null, qf_app_id: null, qf_api_key: null,
+  })
 
   useEffect(() => { fetchSites() }, [])
 
@@ -56,6 +62,8 @@ export default function Sites() {
     setLoading(false)
   }
 
+  const EMPTY_CREDS = { stripe_secret_key: null, stripe_publishable_key: null, qf_account_num: null, qf_app_id: null, qf_api_key: null }
+
   function openAdd() {
     setEditing(null)
     setForm(DEFAULT_FORM)
@@ -63,6 +71,9 @@ export default function Sites() {
     setAmenities([])
     setDescription('')
     setPhotos([])
+    setWhatsappNumber('')
+    setGoogleReviewUrl('')
+    setCreds(EMPTY_CREDS)
     setConfirmDelete(false)
     setSaveError('')
     setShowModal(true)
@@ -83,6 +94,14 @@ export default function Sites() {
     setAmenities(site.amenities ?? [])
     setDescription(site.description ?? '')
     setPhotos(site.photos ?? [])
+    setWhatsappNumber(site.whatsapp_number ?? '')
+    setGoogleReviewUrl(site.google_review_url ?? '')
+    setCreds(EMPTY_CREDS)
+    supabase.from('site_credentials').select('*').eq('site_id', site.id).single()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then(({ data }: { data: any }) => {
+        if (data) setCreds({ stripe_secret_key: data.stripe_secret_key ?? null, stripe_publishable_key: data.stripe_publishable_key ?? null, qf_account_num: data.qf_account_num ?? null, qf_app_id: data.qf_app_id ?? null, qf_api_key: data.qf_api_key ?? null })
+      })
     setConfirmDelete(false)
     setSaveError('')
     setShowModal(true)
@@ -91,8 +110,16 @@ export default function Sites() {
   async function saveSite() {
     setSaving(true)
     setSaveError('')
-    // Cast WeekAvailability to Json for the Supabase client
-    const payload = { ...form, availability: availability as unknown as import('../lib/database.types').Json, amenities, description: description || null, photos }
+    const payload = {
+      ...form,
+      availability: availability as unknown as import('../lib/database.types').Json,
+      amenities,
+      description: description || null,
+      photos,
+      whatsapp_number: whatsappNumber || null,
+      google_review_url: googleReviewUrl || null,
+    }
+    let siteId = editing?.id ?? null
     if (editing) {
       const { error } = await supabase.from('sites').update(payload).eq('id', editing.id)
       if (error) { setSaveError(error.message); setSaving(false); return }
@@ -100,7 +127,10 @@ export default function Sites() {
     } else {
       const { data, error } = await supabase.from('sites').insert(payload).select().single()
       if (error) { setSaveError(error.message); setSaving(false); return }
-      if (data) setSites(prev => [...prev, data])
+      if (data) { setSites(prev => [...prev, data]); siteId = data.id }
+    }
+    if (siteId && Object.values(creds).some(v => v)) {
+      await supabase.from('site_credentials').upsert({ site_id: siteId, ...creds, updated_at: new Date().toISOString() })
     }
     setShowModal(false)
     setSaving(false)
@@ -377,6 +407,49 @@ export default function Sites() {
               </div>
             )
           })}
+        </div>
+
+        {/* Integrations */}
+        <div className="sec-label" style={{ marginBottom: 8, marginTop: 4 }}>Integrations</div>
+        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+          <div>
+            <label className="form-label">WhatsApp number</label>
+            <input className="form-input" placeholder="e.g. 447466214530" value={whatsappNumber} onChange={e => setWhatsappNumber(e.target.value)} />
+          </div>
+          <div>
+            <label className="form-label">Google Review URL</label>
+            <input className="form-input" placeholder="https://g.page/r/..." value={googleReviewUrl} onChange={e => setGoogleReviewUrl(e.target.value)} />
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 4 }}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div className="sec-label" style={{ fontSize: 11, marginBottom: 6 }}>Stripe</div>
+          </div>
+          <div>
+            <label className="form-label">Secret key</label>
+            <input className="form-input" type="password" placeholder={creds.stripe_secret_key ? '••••••••' : 'sk_live_...'} value={creds.stripe_secret_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_secret_key: e.target.value || null }))} autoComplete="new-password" />
+          </div>
+          <div>
+            <label className="form-label">Publishable key</label>
+            <input className="form-input" placeholder={creds.stripe_publishable_key ? '••••••••' : 'pk_live_...'} value={creds.stripe_publishable_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_publishable_key: e.target.value || null }))} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <div className="sec-label" style={{ fontSize: 11, marginBottom: 6, marginTop: 8 }}>QuickFile</div>
+          <div className="form-grid-3">
+            <div>
+              <label className="form-label">Account no.</label>
+              <input className="form-input" placeholder={creds.qf_account_num ? '••••••••' : '12345678'} value={creds.qf_account_num ?? ''} onChange={e => setCreds(c => ({ ...c, qf_account_num: e.target.value || null }))} />
+            </div>
+            <div>
+              <label className="form-label">App ID</label>
+              <input className="form-input" placeholder={creds.qf_app_id ? '••••••••' : 'app-id'} value={creds.qf_app_id ?? ''} onChange={e => setCreds(c => ({ ...c, qf_app_id: e.target.value || null }))} />
+            </div>
+            <div>
+              <label className="form-label">API key</label>
+              <input className="form-input" type="password" placeholder={creds.qf_api_key ? '••••••••' : 'api-key'} value={creds.qf_api_key ?? ''} onChange={e => setCreds(c => ({ ...c, qf_api_key: e.target.value || null }))} autoComplete="new-password" />
+            </div>
+          </div>
         </div>
 
         {/* Booking link */}
