@@ -14,7 +14,7 @@ CREATE POLICY IF NOT EXISTS "Site admins can manage their site credentials" ON s
       SELECT 1 FROM users
       WHERE id = auth.uid()
       AND role IN ('site_admin', 'manager')
-      AND site_id = ANY(site_ids)
+      AND site_id::text = ANY(site_ids)
     )
   )
   WITH CHECK (
@@ -22,6 +22,6 @@ CREATE POLICY IF NOT EXISTS "Site admins can manage their site credentials" ON s
       SELECT 1 FROM users
       WHERE id = auth.uid()
       AND role IN ('site_admin', 'manager')
-      AND site_id = ANY(site_ids)
+      AND site_id::text = ANY(site_ids)
     )
   );
