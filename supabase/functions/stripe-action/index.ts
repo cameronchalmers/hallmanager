@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import Stripe from 'https://esm.sh/stripe@13.3.0?target=deno&no-check=true'
 
-const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY')!
+// No global Stripe key — credentials must be configured per site in site_credentials
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://hallmanager.vercel.app'
 
 const corsHeaders = {
@@ -47,7 +47,12 @@ serve(async (req) => {
 
       const { data: site } = await supabase.from('sites').select('name').eq('id', booking.site_id).single()
       const { data: siteCreds } = await supabase.from('site_credentials').select('stripe_secret_key').eq('site_id', booking.site_id).single()
-      const stripe = new Stripe(siteCreds?.stripe_secret_key || STRIPE_SECRET_KEY, {
+      if (!siteCreds?.stripe_secret_key) {
+        return new Response(JSON.stringify({ error: 'Stripe is not configured for this site. Add a secret key in Site Settings → Integrations.' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const stripe = new Stripe(siteCreds.stripe_secret_key, {
         apiVersion: '2023-10-16',
         httpClient: Stripe.createFetchHttpClient(),
       })
@@ -89,7 +94,8 @@ serve(async (req) => {
       const { data: booking } = await supabase.from('bookings').select('*').eq('id', booking_id).single()
       if (!booking?.stripe_session_id) throw new Error('No Stripe session found for this booking')
       const { data: refundCreds } = await supabase.from('site_credentials').select('stripe_secret_key').eq('site_id', booking.site_id).single()
-      const stripe = new Stripe(refundCreds?.stripe_secret_key || STRIPE_SECRET_KEY, {
+      if (!refundCreds?.stripe_secret_key) throw new Error('Stripe is not configured for this site')
+      const stripe = new Stripe(refundCreds.stripe_secret_key, {
         apiVersion: '2023-10-16',
         httpClient: Stripe.createFetchHttpClient(),
       })

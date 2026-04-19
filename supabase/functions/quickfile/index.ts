@@ -4,9 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import md5 from 'https://esm.sh/md5@2.3.0'
 
 const QF_BASE = 'https://api.quickfile.co.uk/1_2'
-const GLOBAL_ACC_NUM = Deno.env.get('QF_ACCOUNT_NUM') ?? ''
-const GLOBAL_APP_ID  = Deno.env.get('QF_APP_ID') ?? ''
-const GLOBAL_API_KEY = Deno.env.get('QF_API_KEY') ?? ''
+// No global QuickFile credentials — must be configured per site in site_credentials
 
 type QFCreds = { acc: string; appId: string; apiKey: string }
 
@@ -42,14 +40,13 @@ function buildHeader(creds: QFCreds) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getSiteCreds(supabase: any, siteId: string | null): Promise<QFCreds> {
-  if (siteId) {
-    const { data } = await supabase.from('site_credentials').select('qf_account_num, qf_app_id, qf_api_key').eq('site_id', siteId).single()
-    if (data?.qf_account_num && data?.qf_app_id && data?.qf_api_key) {
-      return { acc: data.qf_account_num, appId: data.qf_app_id, apiKey: data.qf_api_key }
-    }
+async function getSiteCreds(supabase: any, siteId: string | null): Promise<QFCreds | null> {
+  if (!siteId) return null
+  const { data } = await supabase.from('site_credentials').select('qf_account_num, qf_app_id, qf_api_key').eq('site_id', siteId).single()
+  if (data?.qf_account_num && data?.qf_app_id && data?.qf_api_key) {
+    return { acc: data.qf_account_num, appId: data.qf_app_id, apiKey: data.qf_api_key }
   }
-  return { acc: GLOBAL_ACC_NUM, appId: GLOBAL_APP_ID, apiKey: GLOBAL_API_KEY }
+  return null
 }
 
 // Returns { body, raw } where body is the response Body for this service/action
@@ -143,7 +140,7 @@ serve(async (req) => {
     // ── Test connection ──────────────────────────────────────────────────────
     if (action === 'test') {
       const creds = await getSiteCreds(supabase, siteIdHint)
-      if (!creds.acc || !creds.appId || !creds.apiKey) return json({ ok: false, error: 'QuickFile credentials not configured for this site.' })
+      if (!creds) return json({ ok: false, error: 'QuickFile credentials not configured for this site.' })
       await qf('client', 'search', {
         SearchParameters: { ReturnCount: 1, Offset: 0, OrderResultsBy: 'CreatedDate', OrderDirection: 'DESC' },
       }, creds)
@@ -154,6 +151,7 @@ serve(async (req) => {
     // ── Find QF client by email ──────────────────────────────────────────────
     if (action === 'find_client') {
       const creds = await getSiteCreds(supabase, siteIdHint)
+      if (!creds) return json({ ok: false, error: 'QuickFile credentials not configured for this site.' })
       const { data: user } = await supabase.from('users').select('*').eq('id', user_id).single()
       if (!user) return json({ ok: false, error: 'User not found' })
       const body = await qf('client', 'search', {
@@ -174,6 +172,7 @@ serve(async (req) => {
     // ── Create QF client for a user ──────────────────────────────────────────
     if (action === 'create_client') {
       const creds = await getSiteCreds(supabase, siteIdHint)
+      if (!creds) return json({ ok: false, error: 'QuickFile credentials not configured for this site.' })
       const { data: user } = await supabase.from('users').select('*').eq('id', user_id).single()
       if (!user) return json({ ok: false, error: 'User not found' })
       const nameParts = (user.name as string).split(' ')
@@ -219,6 +218,7 @@ serve(async (req) => {
       if (lines.length === 0) lines = [{ ItemDescription: inv.description, UnitCost: inv.amount / 100, Qty: 1 }]
 
       const creds = await getSiteCreds(supabase, invSiteId ?? siteIdHint)
+      if (!creds) return json({ ok: false, error: 'QuickFile credentials not configured for this site.' })
       const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines), creds)
       const qfRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
       if (!qfRef) return json({ ok: false, error: `Unexpected QF invoice response: ${JSON.stringify(respBody).slice(0, 200)}` })
@@ -259,6 +259,7 @@ serve(async (req) => {
 
         try {
           const syncCreds = await getSiteCreds(supabase, syncSiteId)
+          if (!syncCreds) { errors.push(`Invoice ${inv.id.slice(0, 8)}: QuickFile not configured for this site`); continue }
           const respBody = await qf('invoice', 'create', invoiceBody(clientId, inv.date, lines), syncCreds)
           const qfRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
           if (qfRef) {
@@ -301,6 +302,7 @@ serve(async (req) => {
       const today = new Date().toISOString().split('T')[0]
       const lines = [{ ItemDescription: desc, UnitCost: booking.deposit / 100, Qty: 1 }]
       const refundCreds = await getSiteCreds(supabase, booking.site_id)
+      if (!refundCreds) return json({ ok: false, error: 'QuickFile credentials not configured for this site.' })
       const respBody = await qf('invoice', 'create', invoiceBody(clientId, today, lines, creditNote), refundCreds)
 
       const creditRef = (respBody as any)?.InvoiceID ?? (respBody as any)?.InvoiceNumber
@@ -322,6 +324,7 @@ serve(async (req) => {
 
       // Search QF for invoices — filter by ClientID from results (API doesn't support it as a search param)
       const pullCreds = await getSiteCreds(supabase, siteIdHint)
+      if (!pullCreds) return json({ ok: false, error: 'QuickFile credentials not configured for this site.' })
       let body: Record<string, unknown>
       try {
         body = await qf('invoice', 'search', {
