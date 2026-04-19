@@ -219,27 +219,11 @@ export default function SiteSettings() {
               </div>
             </div>
 
-            <div className="card">
-              <div className="card-header"><span className="card-title">Photos</span></div>
-              <div style={{ padding: '14px 18px' }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {photos.map(url => (
-                    <div key={url} style={{ position: 'relative', width: 90, height: 70 }}>
-                      <img src={url} alt="" style={{ width: 90, height: 70, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
-                      <button onClick={() => setPhotos(prev => prev.filter(p => p !== url))} style={{ position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: '50%', background: '#000000aa', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
-                    </div>
-                  ))}
-                  <label style={{ width: 90, height: 70, borderRadius: 8, border: '2px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: uploadingPhoto ? 'wait' : 'pointer', color: 'var(--text-muted)', fontSize: 11, gap: 3 }}>
-                    {uploadingPhoto ? '⏳' : <>＋<span>Add photo</span></>}
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadPhoto} disabled={uploadingPhoto} />
-                  </label>
-                </div>
-              </div>
-            </div>
-
           </div>
 
-          {/* Right column — availability */}
+          {/* Right column — availability + photos */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
           <div className="card" style={{ position: 'sticky', top: 16 }}>
             <div className="card-header"><span className="card-title">Availability</span></div>
             <div style={{ overflow: 'hidden' }}>
@@ -268,6 +252,26 @@ export default function SiteSettings() {
                 )
               })}
             </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header"><span className="card-title">Photos</span></div>
+            <div style={{ padding: '14px 18px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {photos.map(url => (
+                  <div key={url} style={{ position: 'relative', width: 90, height: 70 }}>
+                    <img src={url} alt="" style={{ width: 90, height: 70, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                    <button onClick={() => setPhotos(prev => prev.filter(p => p !== url))} style={{ position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: '50%', background: '#000000aa', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+                  </div>
+                ))}
+                <label style={{ width: 90, height: 70, borderRadius: 8, border: '2px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: uploadingPhoto ? 'wait' : 'pointer', color: 'var(--text-muted)', fontSize: 11, gap: 3 }}>
+                  {uploadingPhoto ? '⏳' : <>＋<span>Add photo</span></>}
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadPhoto} disabled={uploadingPhoto} />
+                </label>
+              </div>
+            </div>
+          </div>
+
           </div>
 
         </div>

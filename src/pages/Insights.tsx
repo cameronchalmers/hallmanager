@@ -190,7 +190,7 @@ export default function Insights() {
   const oneoffCount = bookings.filter(b => b.type !== 'recurring').length
 
   return (
-    <div style={{ maxWidth: 960 }}>
+    <div>
 
       {/* Stat cards */}
       <div className="stats-grid" style={{ marginBottom: 20 }}>
