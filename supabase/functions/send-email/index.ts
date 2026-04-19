@@ -15,6 +15,7 @@ import {
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
 const FROM = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
+const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://hallmanager.co.uk'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,12 +24,16 @@ const corsHeaders = {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getAdminEmailsForSite(supabase: any, siteId: string): Promise<string[]> {
+  // Global admins get all sites; site_admins/managers only get their assigned sites
   const { data } = await supabase
     .from('users')
-    .select('email')
-    .in('role', ['admin', 'manager'])
-    .contains('site_ids', [siteId])
-  return (data ?? []).map((u: { email: string }) => u.email).filter(Boolean)
+    .select('email, role, site_ids')
+    .in('role', ['admin', 'site_admin', 'manager'])
+  const users = (data ?? []) as { email: string; role: string; site_ids: string[] | null }[]
+  return users
+    .filter(u => u.role === 'admin' || (u.site_ids ?? []).includes(siteId))
+    .map(u => u.email)
+    .filter(Boolean)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,7 +41,7 @@ async function getAllAdminEmails(supabase: any): Promise<string[]> {
   const { data } = await supabase
     .from('users')
     .select('email')
-    .in('role', ['admin', 'manager'])
+    .in('role', ['admin', 'site_admin', 'manager'])
   return (data ?? []).map((u: { email: string }) => u.email).filter(Boolean)
 }
 
@@ -49,11 +54,13 @@ async function sendEmail(to: string, subject: string, html: string) {
     },
     body: JSON.stringify({ from: FROM, to, subject, html }),
   })
+  const body = await res.json()
   if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Resend error: ${err}`)
+    console.error(`Resend error sending to ${to}:`, JSON.stringify(body))
+    throw new Error(`Resend error: ${JSON.stringify(body)}`)
   }
-  return res.json()
+  console.log(`Email sent to ${to} — id: ${body.id}`)
+  return body
 }
 
 serve(async (req) => {
@@ -77,17 +84,14 @@ serve(async (req) => {
       if (!authHeader) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
       }
-      const userClient = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_ANON_KEY')!,
-        { global: { headers: { Authorization: authHeader } } }
-      )
-      const { data: { user }, error: authError } = await userClient.auth.getUser()
+      const token = authHeader.replace('Bearer ', '')
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
       if (authError || !user) {
+        console.error('Auth error:', authError)
         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
       }
       const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
-      if (!profile || !['admin', 'manager'].includes(profile.role)) {
+      if (!profile || !['admin', 'site_admin', 'manager'].includes(profile.role)) {
         return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
       }
     }
@@ -115,7 +119,7 @@ serve(async (req) => {
 
         const { data: site } = await supabase
           .from('sites')
-          .select('name')
+          .select('name, whatsapp_number')
           .eq('id', booking.site_id)
           .single()
 
@@ -132,7 +136,8 @@ serve(async (req) => {
           deposit: booking.deposit,
           total: booking.total,
           notes: booking.notes,
-          payment_url: booking.stripe_payment_url ?? null,
+          payment_url: `${SITE_URL}/pay/${booking.id}`,
+          whatsapp_number: site?.whatsapp_number ?? null,
         }
       }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSite } from '../context/SiteContext'
 import type { Invoice, AppUser } from '../lib/database.types'
 import { formatPence } from '../lib/money'
 import { format } from 'date-fns'
@@ -10,6 +11,7 @@ type ConnStatus = 'checking' | 'connected' | 'error' | 'unconfigured'
 
 
 export default function QuickFile() {
+  const { currentSite } = useSite()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -22,17 +24,21 @@ export default function QuickFile() {
   const [pullingUser, setPullingUser] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!currentSite) return
     fetchData()
     testConnection()
-  }, [])
+  }, [currentSite?.id])
 
   async function fetchData() {
+    if (!currentSite) return
     setLoading(true)
-    const [invRes, userRes] = await Promise.all([
+    const [bookRes, invRes, userRes] = await Promise.all([
+      supabase.from('bookings').select('id').eq('site_id', currentSite.id),
       supabase.from('invoices').select('*').order('created_at', { ascending: false }),
       supabase.from('users').select('*').eq('role', 'regular'),
     ])
-    setInvoices(invRes.data ?? [])
+    const siteBookingIds = new Set((bookRes.data ?? []).map(b => b.id))
+    setInvoices((invRes.data ?? []).filter(inv => inv.booking_id && siteBookingIds.has(inv.booking_id)))
     setUsers((userRes.data ?? []) as unknown as AppUser[])
     setLoading(false)
   }
@@ -40,7 +46,7 @@ export default function QuickFile() {
   async function testConnection() {
     setConnStatus('checking')
     setConnError('')
-    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'test' } })
+    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'test', site_id: currentSite?.id } })
     if (error || !data?.ok) {
       const msg = data?.error ?? error?.message ?? 'Unknown error'
       setConnError(msg)
@@ -59,7 +65,7 @@ export default function QuickFile() {
 
   async function doSync() {
     setSyncing(true)
-    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'sync_all' } })
+    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'sync_all', site_id: currentSite?.id } })
     if (error || !data?.ok) {
       addLog(`Sync failed: ${data?.error ?? error?.message}`, false)
     } else {
@@ -74,7 +80,7 @@ export default function QuickFile() {
 
   async function findClient(userId: string) {
     setLinkingUser(userId)
-    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'find_client', user_id: userId } })
+    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'find_client', user_id: userId, site_id: currentSite?.id } })
     if (error || !data?.ok) {
       addLog(`Client search failed: ${data?.error ?? error?.message}`, false)
       setLinkingUser(null)
@@ -99,7 +105,7 @@ export default function QuickFile() {
 
   async function createClient(userId: string) {
     setLinkingUser(userId)
-    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'create_client', user_id: userId } })
+    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'create_client', user_id: userId, site_id: currentSite?.id } })
     if (error || !data?.ok) {
       addLog(`Failed to create QF client: ${data?.error ?? error?.message}`, false)
     } else {
@@ -114,7 +120,7 @@ export default function QuickFile() {
   async function pullInvoices(userId: string) {
     setPullingUser(userId)
     const u = users.find(u => u.id === userId)
-    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'pull_invoices', user_id: userId } })
+    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'pull_invoices', user_id: userId, site_id: currentSite?.id } })
     if (error || !data?.ok) {
       addLog(`Failed to pull invoices for ${u?.group_name ?? u?.name}: ${data?.error ?? error?.message}`, false)
     } else {

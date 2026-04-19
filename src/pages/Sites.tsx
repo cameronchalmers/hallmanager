@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Site } from '../lib/database.types'
 import { DEFAULT_AVAILABILITY, type WeekAvailability } from '../lib/database.types'
@@ -6,7 +7,6 @@ import { formatPence, poundsToPence } from '../lib/money'
 import Modal from '../components/ui/Modal'
 
 const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿']
-const AMENITY_OPTIONS = ['WiFi', 'Parking', 'Kitchen', 'Toilets', 'Disabled Access', 'PA System', 'Stage', 'Projector & Screen', 'Tables & Chairs', 'Outdoor Space', 'Bar', 'Air Conditioning', 'Changing Rooms', 'CCTV']
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 
 function toSlug(name: string) {
@@ -31,21 +31,13 @@ const DEFAULT_FORM = {
 }
 
 export default function Sites() {
+  const navigate = useNavigate()
   const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [editing, setEditing] = useState<Site | null>(null)
   const [form, setForm] = useState(DEFAULT_FORM)
-  const [availability, setAvailability] = useState<WeekAvailability>({ ...DEFAULT_AVAILABILITY })
-  const [amenities, setAmenities] = useState<string[]>([])
-  const [description, setDescription] = useState('')
-  const [photos, setPhotos] = useState<string[]>([])
-  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
-  const [copied, setCopied] = useState<string | null>(null) // stores slug, not id
 
   useEffect(() => { fetchSites() }, [])
 
@@ -57,33 +49,7 @@ export default function Sites() {
   }
 
   function openAdd() {
-    setEditing(null)
     setForm(DEFAULT_FORM)
-    setAvailability({ ...DEFAULT_AVAILABILITY })
-    setAmenities([])
-    setDescription('')
-    setPhotos([])
-    setConfirmDelete(false)
-    setSaveError('')
-    setShowModal(true)
-  }
-
-  function openEdit(site: Site) {
-    setEditing(site)
-    setForm({
-      name: site.name,
-      address: site.address,
-      capacity: site.capacity,
-      rate: site.rate,
-      deposit: site.deposit,
-      emoji: site.emoji,
-      min_hours: site.min_hours ?? 1,
-    })
-    setAvailability(getAvailability(site))
-    setAmenities(site.amenities ?? [])
-    setDescription(site.description ?? '')
-    setPhotos(site.photos ?? [])
-    setConfirmDelete(false)
     setSaveError('')
     setShowModal(true)
   }
@@ -91,71 +57,22 @@ export default function Sites() {
   async function saveSite() {
     setSaving(true)
     setSaveError('')
-    // Cast WeekAvailability to Json for the Supabase client
-    const payload = { ...form, availability: availability as unknown as import('../lib/database.types').Json, amenities, description: description || null, photos }
-    if (editing) {
-      const { error } = await supabase.from('sites').update(payload).eq('id', editing.id)
-      if (error) { setSaveError(error.message); setSaving(false); return }
-      setSites(prev => prev.map(s => s.id === editing.id ? { ...s, ...payload } : s))
-    } else {
-      const { data, error } = await supabase.from('sites').insert(payload).select().single()
-      if (error) { setSaveError(error.message); setSaving(false); return }
-      if (data) setSites(prev => [...prev, data])
+    const payload = {
+      ...form,
+      availability: DEFAULT_AVAILABILITY as unknown as import('../lib/database.types').Json,
+      amenities: [],
+      description: null,
+      photos: [],
     }
-    setShowModal(false)
-    setSaving(false)
-  }
-
-  async function deleteSite() {
-    const siteId = editing?.id
-    if (!siteId) return
-    setSaving(true)
-    setDeleteError('')
-    const { error } = await supabase.from('sites').delete().eq('id', siteId)
-    if (error) {
-      setDeleteError(error.message)
-    } else {
-      setSites(prev => prev.filter(s => s.id !== siteId))
+    const { data, error } = await supabase.from('sites').insert(payload).select().single()
+    if (error) { setSaveError(error.message); setSaving(false); return }
+    if (data) {
+      setSites(prev => [...prev, data])
       setShowModal(false)
-      setConfirmDelete(false)
+      navigate(`/${data.id}/site-settings`)
     }
     setSaving(false)
   }
-
-  function toggleAmenity(a: string) {
-    setAmenities(prev => prev.includes(a) ? prev.filter(x => x !== a) : [...prev, a])
-  }
-
-  async function uploadPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || !editing) return
-    if (file.size > 5 * 1024 * 1024) { setSaveError('Photo must be under 5MB'); e.target.value = ''; return }
-    setUploadingPhoto(true)
-    const path = `${editing.id}/${Date.now()}-${file.name.replace(/\s+/g, '-')}`
-    const { error } = await supabase.storage.from('venue-photos').upload(path, file)
-    if (error) { setSaveError(`Photo upload failed: ${error.message}`); setUploadingPhoto(false); return }
-    const { data: { publicUrl } } = supabase.storage.from('venue-photos').getPublicUrl(path)
-    setPhotos(prev => [...prev, publicUrl])
-    setUploadingPhoto(false)
-    e.target.value = ''
-  }
-
-  function removePhoto(url: string) {
-    setPhotos(prev => prev.filter(p => p !== url))
-  }
-
-  function setDay(day: typeof DAYS[number], key: keyof WeekAvailability[typeof DAYS[number]], value: string | boolean) {
-    setAvailability(prev => ({ ...prev, [day]: { ...prev[day], [key]: value } }))
-  }
-
-  function copyLink(site: Site) {
-    const slug = toSlug(site.name)
-    navigator.clipboard.writeText(`${window.location.origin}/book/${slug}`)
-    setCopied(slug)
-    setTimeout(() => setCopied(null), 2000)
-  }
-
-  const bookingUrl = editing ? `${window.location.origin}/book/${toSlug(form.name || editing.name)}` : ''
 
   return (
     <div>
@@ -167,11 +84,13 @@ export default function Sites() {
             const av = getAvailability(site)
             const openDays = DAYS.filter(d => av[d].open)
             return (
-              <div key={site.id} className="site-card" onClick={() => openEdit(site)}>
+              <div key={site.id} className="site-card" style={{ cursor: 'pointer' }} onClick={() => navigate(`/${site.id}/site-settings`)}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                   <span style={{ fontSize: 28 }}>{site.emoji}</span>
                   <button className="btn btn-ghost btn-sm" style={{ padding: '3px 8px', fontSize: 11 }}
-                    onClick={e => { e.stopPropagation(); openEdit(site) }}>Edit</button>
+                    onClick={e => { e.stopPropagation(); navigate(`/${site.id}/dashboard`) }}>
+                    Open
+                  </button>
                 </div>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 3 }}>{site.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>{site.address}</div>
@@ -187,18 +106,12 @@ export default function Sites() {
                     </div>
                   ))}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
                   Open: {openDays.length === 7 ? 'Every day' : openDays.length === 0 ? 'Closed' : openDays.map(d => d.slice(0, 3).charAt(0).toUpperCase() + d.slice(1, 3)).join(', ')}
                   {site.min_hours && site.min_hours > 1 ? ` · Min. ${site.min_hours}hr` : ''}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', background: 'var(--surface2)', padding: '3px 7px', borderRadius: 5, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    /book/{toSlug(site.name)}
-                  </span>
-                  <button className="btn btn-ghost btn-sm" style={{ padding: '2px 8px', fontSize: 10, flexShrink: 0 }}
-                    onClick={e => { e.stopPropagation(); copyLink(site) }}>
-                    {copied === toSlug(site.name) ? '✓ Copied' : 'Copy link'}
-                  </button>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', background: 'var(--surface2)', padding: '3px 7px', borderRadius: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  /book/{toSlug(site.name)}
                 </div>
               </div>
             )
@@ -217,41 +130,18 @@ export default function Sites() {
 
       <Modal
         open={showModal}
-        onClose={() => { setShowModal(false); setConfirmDelete(false) }}
-        title={editing ? `Edit ${editing.name}` : 'Add New Site'}
-        wide
+        onClose={() => { setShowModal(false); setSaveError('') }}
+        title="Add New Site"
         footer={
-          confirmDelete ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-              {deleteError && (
-                <div className="notice notice-warn" style={{ fontSize: 11 }}>
-                  ✗ {deleteError} — you may need to run the DELETE policy SQL in Supabase first.
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', flex: 1 }}>This cannot be undone.</span>
-                <button className="btn btn-ghost btn-sm" onClick={() => { setConfirmDelete(false); setDeleteError('') }}>Cancel</button>
-                <button className="btn btn-danger btn-sm" onClick={deleteSite} disabled={saving}>
-                  {saving ? 'Deleting…' : 'Yes, delete site'}
-                </button>
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            {saveError && <div className="notice notice-warn" style={{ fontSize: 11 }}>✗ {saveError}</div>}
+            <div style={{ display: 'flex', gap: 7 }}>
+              <button className="btn btn-ghost" onClick={() => { setShowModal(false); setSaveError('') }}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveSite} disabled={saving || !form.name}>
+                {saving ? 'Creating…' : 'Create Site'}
+              </button>
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-              {saveError && (
-                <div className="notice notice-warn" style={{ fontSize: 11 }}>
-                  ✗ {saveError} — you may need to run the SQL migrations in Supabase first.
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 7 }}>
-                {editing && <button className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={() => setConfirmDelete(true)}>Delete site</button>}
-                <button className="btn btn-ghost" onClick={() => { setShowModal(false); setConfirmDelete(false); setSaveError('') }}>Cancel</button>
-                <button className="btn btn-primary" onClick={saveSite} disabled={saving || !form.name}>
-                  {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Site'}
-                </button>
-              </div>
-            </div>
-          )
+          </div>
         }
       >
         {/* Emoji */}
@@ -269,7 +159,6 @@ export default function Sites() {
           </div>
         </div>
 
-        {/* Name & address */}
         <div className="form-grid-2">
           <div>
             <label className="form-label">Site name</label>
@@ -281,7 +170,6 @@ export default function Sites() {
           </div>
         </div>
 
-        {/* Rate / deposit / capacity */}
         <div className="form-grid-3">
           <div>
             <label className="form-label">Capacity</label>
@@ -297,101 +185,16 @@ export default function Sites() {
           </div>
         </div>
 
-        {/* Min hours */}
-        <div className="form-row">
+        <div className="form-row" style={{ marginTop: 12 }}>
           <label className="form-label">Minimum booking duration (hours)</label>
           <input className="form-input" type="number" min="0.5" step="0.5" value={form.min_hours}
             onChange={e => setForm(f => ({ ...f, min_hours: Number(e.target.value) }))}
             style={{ maxWidth: 120 }} />
         </div>
 
-        {/* Description */}
-        <div className="form-row">
-          <label className="form-label">Description <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(shown on booking page)</span></label>
-          <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Describe the venue…" value={description} onChange={e => setDescription(e.target.value)} />
+        <div className="notice notice-accent" style={{ marginTop: 16, fontSize: 12 }}>
+          After creating the site, you can configure availability, integrations, and photos in Site Settings.
         </div>
-
-        {/* Amenities */}
-        <div className="sec-label" style={{ marginBottom: 8 }}>Amenities</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-          {AMENITY_OPTIONS.map(a => (
-            <button key={a} onClick={() => toggleAmenity(a)} style={{ padding: '5px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${amenities.includes(a) ? 'var(--accent)' : 'var(--border)'}`, background: amenities.includes(a) ? 'var(--accent-light)' : 'var(--surface2)', color: amenities.includes(a) ? 'var(--accent-text)' : 'var(--text-muted)' }}>
-              {a}
-            </button>
-          ))}
-        </div>
-
-        {/* Photos */}
-        <div className="sec-label" style={{ marginBottom: 8 }}>Photos</div>
-        {!editing && <div className="notice notice-accent" style={{ marginBottom: 12, fontSize: 12 }}>Save the site first, then you can upload photos.</div>}
-        {editing && (
-          <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-              {photos.map(url => (
-                <div key={url} style={{ position: 'relative', width: 90, height: 70 }}>
-                  <img src={url} alt="" style={{ width: 90, height: 70, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
-                  <button onClick={() => removePhoto(url)} style={{ position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: '50%', background: '#000000aa', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
-                </div>
-              ))}
-              <label style={{ width: 90, height: 70, borderRadius: 8, border: '2px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: uploadingPhoto ? 'wait' : 'pointer', color: 'var(--text-muted)', fontSize: 11, gap: 3 }}>
-                {uploadingPhoto ? '⏳' : <>＋<span>Add photo</span></>}
-                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadPhoto} disabled={uploadingPhoto} />
-              </label>
-            </div>
-          </>
-        )}
-
-        {/* Per-day availability */}
-        <div className="sec-label" style={{ marginBottom: 8 }}>Availability by Day</div>
-        <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
-          {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 60px 1fr 1fr', gap: 0, background: 'var(--surface2)', padding: '7px 12px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>
-            <span>Day</span><span>Open</span><span>From</span><span>Until</span>
-          </div>
-          {DAYS.map((day, i) => {
-            const sched = availability[day]
-            return (
-              <div key={day} style={{ display: 'grid', gridTemplateColumns: '110px 60px 1fr 1fr', gap: 0, alignItems: 'center', padding: '8px 12px', borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: sched.open ? 'var(--surface)' : 'var(--surface2)' }}>
-                <span style={{ fontSize: 13, fontWeight: 600, textTransform: 'capitalize' }}>{day}</span>
-                <div>
-                  <button
-                    className="toggle"
-                    style={{ background: sched.open ? 'var(--accent)' : '#d1d5db' }}
-                    onClick={() => setDay(day, 'open', !sched.open)}
-                  >
-                    <span className="toggle-thumb" style={{ left: sched.open ? 18 : 3 }} />
-                  </button>
-                </div>
-                {sched.open ? (
-                  <>
-                    <input className="form-input" type="time" value={sched.from}
-                      onChange={e => setDay(day, 'from', e.target.value)}
-                      style={{ margin: '0 8px 0 0', padding: '5px 8px', fontSize: 12 }} />
-                    <input className="form-input" type="time" value={sched.until}
-                      onChange={e => setDay(day, 'until', e.target.value)}
-                      style={{ padding: '5px 8px', fontSize: 12 }} />
-                  </>
-                ) : (
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', gridColumn: '3 / 5' }}>Closed</span>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Booking link */}
-        {editing && (
-          <>
-            <div className="sec-label" style={{ marginBottom: 8 }}>Public Booking Link</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface2)', borderRadius: 8, padding: '10px 12px' }}>
-              <span style={{ flex: 1, fontSize: 12, fontFamily: 'monospace', color: 'var(--accent-text)', wordBreak: 'break-all' }}>{bookingUrl}</span>
-              <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}
-                onClick={() => { navigator.clipboard.writeText(bookingUrl); setCopied(toSlug(form.name || editing.name)); setTimeout(() => setCopied(null), 2000) }}>
-                {copied === toSlug(form.name || editing.name) ? '✓ Copied' : 'Copy'}
-              </button>
-            </div>
-          </>
-        )}
       </Modal>
     </div>
   )

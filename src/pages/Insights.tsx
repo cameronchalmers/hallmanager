@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSite } from '../context/SiteContext'
 import type { Booking, Invoice, Site } from '../lib/database.types'
 import { formatPence } from '../lib/money'
 import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns'
@@ -88,23 +89,25 @@ function HBar({ label, value, max, color, suffix = '' }: { label: string; value:
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 export default function Insights() {
+  const { currentSite } = useSite()
   const [bookings, setBookings] = useState<Booking[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { if (currentSite) fetchData() }, [currentSite?.id])
 
   async function fetchData() {
+    if (!currentSite) return
     setLoading(true)
-    const [bRes, iRes, sRes] = await Promise.all([
-      supabase.from('bookings').select('*').in('status', ['confirmed', 'approved', 'pending']),
+    const [bRes, iRes] = await Promise.all([
+      supabase.from('bookings').select('*').eq('site_id', currentSite.id).in('status', ['confirmed', 'approved', 'pending']),
       supabase.from('invoices').select('*'),
-      supabase.from('sites').select('*'),
     ])
+    const siteBookingIds = new Set((bRes.data ?? []).map(b => b.id))
     setBookings(bRes.data ?? [])
-    setInvoices(iRes.data ?? [])
-    setSites(sRes.data ?? [])
+    setInvoices((iRes.data ?? []).filter(inv => inv.booking_id && siteBookingIds.has(inv.booking_id)))
+    setSites([currentSite])
     setLoading(false)
   }
 
@@ -187,7 +190,7 @@ export default function Insights() {
   const oneoffCount = bookings.filter(b => b.type !== 'recurring').length
 
   return (
-    <div style={{ maxWidth: 960 }}>
+    <div>
 
       {/* Stat cards */}
       <div className="stats-grid" style={{ marginBottom: 20 }}>

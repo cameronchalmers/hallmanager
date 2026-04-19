@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
+import { useSite } from '../context/SiteContext'
 import type { Booking, ExtraSlot, Site } from '../lib/database.types'
 import { formatPence } from '../lib/money'
 import Badge from '../components/ui/Badge'
@@ -49,37 +50,37 @@ function nextOccurrence(b: Booking, nowIso: string): string {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { currentSite } = useSite()
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
   const [slots, setSlots] = useState<ExtraSlot[]>([])
   const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
   const [preview, setPreview] = useState<BookingWithSite | null>(null)
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { if (currentSite) fetchAll() }, [currentSite?.id])
 
   async function fetchAll() {
+    if (!currentSite) return
     setLoading(true)
-    const [bRes, sRes, sitesRes, usersRes] = await Promise.all([
-      supabase.from('bookings').select('*').order('created_at', { ascending: false }),
-      supabase.from('extra_slots').select('*').order('created_at', { ascending: false }),
-      supabase.from('sites').select('*'),
+    const [bRes, sRes, usersRes] = await Promise.all([
+      supabase.from('bookings').select('*').eq('site_id', currentSite.id).order('created_at', { ascending: false }),
+      supabase.from('extra_slots').select('*').eq('site_id', currentSite.id).order('created_at', { ascending: false }),
       supabase.from('users').select('id, group_name, custom_rates'),
     ])
-    const allSites = sitesRes.data ?? []
     const allUsers = usersRes.data ?? []
     const bookingsWithSites = (bRes.data ?? []).map(b => {
       const linkedUser = allUsers.find(u => u.id === b.user_id)
       const customRate = (linkedUser?.custom_rates as Record<string, number> | null)?.[b.site_id]
       return {
         ...b,
-        sites: allSites.find(s => s.id === b.site_id),
+        sites: currentSite,
         user_group_name: linkedUser?.group_name ?? null,
         effective_total: b.type === 'recurring' && customRate ? Math.round(b.hours * customRate) : (b.total ?? 0),
       }
     }) as BookingWithSite[]
     setBookings(bookingsWithSites)
     setSlots(sRes.data ?? [])
-    setSites(allSites)
+    setSites([currentSite])
     setLoading(false)
   }
 

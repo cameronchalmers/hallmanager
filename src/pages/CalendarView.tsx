@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import CalendarWidget from '../components/CalendarWidget'
 import { supabase } from '../lib/supabase'
-import type { Site } from '../lib/database.types'
+import { useSite } from '../context/SiteContext'
 
 function toDs(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -12,46 +12,32 @@ function fmtDate(ds: string) {
 }
 
 export default function CalendarView() {
-  const [sites, setSites] = useState<Site[]>([])
-  const [selectedSite, setSelectedSite] = useState<Site | null>(null)
+  const { currentSite, setCurrentSite } = useSite()
   const [newDate, setNewDate] = useState('')
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { fetchSites() }, [])
-
-  async function fetchSites() {
-    const { data } = await supabase.from('sites').select('*')
-    const all = data ?? []
-    setSites(all)
-    if (all.length > 0) setSelectedSite(all[0])
-  }
-
   async function addBlock() {
-    if (!selectedSite || !newDate) return
+    if (!currentSite || !newDate) return
     setSaving(true)
-    const current = selectedSite.blocked_dates ?? []
+    const current = currentSite.blocked_dates ?? []
     if (current.includes(newDate)) { setSaving(false); return }
     const updated = [...current, newDate].sort()
-    await supabase.from('sites').update({ blocked_dates: updated }).eq('id', selectedSite.id)
-    const updatedSite = { ...selectedSite, blocked_dates: updated }
-    setSelectedSite(updatedSite)
-    setSites(prev => prev.map(s => s.id === selectedSite.id ? updatedSite : s))
+    await supabase.from('sites').update({ blocked_dates: updated }).eq('id', currentSite.id)
+    setCurrentSite({ ...currentSite, blocked_dates: updated })
     setNewDate('')
     setSaving(false)
   }
 
   async function removeBlock(date: string) {
-    if (!selectedSite) return
-    const updated = (selectedSite.blocked_dates ?? []).filter(d => d !== date)
-    await supabase.from('sites').update({ blocked_dates: updated }).eq('id', selectedSite.id)
-    const updatedSite = { ...selectedSite, blocked_dates: updated }
-    setSelectedSite(updatedSite)
-    setSites(prev => prev.map(s => s.id === selectedSite.id ? updatedSite : s))
+    if (!currentSite) return
+    const updated = (currentSite.blocked_dates ?? []).filter(d => d !== date)
+    await supabase.from('sites').update({ blocked_dates: updated }).eq('id', currentSite.id)
+    setCurrentSite({ ...currentSite, blocked_dates: updated })
   }
 
   const today = toDs(new Date())
-  const upcoming = (selectedSite?.blocked_dates ?? []).filter(d => d >= today).sort()
-  const past = (selectedSite?.blocked_dates ?? []).filter(d => d < today).sort().reverse()
+  const upcoming = (currentSite?.blocked_dates ?? []).filter(d => d >= today).sort()
+  const past = (currentSite?.blocked_dates ?? []).filter(d => d < today).sort().reverse()
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, alignItems: 'start' }}>
@@ -64,16 +50,6 @@ export default function CalendarView() {
         </div>
 
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', marginBottom: 8 }}>Venue</div>
-          <select
-            className="form-input"
-            value={selectedSite?.id ?? ''}
-            onChange={e => setSelectedSite(sites.find(s => s.id === e.target.value) ?? null)}
-            style={{ marginBottom: 12 }}
-          >
-            {sites.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
-          </select>
-
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', marginBottom: 6 }}>Block a date</div>
           <div style={{ display: 'flex', gap: 6 }}>
             <input

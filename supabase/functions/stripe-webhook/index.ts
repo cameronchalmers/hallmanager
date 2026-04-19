@@ -27,22 +27,40 @@ serve(async (req) => {
     return new Response('Invalid signature', { status: 400 })
   }
 
-  if (event.type !== 'checkout.session.completed') {
-    return new Response(JSON.stringify({ received: true }), { status: 200 })
-  }
-
-  const session = event.data.object as Stripe.Checkout.Session
-  const bookingId = session.metadata?.booking_id
-  if (!bookingId) {
-    console.error('No booking_id in session metadata')
-    return new Response('No booking_id', { status: 400 })
-  }
-
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
 
+  // Payment Element flow
+  if (event.type === 'payment_intent.succeeded') {
+    const paymentIntent = event.data.object as Stripe.PaymentIntent
+    const bookingId = paymentIntent.metadata?.booking_id
+    if (!bookingId) {
+      console.error('No booking_id in payment intent metadata')
+      return new Response(JSON.stringify({ received: true }), { status: 200 })
+    }
+    await confirmBooking(supabase, bookingId, paymentIntent.id)
+    return new Response(JSON.stringify({ received: true }), { status: 200 })
+  }
+
+  // Legacy Checkout Session flow (kept for backward compatibility)
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session
+    const bookingId = session.metadata?.booking_id
+    if (!bookingId) {
+      console.error('No booking_id in session metadata')
+      return new Response(JSON.stringify({ received: true }), { status: 200 })
+    }
+    await confirmBooking(supabase, bookingId, null)
+    return new Response(JSON.stringify({ received: true }), { status: 200 })
+  }
+
+  return new Response(JSON.stringify({ received: true }), { status: 200 })
+})
+
+// deno-lint-ignore no-explicit-any
+async function confirmBooking(supabase: any, bookingId: string, paymentIntentId: string | null) {
   const { data: booking, error: bookingErr } = await supabase
     .from('bookings')
     .select('*, sites(name)')
@@ -51,27 +69,32 @@ serve(async (req) => {
 
   if (bookingErr || !booking) {
     console.error('Booking not found:', bookingId, bookingErr)
-    return new Response('Booking not found', { status: 404 })
+    return
   }
 
-  await supabase.from('bookings').update({
+  const updateData: Record<string, unknown> = {
     status: 'confirmed',
     stripe_payment_status: 'paid',
-  }).eq('id', bookingId)
+  }
+  if (paymentIntentId) updateData.stripe_payment_intent_id = paymentIntentId
 
+  const { error: updateErr } = await supabase.from('bookings').update(updateData).eq('id', bookingId)
+  if (updateErr) {
+    console.error('Failed to confirm booking:', bookingId, JSON.stringify(updateErr))
+    return
+  }
   console.log(`Booking ${bookingId} confirmed`)
 
-  // Add to Google Calendar — non-blocking, fails silently if not configured
   if (booking.type === 'oneoff') {
     try {
       const serviceAccountKeyRaw = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_KEY')
       if (serviceAccountKeyRaw) {
-        const { data: calSetting } = await supabase
-          .from('app_settings')
-          .select('value')
-          .eq('key', 'google_calendar_id')
+        const { data: siteCreds } = await supabase
+          .from('site_credentials')
+          .select('google_calendar_id')
+          .eq('site_id', booking.site_id)
           .single()
-        const calendarId = calSetting?.value as string | undefined
+        const calendarId = siteCreds?.google_calendar_id as string | undefined
         if (calendarId) {
           const accessToken = await getGoogleAccessToken(JSON.parse(serviceAccountKeyRaw))
           const eventId = await createCalendarEvent(accessToken, calendarId, {
@@ -91,6 +114,4 @@ serve(async (req) => {
       console.error('Calendar event creation failed (non-fatal):', calErr)
     }
   }
-
-  return new Response(JSON.stringify({ received: true }), { status: 200 })
-})
+}

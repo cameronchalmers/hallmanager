@@ -21,6 +21,8 @@ export interface Database {
           photos: string[] | null
           slug: string | null
           blocked_dates: string[] | null
+          whatsapp_number: string | null
+          google_review_url: string | null
         }
         Insert: {
           id?: string
@@ -39,6 +41,8 @@ export interface Database {
           photos?: string[] | null
           slug?: string | null
           blocked_dates?: string[] | null
+          whatsapp_number?: string | null
+          google_review_url?: string | null
         }
         Update: {
           id?: string
@@ -57,6 +61,41 @@ export interface Database {
           photos?: string[] | null
           slug?: string | null
           blocked_dates?: string[] | null
+          whatsapp_number?: string | null
+          google_review_url?: string | null
+        }
+        Relationships: []
+      }
+      site_credentials: {
+        Row: {
+          site_id: string
+          stripe_secret_key: string | null
+          stripe_publishable_key: string | null
+          qf_account_num: string | null
+          qf_app_id: string | null
+          qf_api_key: string | null
+          google_calendar_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          site_id: string
+          stripe_secret_key?: string | null
+          stripe_publishable_key?: string | null
+          qf_account_num?: string | null
+          qf_app_id?: string | null
+          qf_api_key?: string | null
+          google_calendar_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          site_id?: string
+          stripe_secret_key?: string | null
+          stripe_publishable_key?: string | null
+          qf_account_num?: string | null
+          qf_app_id?: string | null
+          qf_api_key?: string | null
+          google_calendar_id?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -84,6 +123,7 @@ export interface Database {
           stripe_session_id: string | null
           stripe_payment_url: string | null
           stripe_payment_status: string | null
+          stripe_payment_intent_id: string | null
           attended: boolean | null
           session_attendance: Record<string, boolean> | null
           cancelled_sessions: string[] | null
@@ -112,6 +152,7 @@ export interface Database {
           stripe_session_id?: string | null
           stripe_payment_url?: string | null
           stripe_payment_status?: string | null
+          stripe_payment_intent_id?: string | null
           attended?: boolean | null
           session_attendance?: Record<string, boolean> | null
           cancelled_sessions?: string[] | null
@@ -140,6 +181,7 @@ export interface Database {
           stripe_session_id?: string | null
           stripe_payment_url?: string | null
           stripe_payment_status?: string | null
+          stripe_payment_intent_id?: string | null
           attended?: boolean | null
           session_attendance?: Record<string, boolean> | null
           cancelled_sessions?: string[] | null
@@ -285,6 +327,7 @@ export interface Database {
 
 // Convenience types
 export type Site = Database['public']['Tables']['sites']['Row']
+export type SiteCredentials = Database['public']['Tables']['site_credentials']['Row']
 export type Booking = Database['public']['Tables']['bookings']['Row']
 export type Invoice = Database['public']['Tables']['invoices']['Row']
 export type ExtraSlot = Database['public']['Tables']['extra_slots']['Row']
@@ -319,7 +362,7 @@ export interface AppUser {
   id: string
   name: string
   email: string
-  role: 'admin' | 'manager' | 'regular'
+  role: 'admin' | 'site_admin' | 'manager' | 'regular'
   site_ids: string[]
   avatar: string | null
   color: string | null

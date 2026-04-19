@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
+import { useSite } from '../context/SiteContext'
 import type { AppUser, Booking, Site } from '../lib/database.types'
 import { formatPence, poundsToPence } from '../lib/money'
 import Badge from '../components/ui/Badge'
@@ -80,6 +81,7 @@ function calcHours(start: string, end: string) {
 
 
 export default function Bookings() {
+  const { currentSite } = useSite()
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
   const [sites, setSites] = useState<Site[]>([])
   const [regularUsers, setRegularUsers] = useState<AppUser[]>([])
@@ -103,23 +105,22 @@ export default function Bookings() {
   const [invoiceForm, setInvoiceForm] = useState({ description: '', amount: '', date: '', status: 'paid' })
   const [invoiceSaving, setInvoiceSaving] = useState(false)
 
-  useEffect(() => { fetchBookings() }, [])
+  useEffect(() => { if (currentSite) fetchBookings() }, [currentSite?.id])
 
   async function fetchBookings() {
+    if (!currentSite) return
     setLoading(true)
-    const [bRes, sRes, uRes, staffRes] = await Promise.all([
-      supabase.from('bookings').select('*').order('date', { ascending: false }),
-      supabase.from('sites').select('*'),
+    const [bRes, uRes, staffRes] = await Promise.all([
+      supabase.from('bookings').select('*').eq('site_id', currentSite.id).order('date', { ascending: false }),
       supabase.from('users').select('*').eq('role', 'regular'),
       supabase.from('users').select('*').in('role', ['admin', 'manager']),
     ])
-    const allSites = sRes.data ?? []
     const bookingsWithSites = (bRes.data ?? []).map(b => ({
       ...b,
-      sites: allSites.find(s => s.id === b.site_id),
+      sites: currentSite,
     })) as BookingWithSite[]
     setBookings(bookingsWithSites)
-    setSites(allSites)
+    setSites([currentSite])
     setRegularUsers((uRes.data ?? []) as unknown as AppUser[])
     setStaffUsers((staffRes.data ?? []) as unknown as AppUser[])
     setLoading(false)
@@ -134,19 +135,9 @@ export default function Bookings() {
 
   async function approveBooking(id: string) {
     setActionLoading('approve')
-    // Create Stripe payment link first
-    let stripeUrl: string | null = null
-    try {
-      const { data, error } = await supabase.functions.invoke('stripe-action', {
-        body: { action: 'create_payment', booking_id: id },
-      })
-      if (error) console.error('Stripe payment creation failed:', error)
-      else stripeUrl = data?.url ?? null
-    } catch (e) { console.error('Stripe action error:', e) }
-
     await supabase.from('bookings').update({ status: 'approved' }).eq('id', id)
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'approved', stripe_payment_url: stripeUrl } : b))
-    if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'approved', stripe_payment_url: stripeUrl } : null)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'approved' } : b))
+    if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'approved' } : null)
     sendEmail('booking_approved', id)
     setActionLoading(null)
   }
@@ -191,19 +182,6 @@ export default function Bookings() {
     setActionLoading(null)
   }
 
-  async function regeneratePaymentLink(id: string) {
-    setActionLoading('regenerate')
-    const { data, error } = await supabase.functions.invoke('stripe-action', {
-      body: { action: 'create_payment', booking_id: id },
-    })
-    if (error || !data?.url) {
-      alert(`Failed to regenerate payment link: ${error?.message ?? data?.error ?? 'Unknown error'}`)
-    } else {
-      setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_url: data.url } : b))
-      if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_url: data.url } : null)
-    }
-    setActionLoading(null)
-  }
 
   function startEdit(b: BookingWithSite) {
     setEditForm({
@@ -235,8 +213,6 @@ export default function Bookings() {
     const customRate = linkedUser ? (linkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
     const effectiveRate = customRate ?? site?.rate ?? 0
     const total = site ? Math.round(hours * effectiveRate) + selected.deposit : selected.total
-    const totalChanged = total !== selected.total
-
     await supabase.from('bookings').update({
       name: editForm.name,
       email: editForm.email,
@@ -252,15 +228,6 @@ export default function Bookings() {
       notes: editForm.notes || null,
       total,
     }).eq('id', selected.id)
-
-    // If total changed on an unpaid approved booking, regenerate the Stripe payment link
-    if (totalChanged && selected.status === 'approved') {
-      try {
-        await supabase.functions.invoke('stripe-action', {
-          body: { action: 'create_payment', booking_id: selected.id },
-        })
-      } catch (e) { console.error('Stripe regeneration failed:', e) }
-    }
 
     await fetchBookings()
     setEditMode(false)
@@ -826,17 +793,12 @@ export default function Bookings() {
             </div>
           ) : selected?.status === 'approved' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-              {selected.stripe_payment_url && (
-                <div style={{ display: 'flex', gap: 7 }}>
-                  <input readOnly className="form-input" value={selected.stripe_payment_url} style={{ flex: 1, fontSize: 11 }} />
-                  <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(selected.stripe_payment_url!); setCopiedPayment(true); setTimeout(() => setCopiedPayment(false), 2000) }}>
-                    {copiedPayment ? '✓ Copied' : 'Copy link'}
-                  </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => regeneratePaymentLink(selected.id)} disabled={!!actionLoading}>
-                    {actionLoading === 'regenerate' ? 'Regenerating…' : '↺ Regenerate'}
-                  </button>
-                </div>
-              )}
+              <div style={{ display: 'flex', gap: 7 }}>
+                <input readOnly className="form-input" value={`${window.location.origin}/pay/${selected.id}`} style={{ flex: 1, fontSize: 11 }} />
+                <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/pay/${selected.id}`); setCopiedPayment(true); setTimeout(() => setCopiedPayment(false), 2000) }}>
+                  {copiedPayment ? '✓ Copied' : 'Copy link'}
+                </button>
+              </div>
               <div style={{ display: 'flex', gap: 7 }}>
                 <button className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={() => cancelBooking(selected.id)} disabled={!!actionLoading}>
                   {actionLoading === 'cancel' ? 'Cancelling…' : 'Cancel Booking'}
@@ -974,7 +936,7 @@ export default function Bookings() {
               )}
               {selected.status === 'approved' && totalChanged && (
                 <div className="notice notice-accent" style={{ marginBottom: 12, fontSize: 12 }}>
-                  Total will change from {formatPence(selected.total)} to {formatPence(editTotal)}. The Stripe payment link will be regenerated automatically.
+                  Total will change from {formatPence(selected.total)} to {formatPence(editTotal)}. The payment link will reflect the updated amount automatically.
                 </div>
               )}
               <div className="form-grid-2">

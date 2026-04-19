@@ -7,11 +7,11 @@ import Modal from '../components/ui/Modal'
 function RoleBadge({ role }: { role: string }) {
   const m: Record<string, [string, string]> = {
     admin: ['role-admin', 'Admin'],
+    site_admin: ['role-admin', 'Site Admin'],
     manager: ['role-manager', 'Manager'],
-    viewer: ['role-viewer', 'Viewer'],
     regular: ['role-regular', 'Regular Booker'],
   }
-  const [cls, lbl] = m[role] ?? ['role-viewer', role]
+  const [cls, lbl] = m[role] ?? ['role-manager', role]
   return <span className={`badge ${cls}`}>{lbl}</span>
 }
 
@@ -160,14 +160,14 @@ export default function Users() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 2, background: 'var(--surface2)', padding: 3, borderRadius: 8 }}>
-          {['all', 'admin', 'manager', 'regular'].map(t => (
+          {['all', 'admin', 'site_admin', 'manager', 'regular'].map(t => (
             <button
               key={t}
               className="btn btn-sm"
               style={{ background: tab === t ? 'var(--surface)' : 'transparent', color: tab === t ? 'var(--text)' : 'var(--text-muted)', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', border: 'none' }}
               onClick={() => setTab(t)}
             >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'site_admin' ? 'Site Admin' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
@@ -223,7 +223,8 @@ export default function Users() {
           <label className="form-label">Role</label>
           <select className="form-input" value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))}>
             <option value="admin">Admin — full access to all sites</option>
-            <option value="manager">Manager — manage assigned sites</option>
+            <option value="site_admin">Site Admin — manage assigned sites fully</option>
+            <option value="manager">Manager — bookings only for assigned sites</option>
             <option value="regular">Regular Booker — portal access, extra slot requests</option>
           </select>
         </div>
@@ -298,7 +299,7 @@ export default function Users() {
             <div style={{ marginBottom: 14 }}>
               <div className="sec-label" style={{ marginBottom: 6 }}>Role</div>
               <div style={{ display: 'flex', gap: 6 }}>
-                {(['admin', 'manager', 'regular'] as const).map(r => (
+                {(['admin', 'site_admin', 'manager', 'regular'] as const).map(r => (
                   <button
                     key={r}
                     onClick={() => saveRole(selUser.id, r)}
@@ -309,7 +310,7 @@ export default function Users() {
                       color: selUser.role === r ? 'var(--accent-text)' : 'var(--text-muted)',
                     }}
                   >
-                    {r === 'admin' ? 'Admin' : r === 'manager' ? 'Manager' : 'Regular Booker'}
+                    {r === 'admin' ? 'Admin' : r === 'site_admin' ? 'Site Admin' : r === 'manager' ? 'Manager' : 'Regular Booker'}
                   </button>
                 ))}
               </div>

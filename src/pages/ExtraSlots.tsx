@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
+import { useSite } from '../context/SiteContext'
 import type { ExtraSlot, Site } from '../lib/database.types'
 import { formatPence } from '../lib/money'
 import Badge from '../components/ui/Badge'
@@ -8,22 +9,21 @@ import Modal from '../components/ui/Modal'
 import { format } from 'date-fns'
 
 export default function ExtraSlots() {
+  const { currentSite } = useSite()
   const [slots, setSlots] = useState<ExtraSlot[]>([])
   const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [selected, setSelected] = useState<ExtraSlot | null>(null)
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { if (currentSite) fetchData() }, [currentSite?.id])
 
   async function fetchData() {
+    if (!currentSite) return
     setLoading(true)
-    const [sRes, sitesRes] = await Promise.all([
-      supabase.from('extra_slots').select('*').order('created_at', { ascending: false }),
-      supabase.from('sites').select('*'),
-    ])
-    setSlots(sRes.data ?? [])
-    setSites(sitesRes.data ?? [])
+    const { data } = await supabase.from('extra_slots').select('*').eq('site_id', currentSite.id).order('created_at', { ascending: false })
+    setSlots(data ?? [])
+    setSites([currentSite])
     setLoading(false)
   }
 

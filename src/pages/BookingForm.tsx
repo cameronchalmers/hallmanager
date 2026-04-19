@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useForceLightMode } from '../hooks/useForceLightMode'
 import type { Site, WeekAvailability } from '../lib/database.types'
 import { formatPence } from '../lib/money'
 
@@ -82,6 +83,7 @@ function calcHours(start: string, end: string) {
 }
 
 export default function BookingForm() {
+  useForceLightMode()
   const { slug } = useParams<{ slug?: string }>()
   const [searchParams] = useSearchParams()
   const [sites, setSites] = useState<Site[]>([])

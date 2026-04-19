@@ -22,7 +22,10 @@ const BASE = `
 
 const ACCENT = '#7c3aed'
 
-function layout(content: string) {
+function layout(content: string, whatsappNumber?: string | null) {
+  const waLine = whatsappNumber
+    ? `<p style="margin:0 0 8px;"><a href="https://wa.me/${whatsappNumber.replace(/\D/g, '')}" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: ${esc(whatsappNumber)}</a></p>`
+    : ''
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -51,7 +54,7 @@ function layout(content: string) {
 
     <!-- Footer -->
     <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;line-height:1.6;">
-      <p style="margin:0 0 8px;"><a href="https://wa.me/447466214530" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: 07466 214530</a></p>
+      ${waLine}
       <p style="margin:0;">HallManager · <a href="https://hallmanager.co.uk" style="color:#9ca3af;">hallmanager.co.uk</a></p>
       <p style="margin:4px 0 0;">This email was sent automatically — please do not reply.</p>
     </div>
@@ -101,6 +104,7 @@ export interface BookingData {
   total: number
   notes?: string | null
   payment_url?: string | null
+  whatsapp_number?: string | null
 }
 
 export interface ExtraSlotData {
@@ -132,7 +136,7 @@ export function bookingSubmittedAdmin(b: BookingData): { subject: string; html: 
         ${b.notes ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-radius:8px;border-left:3px solid #e5e7eb;"><p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Notes from booker</p><p style="margin:4px 0 0;font-size:14px;color:#374151;">${esc(b.notes)}</p></div>` : ''}
         <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;">Log in to HallManager to approve or deny this request.</p>
       </div>
-    `),
+    `, b.whatsapp_number),
   }
 }
 
@@ -153,7 +157,7 @@ export function bookingSubmitted(b: BookingData): { subject: string; html: strin
         ${b.notes ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-radius:8px;border-left:3px solid #e5e7eb;"><p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Notes</p><p style="margin:4px 0 0;font-size:14px;color:#374151;">${esc(b.notes)}</p></div>` : ''}
         <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;">If you have any questions, reply to your original enquiry or contact us directly.</p>
       </div>
-    `),
+    `, b.whatsapp_number),
   }
 }
 
@@ -187,7 +191,7 @@ export function bookingApproved(b: BookingData): { subject: string; html: string
         `}
         <p style="margin:20px 0 0;font-size:13px;color:#9ca3af;">Once payment is received you'll receive a confirmation email. If you have any questions please get in touch.</p>
       </div>
-    `),
+    `, b.whatsapp_number),
   }
 }
 
@@ -209,7 +213,7 @@ export function bookingDenied(b: BookingData): { subject: string; html: string }
           <p style="margin:0;font-size:14px;color:#991b1b;">If you'd like to discuss alternative dates or arrangements, please get in touch and we'll do our best to help.</p>
         </div>
       </div>
-    `),
+    `, b.whatsapp_number),
   }
 }
 
@@ -283,8 +287,8 @@ export function extraSlotDenied(s: ExtraSlotData): { subject: string; html: stri
 
 // ── Review request ────────────────────────────────────────────────────────────
 
-export function bookingReview(name: string, event: string, siteName: string): { subject: string; html: string } {
-  const reviewUrl = 'https://g.page/r/CcKq1-BztAehEAE/review'
+export function bookingReview(name: string, event: string, siteName: string, reviewUrl?: string | null, whatsappNumber?: string | null): { subject: string; html: string } {
+  const url = reviewUrl || 'https://g.page/r/CcKq1-BztAehEAE/review'
   return {
     subject: `How was your event at ${siteName}?`,
     html: layout(`
@@ -296,11 +300,11 @@ export function bookingReview(name: string, event: string, siteName: string): { 
       <div style="padding:24px 32px;">
         <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">If you enjoyed using our venue, we'd really appreciate a quick Google review — it takes less than a minute and makes a huge difference to us.</p>
         <div style="text-align:center;margin:28px 0;">
-          <a href="${reviewUrl}" style="display:inline-block;background:#f59e0b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">⭐ Leave a Google Review</a>
+          <a href="${url}" style="display:inline-block;background:#f59e0b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">⭐ Leave a Google Review</a>
         </div>
         <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">It only takes a moment and means the world to us. Thank you!</p>
       </div>
-    `),
+    `, whatsappNumber),
   }
 }
 
@@ -322,6 +326,6 @@ export function bookingCancelled(b: BookingData): { subject: string; html: strin
           <p style="margin:0;font-size:14px;color:#374151;">If you believe this is a mistake or would like to rebook, please get in touch and we'll be happy to help.</p>
         </div>
       </div>
-    `),
+    `, b.whatsapp_number),
   }
 }

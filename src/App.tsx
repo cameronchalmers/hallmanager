@@ -1,5 +1,8 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { useAuth } from './context/AuthContext'
+import { SiteProvider, useSite } from './context/SiteContext'
+import { supabase } from './lib/supabase'
 import type { AppUser } from './lib/database.types'
 import Layout from './components/Layout'
 import Login from './pages/Login'
@@ -14,7 +17,10 @@ import Portal from './pages/Portal'
 import Sites from './pages/Sites'
 import Settings from './pages/Settings'
 import Insights from './pages/Insights'
+import SiteSettings from './pages/SiteSettings'
 import PublicCalendar from './pages/PublicCalendar'
+import BookingPaid from './pages/BookingPaid'
+import PayBooking from './pages/PayBooking'
 
 const Spinner = () => (
   <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'Figtree', sans-serif" }}>
@@ -23,59 +29,112 @@ const Spinner = () => (
   </div>
 )
 
-function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+const ROLE_LEVEL: Record<string, number> = { regular: 0, manager: 1, site_admin: 2, admin: 3 }
+
+function ProtectedRoute({ children, minRole = 'manager' }: { children: React.ReactNode; minRole?: 'manager' | 'site_admin' | 'admin' }) {
   const { user, profile, loading } = useAuth()
   if (loading) return <Spinner />
   if (!user) return <Navigate to="/login" replace />
-  // Regular bookers can't access admin routes
-  if (adminOnly && (profile as AppUser | null)?.role === 'regular') return <Navigate to="/portal" replace />
+  const role = (profile as AppUser | null)?.role ?? 'regular'
+  if (role === 'regular') return <Navigate to="/portal" replace />
+  if ((ROLE_LEVEL[role] ?? 0) < ROLE_LEVEL[minRole]) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
-// Sends regular bookers to /portal, everyone else to the dashboard
-function RoleHome() {
+function RootRedirect() {
+  // Supabase puts invite/recovery tokens in the hash — redirect to login to handle them
+  if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
+    return <Navigate to={`/login${window.location.hash}`} replace />
+  }
+
   const { profile, loading } = useAuth()
-  if (loading) return <Spinner />
+  const [firstSiteId, setFirstSiteId] = useState<string | null | undefined>(undefined)
+
+  useEffect(() => {
+    const p = profile as AppUser | null
+    if (!p || p.role === 'regular') return
+    async function load() {
+      if (!p) return
+      let q = supabase.from('sites').select('id').order('name').limit(1)
+      if ((p.role === 'manager' || p.role === 'site_admin') && (p.site_ids as string[])?.length) {
+        q = q.in('id', p.site_ids as string[])
+      }
+      const { data } = await q
+      setFirstSiteId(data?.[0]?.id ?? null)
+    }
+    load()
+  }, [profile?.id])
+
+  if (loading || firstSiteId === undefined) return <Spinner />
   if ((profile as AppUser | null)?.role === 'regular') return <Navigate to="/portal" replace />
-  return <Dashboard />
+  if (firstSiteId) return <Navigate to={`/${firstSiteId}/dashboard`} replace />
+  return <Navigate to="/sites" replace />
+}
+
+function SiteLoader() {
+  const { siteId } = useParams<{ siteId: string }>()
+  const { setCurrentSite } = useSite()
+  const [ready, setReady] = useState(false)
+  const { user } = useAuth()
+
+  useEffect(() => {
+    if (!siteId || !user) return
+    setReady(false)
+    supabase.from('sites').select('*').eq('id', siteId).single()
+      .then(({ data }) => { setCurrentSite(data ?? null); setReady(true) })
+    return () => { setCurrentSite(null) }
+  }, [siteId, user?.id])
+
+  if (!ready) return <Spinner />
+
+  return (
+    <Routes>
+      <Route path="dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="bookings" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
+      <Route path="slots" element={<ProtectedRoute><ExtraSlots /></ProtectedRoute>} />
+      <Route path="calendar" element={<ProtectedRoute><CalendarView /></ProtectedRoute>} />
+      <Route path="insights" element={<ProtectedRoute minRole="site_admin"><Insights /></ProtectedRoute>} />
+      <Route path="invoices" element={<ProtectedRoute minRole="site_admin"><QuickFile /></ProtectedRoute>} />
+      <Route path="site-settings" element={<ProtectedRoute minRole="site_admin"><SiteSettings /></ProtectedRoute>} />
+      <Route index element={<Navigate to="dashboard" replace />} />
+      <Route path="*" element={<Navigate to="dashboard" replace />} />
+    </Routes>
+  )
 }
 
 export default function App() {
   return (
-    <Routes>
-      {/* Public routes — no auth required */}
-      <Route path="/login" element={<Login />} />
-      <Route path="/book" element={<BookingForm />} />
-      <Route path="/book/:slug" element={<BookingForm />} />
-      <Route path="/availability" element={<PublicCalendar />} />
-      <Route path="/availability/:slug" element={<PublicCalendar />} />
+    <SiteProvider>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/book" element={<BookingForm />} />
+        <Route path="/book/:slug" element={<BookingForm />} />
+        <Route path="/availability" element={<PublicCalendar />} />
+        <Route path="/availability/:slug" element={<PublicCalendar />} />
+        <Route path="/booking-paid" element={<BookingPaid />} />
+        <Route path="/pay/:bookingId" element={<PayBooking />} />
 
-      {/* Protected routes */}
-      <Route
-        path="/*"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <Routes>
-                {/* Root: redirect regular users to their portal */}
-                <Route path="/" element={<RoleHome />} />
-                {/* Admin/manager only routes */}
-                <Route path="/bookings" element={<ProtectedRoute adminOnly><Bookings /></ProtectedRoute>} />
-                <Route path="/extra-slots" element={<ProtectedRoute adminOnly><ExtraSlots /></ProtectedRoute>} />
-                <Route path="/calendar" element={<ProtectedRoute adminOnly><CalendarView /></ProtectedRoute>} />
-                <Route path="/insights" element={<ProtectedRoute adminOnly><Insights /></ProtectedRoute>} />
-                <Route path="/quickfile" element={<ProtectedRoute adminOnly><QuickFile /></ProtectedRoute>} />
-                <Route path="/users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
-                <Route path="/sites" element={<ProtectedRoute adminOnly><Sites /></ProtectedRoute>} />
-                {/* Accessible to all authenticated users */}
-                <Route path="/portal" element={<Portal />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-    </Routes>
+        {/* Protected routes */}
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<RootRedirect />} />
+                  <Route path="/portal" element={<Portal />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/users" element={<ProtectedRoute minRole="admin"><Users /></ProtectedRoute>} />
+                  <Route path="/sites" element={<ProtectedRoute minRole="admin"><Sites /></ProtectedRoute>} />
+                  <Route path="/:siteId/*" element={<ProtectedRoute><SiteLoader /></ProtectedRoute>} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </SiteProvider>
   )
 }
