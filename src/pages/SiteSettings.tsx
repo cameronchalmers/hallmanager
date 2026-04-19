@@ -370,7 +370,8 @@ export default function SiteSettings() {
 
       {/* ── Integrations ──────────────────────────────────────────────────────── */}
       {activeSection === 'integrations' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           <div className="card">
             <div className="card-header">
@@ -389,6 +390,8 @@ export default function SiteSettings() {
               </div>
             </div>
           </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           <div className="card">
             <div className="card-header">
@@ -444,6 +447,7 @@ export default function SiteSettings() {
             </div>
           </div>
 
+          </div>
         </div>
       )}
 
