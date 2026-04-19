@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useSite } from '../context/SiteContext'
 import { supabase } from '../lib/supabase'
-import type { Site } from '../lib/database.types'
+import type { AppUser, Site } from '../lib/database.types'
 
 
 function HouseIcon() {
@@ -57,13 +57,17 @@ export default function Layout({ children, pageTitle, actions }: {
     navigate('/login')
   }
 
+  const role = (profile as AppUser | null)?.role
+  const isSiteAdmin = role === 'admin' || role === 'site_admin'
+  const isGlobalAdmin = role === 'admin'
+
   useEffect(() => {
-    const p = profile as import('../lib/database.types').AppUser | null
+    const p = profile as AppUser | null
     if (!p || p.role === 'regular') return
     async function loadSites() {
       if (!p) return
       let q = supabase.from('sites').select('id, name, emoji').order('name')
-      if (p.role === 'manager' && (p.site_ids as string[])?.length) {
+      if ((p.role === 'manager' || p.role === 'site_admin') && (p.site_ids as string[])?.length) {
         q = q.in('id', p.site_ids as string[])
       }
       const { data } = await q
@@ -82,7 +86,7 @@ export default function Layout({ children, pageTitle, actions }: {
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [pickerOpen])
 
-  const isRegular = profile?.role === 'regular'
+  const isRegular = role === 'regular'
 
   // Derive page title from pathname
   const pathSegments = pathname.split('/').filter(Boolean)
@@ -108,24 +112,20 @@ export default function Layout({ children, pageTitle, actions }: {
       { to: `/${currentSite.id}/bookings`, icon: 'list', label: 'Bookings' },
       { to: `/${currentSite.id}/slots`, icon: 'extra', label: 'Extra Slot Requests' },
       { to: `/${currentSite.id}/calendar`, icon: 'cal', label: 'Calendar' },
-      { to: `/${currentSite.id}/insights`, icon: 'chart', label: 'Insights' },
+      ...(isSiteAdmin ? [{ to: `/${currentSite.id}/insights`, icon: 'chart', label: 'Insights' }] : []),
     ],
-    [
-      { to: `/${currentSite.id}/invoices`, icon: 'inv', label: 'Invoices' },
-    ],
-    [
-      { to: `/${currentSite.id}/site-settings`, icon: 'cog', label: 'Site Settings' },
-    ],
+    ...(isSiteAdmin ? [
+      [{ to: `/${currentSite.id}/invoices`, icon: 'inv', label: 'Invoices' }],
+      [{ to: `/${currentSite.id}/site-settings`, icon: 'cog', label: 'Site Settings' }],
+    ] : []),
   ] : []
 
-  const globalNavItems = [
-    [
+  const globalSection = [
+    ...(isGlobalAdmin ? [
       { to: '/users', icon: 'users', label: 'Users & Access' },
       { to: '/sites', icon: 'bld', label: 'Sites & Venues' },
-    ],
-    [
-      { to: '/settings', icon: 'cog', label: 'Settings' },
-    ],
+    ] : []),
+    { to: '/settings', icon: 'cog', label: 'Settings' },
   ]
 
   const regularNavSections = [
@@ -135,14 +135,7 @@ export default function Layout({ children, pageTitle, actions }: {
 
   const navSections = isRegular ? regularNavSections : [
     ...siteNavItems,
-    ...(siteNavItems.length > 0 ? [
-      // divider section for global items
-      [
-        { to: '/users', icon: 'users', label: 'Users & Access' },
-        { to: '/sites', icon: 'bld', label: 'Sites & Venues' },
-        { to: '/settings', icon: 'cog', label: 'Settings' },
-      ],
-    ] : globalNavItems),
+    [globalSection].flat(),
   ]
 
   const isActive = (to: string) => pathname === to || (to !== '/' && pathname.startsWith(to + '/'))

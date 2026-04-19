@@ -102,7 +102,7 @@ async function requireAdmin(req: Request) {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
   const { data: profile } = await serviceClient.from('users').select('role').eq('id', user.id).single()
-  if (!profile || !['admin', 'manager'].includes(profile.role)) return { ok: false as const, response: new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
+  if (!profile || !['admin', 'site_admin'].includes(profile.role)) return { ok: false as const, response: new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
 
   return { ok: true as const }
 }
@@ -116,7 +116,7 @@ serve(async (req) => {
     const auth = await requireAdmin(req)
     if (!auth.ok) return auth.response
 
-    const { email, name, role, reset } = await req.json()
+    const { email, name, role, reset, site_id } = await req.json()
 
     if (!email) {
       return new Response(JSON.stringify({ error: 'Email is required' }), {
@@ -202,8 +202,17 @@ serve(async (req) => {
         email,
         name,
         role,
-        site_ids: [],
+        site_ids: site_id ? [site_id] : [],
       })
+    } else if (!isNewUser && site_id) {
+      // Existing user — add the site to their site_ids if not already present
+      const { data: existing } = await supabase.from('users').select('site_ids').eq('id', linkData.user.id).single()
+      if (existing) {
+        const current: string[] = existing.site_ids ?? []
+        if (!current.includes(site_id)) {
+          await supabase.from('users').update({ site_ids: [...current, site_id] }).eq('id', linkData.user.id)
+        }
+      }
     }
 
     // Send our own branded email via Resend

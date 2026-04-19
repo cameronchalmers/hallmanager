@@ -356,7 +356,7 @@ export interface AppUser {
   id: string
   name: string
   email: string
-  role: 'admin' | 'manager' | 'regular'
+  role: 'admin' | 'site_admin' | 'manager' | 'regular'
   site_ids: string[]
   avatar: string | null
   color: string | null

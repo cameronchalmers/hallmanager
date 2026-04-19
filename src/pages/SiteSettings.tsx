@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSite } from '../context/SiteContext'
-import type { SiteCredentials } from '../lib/database.types'
+import { useAuth } from '../context/AuthContext'
+import type { AppUser, SiteCredentials } from '../lib/database.types'
 import { DEFAULT_AVAILABILITY, type WeekAvailability } from '../lib/database.types'
 import { poundsToPence } from '../lib/money'
 
@@ -23,10 +24,11 @@ const EMPTY_CREDS: Omit<SiteCredentials, 'site_id' | 'updated_at'> = {
   qf_account_num: null, qf_app_id: null, qf_api_key: null,
 }
 
-type Section = 'venue' | 'integrations' | 'booking-link'
+type Section = 'venue' | 'integrations' | 'booking-link' | 'people'
 
 export default function SiteSettings() {
   const { currentSite, setCurrentSite } = useSite()
+  const { profile } = useAuth()
   const [form, setForm] = useState({ name: '', address: '', capacity: 0, rate: 0, deposit: 0, emoji: '🏛️', min_hours: 1 })
   const [availability, setAvailability] = useState<WeekAvailability>({ ...DEFAULT_AVAILABILITY })
   const [amenities, setAmenities] = useState<string[]>([])
@@ -41,6 +43,89 @@ export default function SiteSettings() {
   const [saved, setSaved] = useState(false)
   const [activeSection, setActiveSection] = useState<Section>('venue')
   const [copied, setCopied] = useState<string | null>(null)
+
+  // People tab state
+  const [people, setPeople] = useState<AppUser[]>([])
+  const [peopleLoading, setPeopleLoading] = useState(false)
+  const [addEmail, setAddEmail] = useState('')
+  const [addName, setAddName] = useState('')
+  const [addingPerson, setAddingPerson] = useState(false)
+  const [addResult, setAddResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  async function loadPeople() {
+    if (!currentSite) return
+    setPeopleLoading(true)
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .in('role', ['site_admin', 'manager'])
+      .contains('site_ids', [currentSite.id])
+    setPeople((data ?? []) as unknown as AppUser[])
+    setPeopleLoading(false)
+  }
+
+  useEffect(() => {
+    if (activeSection === 'people') loadPeople()
+  }, [activeSection, currentSite?.id])
+
+  async function addPerson() {
+    if (!currentSite || !addEmail.trim()) return
+    setAddingPerson(true)
+    setAddResult(null)
+    try {
+      // Check if user already exists
+      const { data: existing } = await supabase
+        .from('users')
+        .select('id, name, role, site_ids')
+        .eq('email', addEmail.trim().toLowerCase())
+        .single()
+
+      if (existing) {
+        if ((existing.site_ids as string[])?.includes(currentSite.id)) {
+          setAddResult({ ok: false, msg: `${existing.name} is already assigned to this site.` })
+        } else {
+          // Add site to their existing site_ids
+          await supabase.functions.invoke('update-user', {
+            body: { user_id: existing.id, updates: { site_ids: [...(existing.site_ids ?? []), currentSite.id] } },
+          })
+          setAddResult({ ok: true, msg: `${existing.name} has been added to this site.` })
+          setAddEmail('')
+          setAddName('')
+          loadPeople()
+        }
+      } else {
+        // New user — invite as manager with this site
+        if (!addName.trim()) {
+          setAddResult({ ok: false, msg: 'Enter the person\'s name to send an invite.' })
+          setAddingPerson(false)
+          return
+        }
+        const { data, error } = await supabase.functions.invoke('invite-user', {
+          body: { email: addEmail.trim(), name: addName.trim(), role: 'manager', site_id: currentSite.id },
+        })
+        if (error || data?.error) {
+          setAddResult({ ok: false, msg: data?.error ?? error?.message ?? 'Failed to send invite' })
+        } else {
+          setAddResult({ ok: true, msg: `Invite sent to ${addEmail.trim()}.` })
+          setAddEmail('')
+          setAddName('')
+          loadPeople()
+        }
+      }
+    } catch {
+      setAddResult({ ok: false, msg: 'Something went wrong. Please try again.' })
+    }
+    setAddingPerson(false)
+  }
+
+  async function removePerson(person: AppUser) {
+    if (!currentSite) return
+    const updated = (person.site_ids ?? []).filter(id => id !== currentSite.id)
+    await supabase.functions.invoke('update-user', {
+      body: { user_id: person.id, updates: { site_ids: updated } },
+    })
+    loadPeople()
+  }
 
   useEffect(() => {
     if (!currentSite) return
@@ -125,10 +210,14 @@ export default function SiteSettings() {
 
   if (!currentSite) return null
 
+  const currentUserRole = (profile as AppUser | null)?.role
+  const currentUserId = (profile as AppUser | null)?.id
+
   const tabs: { id: Section; label: string }[] = [
     { id: 'venue', label: 'Venue Details' },
     { id: 'integrations', label: 'Integrations' },
     { id: 'booking-link', label: 'Booking Link' },
+    { id: 'people', label: 'People' },
   ]
 
   return (
@@ -385,14 +474,89 @@ export default function SiteSettings() {
         </div>
       )}
 
-      {/* Save bar */}
-      <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-        {saveError && <span style={{ fontSize: 12, color: 'var(--error, #ef4444)' }}>{saveError}</span>}
-        {saved && <span style={{ fontSize: 12, color: '#16a34a' }}>✓ Saved</span>}
-        <button className="btn btn-primary" onClick={save} disabled={saving || !form.name} style={{ marginLeft: 'auto' }}>
-          {saving ? 'Saving…' : 'Save Changes'}
-        </button>
-      </div>
+      {/* ── People ───────────────────────────────────────────────────────────── */}
+      {activeSection === 'people' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
+
+          {/* Current people */}
+          <div className="card">
+            <div className="card-header"><span className="card-title">Team Members</span></div>
+            {peopleLoading ? (
+              <div style={{ padding: '20px', fontSize: 13, color: 'var(--text-muted)' }}>Loading…</div>
+            ) : people.length === 0 ? (
+              <div style={{ padding: '20px', fontSize: 13, color: 'var(--text-muted)' }}>No team members assigned to this site yet.</div>
+            ) : (
+              people.map((p, i) => {
+                const isYou = p.id === currentUserId
+                const isSiteAdminRow = p.role === 'site_admin'
+                const canRemove = !isYou && !(isSiteAdminRow && currentUserRole !== 'admin')
+                return (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ width: 30, height: 30, borderRadius: '50%', background: (p.color ?? '#7c3aed') + '22', color: p.color ?? '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                      {p.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}{isYou && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>(you)</span>}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.email}</div>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: isSiteAdminRow ? 'var(--accent-light)' : 'var(--surface2)', color: isSiteAdminRow ? 'var(--accent-text)' : 'var(--text-muted)' }}>
+                      {isSiteAdminRow ? 'Site Admin' : 'Manager'}
+                    </span>
+                    {canRemove && (
+                      <button onClick={() => removePerson(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: '2px 4px', lineHeight: 1 }} title="Remove from site">✕</button>
+                    )}
+                    {isSiteAdminRow && !isYou && currentUserRole !== 'admin' && (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Managed globally</span>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          {/* Add person */}
+          <div className="card">
+            <div className="card-header"><span className="card-title">Add Manager</span></div>
+            <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
+                Enter their email address. If they already have an account they'll be added immediately; otherwise an invite will be sent.
+              </p>
+              <div className="form-grid-2">
+                <div>
+                  <label className="form-label">Email address</label>
+                  <input className="form-input" type="email" placeholder="jane@example.com" value={addEmail} onChange={e => { setAddEmail(e.target.value); setAddResult(null) }} />
+                </div>
+                <div>
+                  <label className="form-label">Name <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(required for new users)</span></label>
+                  <input className="form-input" placeholder="Jane Smith" value={addName} onChange={e => setAddName(e.target.value)} />
+                </div>
+              </div>
+              {addResult && (
+                <div className={`notice ${addResult.ok ? 'notice-accent' : 'notice-warn'}`} style={{ marginTop: 0 }}>
+                  {addResult.ok ? '✓ ' : '✗ '}{addResult.msg}
+                </div>
+              )}
+              <div>
+                <button className="btn btn-primary btn-sm" onClick={addPerson} disabled={addingPerson || !addEmail.trim()}>
+                  {addingPerson ? 'Adding…' : 'Add / Invite'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* Save bar — hidden on People tab */}
+      {activeSection !== 'people' && (
+        <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+          {saveError && <span style={{ fontSize: 12, color: 'var(--error, #ef4444)' }}>{saveError}</span>}
+          {saved && <span style={{ fontSize: 12, color: '#16a34a' }}>✓ Saved</span>}
+          <button className="btn btn-primary" onClick={save} disabled={saving || !form.name} style={{ marginLeft: 'auto' }}>
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

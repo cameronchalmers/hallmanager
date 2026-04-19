@@ -11,7 +11,7 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 
-async function requireAdmin(req: Request) {
+async function getCallerProfile(req: Request) {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) return { ok: false as const, response: json({ error: 'Unauthorized' }, 401) }
 
@@ -28,19 +28,19 @@ async function requireAdmin(req: Request) {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
-  const { data: profile } = await serviceClient.from('users').select('role').eq('id', user.id).single()
-  if (!profile || !['admin', 'manager'].includes(profile.role)) {
+  const { data: profile } = await serviceClient.from('users').select('role, site_ids').eq('id', user.id).single()
+  if (!profile || !['admin', 'site_admin'].includes(profile.role)) {
     return { ok: false as const, response: json({ error: 'Forbidden' }, 403) }
   }
 
-  return { ok: true as const, serviceClient }
+  return { ok: true as const, serviceClient, caller: profile as { role: string; site_ids: string[] } }
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const auth = await requireAdmin(req)
+    const auth = await getCallerProfile(req)
     if (!auth.ok) return auth.response
 
     const body = await req.json()
@@ -49,22 +49,26 @@ Deno.serve(async (req) => {
 
     if (!user_id || !updates) return json({ ok: false, error: 'user_id and updates required' })
 
-    // Prevent escalation: only admins can set role to admin/manager
-    if (updates.role && updates.role !== 'regular') {
-      const authHeader = req.headers.get('Authorization')!
-      const userClient = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_ANON_KEY')!,
-        { global: { headers: { Authorization: authHeader } } }
-      )
-      const { data: { user } } = await userClient.auth.getUser()
-      const { data: caller } = await auth.serviceClient.from('users').select('role').eq('id', user!.id).single()
-      if (!caller || caller.role !== 'admin') {
-        return json({ ok: false, error: 'Only admins can change roles' }, 403)
+    const { caller, serviceClient } = auth
+
+    // Fetch the target user to check their current role
+    const { data: target } = await serviceClient.from('users').select('role, site_ids').eq('id', user_id).single()
+
+    if (caller.role === 'site_admin') {
+      // site_admins can only manage managers
+      if (target && target.role !== 'manager' && !(updates.role === 'manager')) {
+        return json({ ok: false, error: 'Site admins can only manage managers' }, 403)
       }
+      // site_admins can only assign the manager role (not promote to site_admin or admin)
+      if (updates.role && updates.role !== 'manager') {
+        return json({ ok: false, error: 'Site admins can only assign the manager role' }, 403)
+      }
+    } else if (caller.role !== 'admin') {
+      // Shouldn't reach here due to getCallerProfile check, but be safe
+      return json({ ok: false, error: 'Forbidden' }, 403)
     }
 
-    const { error } = await auth.serviceClient.from('users').update(updates).eq('id', user_id)
+    const { error } = await serviceClient.from('users').update(updates).eq('id', user_id)
     if (error) return json({ ok: false, error: error.message })
 
     return json({ ok: true })

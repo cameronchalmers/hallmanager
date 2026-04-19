@@ -26,7 +26,7 @@ async function getAdminEmailsForSite(supabase: any, siteId: string): Promise<str
   const { data } = await supabase
     .from('users')
     .select('email')
-    .in('role', ['admin', 'manager'])
+    .in('role', ['admin', 'site_admin', 'manager'])
     .contains('site_ids', [siteId])
   return (data ?? []).map((u: { email: string }) => u.email).filter(Boolean)
 }
@@ -36,7 +36,7 @@ async function getAllAdminEmails(supabase: any): Promise<string[]> {
   const { data } = await supabase
     .from('users')
     .select('email')
-    .in('role', ['admin', 'manager'])
+    .in('role', ['admin', 'site_admin', 'manager'])
   return (data ?? []).map((u: { email: string }) => u.email).filter(Boolean)
 }
 

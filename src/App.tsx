@@ -28,11 +28,15 @@ const Spinner = () => (
   </div>
 )
 
-function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+const ROLE_LEVEL: Record<string, number> = { regular: 0, manager: 1, site_admin: 2, admin: 3 }
+
+function ProtectedRoute({ children, minRole = 'manager' }: { children: React.ReactNode; minRole?: 'manager' | 'site_admin' | 'admin' }) {
   const { user, profile, loading } = useAuth()
   if (loading) return <Spinner />
   if (!user) return <Navigate to="/login" replace />
-  if (adminOnly && (profile as AppUser | null)?.role === 'regular') return <Navigate to="/portal" replace />
+  const role = (profile as AppUser | null)?.role ?? 'regular'
+  if (role === 'regular') return <Navigate to="/portal" replace />
+  if ((ROLE_LEVEL[role] ?? 0) < ROLE_LEVEL[minRole]) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
@@ -46,7 +50,7 @@ function RootRedirect() {
     async function load() {
       if (!p) return
       let q = supabase.from('sites').select('id').order('name').limit(1)
-      if (p.role === 'manager' && (p.site_ids as string[])?.length) {
+      if ((p.role === 'manager' || p.role === 'site_admin') && (p.site_ids as string[])?.length) {
         q = q.in('id', p.site_ids as string[])
       }
       const { data } = await q
@@ -79,13 +83,13 @@ function SiteLoader() {
 
   return (
     <Routes>
-      <Route path="dashboard" element={<ProtectedRoute adminOnly><Dashboard /></ProtectedRoute>} />
-      <Route path="bookings" element={<ProtectedRoute adminOnly><Bookings /></ProtectedRoute>} />
-      <Route path="slots" element={<ProtectedRoute adminOnly><ExtraSlots /></ProtectedRoute>} />
-      <Route path="calendar" element={<ProtectedRoute adminOnly><CalendarView /></ProtectedRoute>} />
-      <Route path="insights" element={<ProtectedRoute adminOnly><Insights /></ProtectedRoute>} />
-      <Route path="invoices" element={<ProtectedRoute adminOnly><QuickFile /></ProtectedRoute>} />
-      <Route path="site-settings" element={<ProtectedRoute adminOnly><SiteSettings /></ProtectedRoute>} />
+      <Route path="dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="bookings" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
+      <Route path="slots" element={<ProtectedRoute><ExtraSlots /></ProtectedRoute>} />
+      <Route path="calendar" element={<ProtectedRoute><CalendarView /></ProtectedRoute>} />
+      <Route path="insights" element={<ProtectedRoute minRole="site_admin"><Insights /></ProtectedRoute>} />
+      <Route path="invoices" element={<ProtectedRoute minRole="site_admin"><QuickFile /></ProtectedRoute>} />
+      <Route path="site-settings" element={<ProtectedRoute minRole="site_admin"><SiteSettings /></ProtectedRoute>} />
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="*" element={<Navigate to="dashboard" replace />} />
     </Routes>
@@ -114,9 +118,9 @@ export default function App() {
                   <Route path="/" element={<RootRedirect />} />
                   <Route path="/portal" element={<Portal />} />
                   <Route path="/settings" element={<Settings />} />
-                  <Route path="/users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
-                  <Route path="/sites" element={<ProtectedRoute adminOnly><Sites /></ProtectedRoute>} />
-                  <Route path="/:siteId/*" element={<ProtectedRoute adminOnly><SiteLoader /></ProtectedRoute>} />
+                  <Route path="/users" element={<ProtectedRoute minRole="admin"><Users /></ProtectedRoute>} />
+                  <Route path="/sites" element={<ProtectedRoute minRole="admin"><Sites /></ProtectedRoute>} />
+                  <Route path="/:siteId/*" element={<ProtectedRoute><SiteLoader /></ProtectedRoute>} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Layout>
