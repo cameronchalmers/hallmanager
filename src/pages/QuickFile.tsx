@@ -80,7 +80,7 @@ export default function QuickFile() {
 
   async function findClient(userId: string) {
     setLinkingUser(userId)
-    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'find_client', user_id: userId } })
+    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'find_client', user_id: userId, site_id: currentSite?.id } })
     if (error || !data?.ok) {
       addLog(`Client search failed: ${data?.error ?? error?.message}`, false)
       setLinkingUser(null)
@@ -105,7 +105,7 @@ export default function QuickFile() {
 
   async function createClient(userId: string) {
     setLinkingUser(userId)
-    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'create_client', user_id: userId } })
+    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'create_client', user_id: userId, site_id: currentSite?.id } })
     if (error || !data?.ok) {
       addLog(`Failed to create QF client: ${data?.error ?? error?.message}`, false)
     } else {
@@ -120,7 +120,7 @@ export default function QuickFile() {
   async function pullInvoices(userId: string) {
     setPullingUser(userId)
     const u = users.find(u => u.id === userId)
-    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'pull_invoices', user_id: userId } })
+    const { data, error } = await supabase.functions.invoke('quickfile', { body: { action: 'pull_invoices', user_id: userId, site_id: currentSite?.id } })
     if (error || !data?.ok) {
       addLog(`Failed to pull invoices for ${u?.group_name ?? u?.name}: ${data?.error ?? error?.message}`, false)
     } else {
