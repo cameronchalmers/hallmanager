@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
+import { useSite } from '../context/SiteContext'
 import type { AppUser, Booking, Site } from '../lib/database.types'
 import { formatPence, poundsToPence } from '../lib/money'
 import Badge from '../components/ui/Badge'
@@ -80,6 +81,7 @@ function calcHours(start: string, end: string) {
 
 
 export default function Bookings() {
+  const { currentSite } = useSite()
   const [bookings, setBookings] = useState<BookingWithSite[]>([])
   const [sites, setSites] = useState<Site[]>([])
   const [regularUsers, setRegularUsers] = useState<AppUser[]>([])
@@ -103,23 +105,22 @@ export default function Bookings() {
   const [invoiceForm, setInvoiceForm] = useState({ description: '', amount: '', date: '', status: 'paid' })
   const [invoiceSaving, setInvoiceSaving] = useState(false)
 
-  useEffect(() => { fetchBookings() }, [])
+  useEffect(() => { if (currentSite) fetchBookings() }, [currentSite?.id])
 
   async function fetchBookings() {
+    if (!currentSite) return
     setLoading(true)
-    const [bRes, sRes, uRes, staffRes] = await Promise.all([
-      supabase.from('bookings').select('*').order('date', { ascending: false }),
-      supabase.from('sites').select('*'),
+    const [bRes, uRes, staffRes] = await Promise.all([
+      supabase.from('bookings').select('*').eq('site_id', currentSite.id).order('date', { ascending: false }),
       supabase.from('users').select('*').eq('role', 'regular'),
       supabase.from('users').select('*').in('role', ['admin', 'manager']),
     ])
-    const allSites = sRes.data ?? []
     const bookingsWithSites = (bRes.data ?? []).map(b => ({
       ...b,
-      sites: allSites.find(s => s.id === b.site_id),
+      sites: currentSite,
     })) as BookingWithSite[]
     setBookings(bookingsWithSites)
-    setSites(allSites)
+    setSites([currentSite])
     setRegularUsers((uRes.data ?? []) as unknown as AppUser[])
     setStaffUsers((staffRes.data ?? []) as unknown as AppUser[])
     setLoading(false)

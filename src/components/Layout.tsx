@@ -1,7 +1,10 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { useSite } from '../context/SiteContext'
+import { supabase } from '../lib/supabase'
+import type { Site } from '../lib/database.types'
 
 
 function HouseIcon() {
@@ -42,51 +45,82 @@ export default function Layout({ children, pageTitle, actions }: {
   const { pathname } = useLocation()
   const { profile, signOut } = useAuth()
   const { accent } = useTheme()
+  const { currentSite } = useSite()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [sites, setSites] = useState<Site[]>([])
+  const pickerRef = useRef<HTMLDivElement>(null)
 
   async function handleSignOut() {
     await signOut()
     navigate('/login')
   }
 
-  const titles: Record<string, string> = {
-    '/': 'Dashboard',
-    '/bookings': 'All Bookings',
-    '/extra-slots': 'Extra Slot Requests',
-    '/calendar': 'Calendar',
-    '/quickfile': 'QuickFile Integration',
-    '/users': 'Users & Access',
-    '/portal': 'Regular Booker Portal',
-    '/sites': 'Sites & Venues',
-    '/settings': 'Settings',
-  }
+  useEffect(() => {
+    const p = profile as import('../lib/database.types').AppUser | null
+    if (!p || p.role === 'regular') return
+    async function loadSites() {
+      if (!p) return
+      let q = supabase.from('sites').select('id, name, emoji').order('name')
+      if (p.role === 'manager' && (p.site_ids as string[])?.length) {
+        q = q.in('id', p.site_ids as string[])
+      }
+      const { data } = await q
+      setSites((data ?? []) as Site[])
+    }
+    loadSites()
+  }, [profile?.id])
 
-  const currentTitle = pageTitle ?? titles[pathname] ?? 'HallManager'
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false)
+      }
+    }
+    if (pickerOpen) document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [pickerOpen])
 
   const isRegular = profile?.role === 'regular'
 
-  const navSections = isRegular ? [
+  // Derive page title from pathname
+  const pathSegments = pathname.split('/').filter(Boolean)
+  const lastSegment = pathSegments[pathSegments.length - 1] ?? ''
+  const segmentTitles: Record<string, string> = {
+    dashboard: 'Dashboard',
+    bookings: 'Bookings',
+    slots: 'Extra Slot Requests',
+    calendar: 'Calendar',
+    insights: 'Insights',
+    invoices: 'QuickFile Invoices',
+    'site-settings': 'Site Settings',
+    users: 'Users & Access',
+    sites: 'Sites & Venues',
+    settings: 'Settings',
+    portal: 'My Portal',
+  }
+  const currentTitle = pageTitle ?? segmentTitles[lastSegment] ?? (currentSite?.name ?? 'HallManager')
+
+  const siteNavItems = currentSite ? [
     [
-      { to: '/portal', icon: 'rep', label: 'My Portal' },
+      { to: `/${currentSite.id}/dashboard`, icon: 'grid', label: 'Dashboard' },
+      { to: `/${currentSite.id}/bookings`, icon: 'list', label: 'Bookings' },
+      { to: `/${currentSite.id}/slots`, icon: 'extra', label: 'Extra Slot Requests' },
+      { to: `/${currentSite.id}/calendar`, icon: 'cal', label: 'Calendar' },
+      { to: `/${currentSite.id}/insights`, icon: 'chart', label: 'Insights' },
     ],
     [
-      { to: '/settings', icon: 'cog', label: 'Settings' },
-    ],
-  ] : [
-    [
-      { to: '/', icon: 'grid', label: 'Dashboard' },
-      { to: '/bookings', icon: 'list', label: 'Bookings' },
-      { to: '/extra-slots', icon: 'extra', label: 'Extra Slot Requests' },
-      { to: '/calendar', icon: 'cal', label: 'Calendar' },
-      { to: '/insights', icon: 'chart', label: 'Insights' },
+      { to: `/${currentSite.id}/invoices`, icon: 'inv', label: 'Invoices' },
     ],
     [
-      { to: '/quickfile', icon: 'inv', label: 'QuickFile' },
+      { to: `/${currentSite.id}/site-settings`, icon: 'cog', label: 'Site Settings' },
     ],
+  ] : []
+
+  const globalNavItems = [
     [
       { to: '/users', icon: 'users', label: 'Users & Access' },
-      { to: '/portal', icon: 'rep', label: 'Regular Booker Portal' },
       { to: '/sites', icon: 'bld', label: 'Sites & Venues' },
     ],
     [
@@ -94,7 +128,24 @@ export default function Layout({ children, pageTitle, actions }: {
     ],
   ]
 
-  const isActive = (to: string) => to === '/' ? pathname === '/' : pathname.startsWith(to)
+  const regularNavSections = [
+    [{ to: '/portal', icon: 'rep', label: 'My Portal' }],
+    [{ to: '/settings', icon: 'cog', label: 'Settings' }],
+  ]
+
+  const navSections = isRegular ? regularNavSections : [
+    ...siteNavItems,
+    ...(siteNavItems.length > 0 ? [
+      // divider section for global items
+      [
+        { to: '/users', icon: 'users', label: 'Users & Access' },
+        { to: '/sites', icon: 'bld', label: 'Sites & Venues' },
+        { to: '/settings', icon: 'cog', label: 'Settings' },
+      ],
+    ] : globalNavItems),
+  ]
+
+  const isActive = (to: string) => pathname === to || (to !== '/' && pathname.startsWith(to + '/'))
 
   const SidebarContent = () => (
     <aside style={{ width: 224, background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)', display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
@@ -109,14 +160,50 @@ export default function Layout({ children, pageTitle, actions }: {
         </div>
       </div>
 
-      {/* Site switcher — admins/managers only */}
+      {/* Site picker */}
       {!isRegular && (
-        <div style={{ margin: '10px 10px 6px', padding: '8px 11px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 1 }}>All sites</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Overview</div>
-          </div>
-          <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>▾</span>
+        <div ref={pickerRef} style={{ margin: '10px 10px 6px', position: 'relative', flexShrink: 0 }}>
+          <button
+            onClick={() => setPickerOpen(o => !o)}
+            style={{ width: '100%', padding: '8px 11px', background: 'var(--bg)', border: `1px solid ${pickerOpen ? accent : 'var(--border)'}`, borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', textAlign: 'left' }}
+          >
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 1 }}>
+                {currentSite ? 'Current site' : 'All sites'}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                {currentSite ? `${currentSite.emoji} ${currentSite.name}` : 'Overview'}
+              </div>
+            </div>
+            <span style={{ color: 'var(--text-muted)', fontSize: 10, transform: pickerOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          </button>
+
+          {pickerOpen && (
+            <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 100, overflow: 'hidden' }}>
+              {currentSite && (
+                <button
+                  onClick={() => { navigate('/'); setPickerOpen(false) }}
+                  style={{ width: '100%', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}
+                >
+                  ← All sites overview
+                </button>
+              )}
+              {sites.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => { navigate(`/${s.id}/dashboard`); setPickerOpen(false) }}
+                  style={{ width: '100%', padding: '9px 12px', background: s.id === currentSite?.id ? 'var(--accent-light)' : 'none', border: 'none', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: s.id === currentSite?.id ? 600 : 500, color: s.id === currentSite?.id ? 'var(--accent-text)' : 'var(--text)' }}
+                >
+                  <span>{s.emoji}</span>
+                  <span style={{ flex: 1 }}>{s.name}</span>
+                  {s.id === currentSite?.id && <span style={{ fontSize: 10, color: accent }}>✓</span>}
+                </button>
+              ))}
+              {sites.length === 0 && (
+                <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text-muted)' }}>No sites yet</div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
