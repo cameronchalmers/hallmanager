@@ -146,9 +146,17 @@ export default function Layout({ children, pageTitle, actions }: {
   ]
 
   const isActive = (to: string) => pathname === to || (to !== '/' && pathname.startsWith(to + '/'))
+  const isStaging = window.location.hostname.includes('staging') || window.location.hostname === 'localhost'
 
   const SidebarContent = () => (
     <aside style={{ width: 224, background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)', display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      {/* Staging banner */}
+      {isStaging && (
+        <div style={{ background: '#92400e', padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24', flexShrink: 0, boxShadow: '0 0 0 2px #92400e, 0 0 0 3px #fbbf24' }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#fde68a', letterSpacing: '1px', textTransform: 'uppercase' }}>Staging</span>
+        </div>
+      )}
       {/* Logo */}
       <div style={{ padding: '18px 16px 14px', display: 'flex', alignItems: 'center', gap: 9, borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ width: 30, height: 30, background: accent, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'white' }}>
