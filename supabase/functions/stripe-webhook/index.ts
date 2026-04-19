@@ -78,7 +78,11 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
   }
   if (paymentIntentId) updateData.stripe_payment_intent_id = paymentIntentId
 
-  await supabase.from('bookings').update(updateData).eq('id', bookingId)
+  const { error: updateErr } = await supabase.from('bookings').update(updateData).eq('id', bookingId)
+  if (updateErr) {
+    console.error('Failed to confirm booking:', bookingId, JSON.stringify(updateErr))
+    return
+  }
   console.log(`Booking ${bookingId} confirmed`)
 
   if (booking.type === 'oneoff') {
