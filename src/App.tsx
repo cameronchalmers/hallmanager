@@ -20,6 +20,7 @@ import Insights from './pages/Insights'
 import SiteSettings from './pages/SiteSettings'
 import PublicCalendar from './pages/PublicCalendar'
 import BookingPaid from './pages/BookingPaid'
+import PayBooking from './pages/PayBooking'
 
 const Spinner = () => (
   <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'Figtree', sans-serif" }}>
@@ -112,6 +113,7 @@ export default function App() {
         <Route path="/availability" element={<PublicCalendar />} />
         <Route path="/availability/:slug" element={<PublicCalendar />} />
         <Route path="/booking-paid" element={<BookingPaid />} />
+        <Route path="/pay/:bookingId" element={<PayBooking />} />
 
         {/* Protected routes */}
         <Route

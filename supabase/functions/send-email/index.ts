@@ -15,6 +15,7 @@ import {
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
 const FROM = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
+const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://hallmanager.co.uk'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -132,7 +133,7 @@ serve(async (req) => {
           deposit: booking.deposit,
           total: booking.total,
           notes: booking.notes,
-          payment_url: booking.stripe_payment_url ?? null,
+          payment_url: `${SITE_URL}/pay/${booking.id}`,
           whatsapp_number: site?.whatsapp_number ?? null,
         }
       }
