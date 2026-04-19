@@ -1,0 +1,11 @@
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS min_hours integer;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS available_from text;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS available_until text;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS availability jsonb;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS description text;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS amenities text[];
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS photos text[];
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS slug text;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS blocked_dates text[];
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS whatsapp_number text;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS google_review_url text;
