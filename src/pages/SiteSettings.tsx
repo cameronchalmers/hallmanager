@@ -132,7 +132,7 @@ export default function SiteSettings() {
   ]
 
   return (
-    <div style={{ maxWidth: 960 }}>
+    <div>
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 2, marginBottom: 24, background: 'var(--surface2)', borderRadius: 10, padding: 3, width: 'fit-content' }}>
         {tabs.map(t => (
