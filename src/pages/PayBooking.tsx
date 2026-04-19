@@ -23,7 +23,7 @@ function formatPence(p: number) {
   return `£${v % 1 === 0 ? v.toFixed(0) : v.toFixed(2)}`
 }
 
-function CheckoutForm({ booking }: { booking: BookingSummary }) {
+function CheckoutForm({ booking, bookingId }: { booking: BookingSummary; bookingId: string }) {
   const stripe = useStripe()
   const elements = useElements()
   const [submitting, setSubmitting] = useState(false)
@@ -38,7 +38,7 @@ function CheckoutForm({ booking }: { booking: BookingSummary }) {
     const { error: stripeError } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/booking-paid`,
+        return_url: `${window.location.origin}/booking-paid?booking_id=${bookingId}`,
       },
     })
 
@@ -255,7 +255,7 @@ export default function PayBooking() {
                 },
               }}
             >
-              <CheckoutForm booking={booking} />
+              <CheckoutForm booking={booking} bookingId={bookingId!} />
             </Elements>
           </div>
         </div>

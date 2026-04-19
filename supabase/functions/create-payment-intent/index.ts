@@ -58,6 +58,33 @@ serve(async (req) => {
 
     const site = booking.sites as { name: string } | null
 
+    // Reuse an existing PaymentIntent if one exists and hasn't been cancelled
+    if (booking.stripe_payment_intent_id) {
+      const existing = await stripe.paymentIntents.retrieve(booking.stripe_payment_intent_id)
+      if (existing.status === 'succeeded') {
+        return json({ error: 'already_paid' }, 409)
+      }
+      if (existing.status !== 'canceled') {
+        return json({
+          client_secret: existing.client_secret,
+          publishable_key: siteCreds.stripe_publishable_key,
+          booking: {
+            name: booking.name,
+            event: booking.event,
+            date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', {
+              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+            }),
+            start_time: booking.start_time,
+            end_time: booking.end_time,
+            site_name: site?.name ?? 'Unknown venue',
+            total: booking.total,
+            deposit: booking.deposit,
+          },
+        })
+      }
+      // Canceled — fall through to create a new one
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: booking.total,
       currency: 'gbp',
