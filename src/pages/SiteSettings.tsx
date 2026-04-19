@@ -22,6 +22,7 @@ function getAvailability(av: unknown): WeekAvailability {
 const EMPTY_CREDS: Omit<SiteCredentials, 'site_id' | 'updated_at'> = {
   stripe_secret_key: null, stripe_publishable_key: null,
   qf_account_num: null, qf_app_id: null, qf_api_key: null,
+  google_calendar_id: null,
 }
 
 type Section = 'venue' | 'integrations' | 'booking-link' | 'people'
@@ -154,6 +155,7 @@ export default function SiteSettings() {
           qf_account_num: data.qf_account_num ?? null,
           qf_app_id: data.qf_app_id ?? null,
           qf_api_key: data.qf_api_key ?? null,
+          google_calendar_id: data.google_calendar_id ?? null,
         })
       })
   }, [currentSite?.id])
@@ -401,6 +403,20 @@ export default function SiteSettings() {
               <div>
                 <label className="form-label">Publishable key</label>
                 <input className="form-input" placeholder={creds.stripe_publishable_key ? '••••••••' : 'pk_live_...'} value={creds.stripe_publishable_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_publishable_key: e.target.value || null }))} />
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Google Calendar</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Booking events</span>
+            </div>
+            <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label className="form-label">Calendar ID</label>
+                <input className="form-input" placeholder="your-calendar@group.calendar.google.com" value={creds.google_calendar_id ?? ''} onChange={e => setCreds(c => ({ ...c, google_calendar_id: e.target.value || null }))} />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Share this calendar with your service account (Editor access) to enable event creation.</div>
               </div>
             </div>
           </div>

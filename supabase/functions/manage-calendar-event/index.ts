@@ -49,14 +49,14 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Google Calendar not configured' }), { status: 503, headers: corsHeaders })
     }
 
-    const { data: calSetting } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'google_calendar_id')
-      .single()
-    const calendarId = calSetting?.value as string | undefined
+    // Fetch booking to get site_id
+    const { data: bookingForSite } = await supabase
+      .from('bookings').select('site_id').eq('id', booking_id).single()
+    const { data: siteCreds } = await supabase
+      .from('site_credentials').select('google_calendar_id').eq('site_id', bookingForSite?.site_id ?? '').single()
+    const calendarId = siteCreds?.google_calendar_id
     if (!calendarId) {
-      return new Response(JSON.stringify({ error: 'Google Calendar ID not set' }), { status: 503, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: 'Google Calendar ID not set for this site' }), { status: 503, headers: corsHeaders })
     }
 
     const accessToken = await getGoogleAccessToken(JSON.parse(serviceAccountKeyRaw))

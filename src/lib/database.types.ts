@@ -74,6 +74,7 @@ export interface Database {
           qf_account_num: string | null
           qf_app_id: string | null
           qf_api_key: string | null
+          google_calendar_id: string | null
           updated_at: string
         }
         Insert: {
@@ -83,6 +84,7 @@ export interface Database {
           qf_account_num?: string | null
           qf_app_id?: string | null
           qf_api_key?: string | null
+          google_calendar_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -92,6 +94,7 @@ export interface Database {
           qf_account_num?: string | null
           qf_app_id?: string | null
           qf_api_key?: string | null
+          google_calendar_id?: string | null
           updated_at?: string
         }
         Relationships: []

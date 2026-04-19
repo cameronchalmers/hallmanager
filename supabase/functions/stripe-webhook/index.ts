@@ -66,12 +66,12 @@ serve(async (req) => {
     try {
       const serviceAccountKeyRaw = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_KEY')
       if (serviceAccountKeyRaw) {
-        const { data: calSetting } = await supabase
-          .from('app_settings')
-          .select('value')
-          .eq('key', 'google_calendar_id')
+        const { data: siteCreds } = await supabase
+          .from('site_credentials')
+          .select('google_calendar_id')
+          .eq('site_id', booking.site_id)
           .single()
-        const calendarId = calSetting?.value as string | undefined
+        const calendarId = siteCreds?.google_calendar_id
         if (calendarId) {
           const accessToken = await getGoogleAccessToken(JSON.parse(serviceAccountKeyRaw))
           const eventId = await createCalendarEvent(accessToken, calendarId, {
