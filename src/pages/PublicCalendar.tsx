@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useForceLightMode } from '../hooks/useForceLightMode'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -84,6 +85,7 @@ function fmt12(t: string) {
 }
 
 export default function PublicCalendar() {
+  useForceLightMode()
   const { slug } = useParams<{ slug?: string }>()
   const today = new Date()
   const [cal, setCal] = useState({ year: today.getFullYear(), month: today.getMonth() })

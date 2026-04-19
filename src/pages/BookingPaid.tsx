@@ -1,4 +1,7 @@
+import { useForceLightMode } from '../hooks/useForceLightMode'
+
 export default function BookingPaid() {
+  useForceLightMode()
   return (
     <div style={{
       minHeight: '100vh',
