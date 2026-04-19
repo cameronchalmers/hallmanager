@@ -148,7 +148,7 @@ export default function SiteSettings() {
 
       {/* ── Venue Details ─────────────────────────────────────────────────────── */}
       {activeSection === 'venue' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
 
           {/* Left column — main fields */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
