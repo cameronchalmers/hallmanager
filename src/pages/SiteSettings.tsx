@@ -371,81 +371,86 @@ export default function SiteSettings() {
       {/* ── Integrations ──────────────────────────────────────────────────────── */}
       {activeSection === 'integrations' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+
+          {/* Left column — Contact & Google Calendar */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Contact & Reviews</span>
-            </div>
-            <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label className="form-label">WhatsApp number</label>
-                <input className="form-input" placeholder="e.g. 447466214530" value={whatsappNumber} onChange={e => setWhatsappNumber(e.target.value)} />
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Used in email footers so bookers can reach you. Include country code, no + or spaces.</div>
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Contact & Reviews</span>
               </div>
-              <div>
-                <label className="form-label">Google Review URL</label>
-                <input className="form-input" placeholder="https://g.page/r/..." value={googleReviewUrl} onChange={e => setGoogleReviewUrl(e.target.value)} />
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Included in post-booking review request emails.</div>
+              <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label className="form-label">WhatsApp number</label>
+                  <input className="form-input" placeholder="e.g. 447466214530" value={whatsappNumber} onChange={e => setWhatsappNumber(e.target.value)} />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Used in email footers so bookers can reach you. Include country code, no + or spaces.</div>
+                </div>
+                <div>
+                  <label className="form-label">Google Review URL</label>
+                  <input className="form-input" placeholder="https://g.page/r/..." value={googleReviewUrl} onChange={e => setGoogleReviewUrl(e.target.value)} />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Included in post-booking review request emails.</div>
+                </div>
               </div>
             </div>
+
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Google Calendar</span>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Booking events</span>
+              </div>
+              <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <label className="form-label">Calendar ID</label>
+                  <input className="form-input" placeholder="your-calendar@group.calendar.google.com" value={creds.google_calendar_id ?? ''} onChange={e => setCreds(c => ({ ...c, google_calendar_id: e.target.value || null }))} />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Share this calendar with your service account (Editor access) to enable event creation.</div>
+                </div>
+              </div>
+            </div>
+
           </div>
 
+          {/* Right column — Stripe & QuickFile */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Stripe</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Payment processing</span>
-            </div>
-            <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label className="form-label">Secret key</label>
-                <input className="form-input" type="password" placeholder={creds.stripe_secret_key ? '••••••••' : 'sk_live_...'} value={creds.stripe_secret_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_secret_key: e.target.value || null }))} autoComplete="new-password" />
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Stripe</span>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Payment processing</span>
               </div>
-              <div>
-                <label className="form-label">Publishable key</label>
-                <input className="form-input" placeholder={creds.stripe_publishable_key ? '••••••••' : 'pk_live_...'} value={creds.stripe_publishable_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_publishable_key: e.target.value || null }))} />
+              <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <label className="form-label">Secret key</label>
+                  <input className="form-input" type="password" placeholder={creds.stripe_secret_key ? '••••••••' : 'sk_live_...'} value={creds.stripe_secret_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_secret_key: e.target.value || null }))} autoComplete="new-password" />
+                </div>
+                <div>
+                  <label className="form-label">Publishable key</label>
+                  <input className="form-input" placeholder={creds.stripe_publishable_key ? '••••••••' : 'pk_live_...'} value={creds.stripe_publishable_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_publishable_key: e.target.value || null }))} />
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Google Calendar</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Booking events</span>
-            </div>
-            <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label className="form-label">Calendar ID</label>
-                <input className="form-input" placeholder="your-calendar@group.calendar.google.com" value={creds.google_calendar_id ?? ''} onChange={e => setCreds(c => ({ ...c, google_calendar_id: e.target.value || null }))} />
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Share this calendar with your service account (Editor access) to enable event creation.</div>
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">QuickFile</span>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Invoicing & accounts</span>
               </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">QuickFile</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Invoicing & accounts</span>
-            </div>
-            <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div className="form-grid-3">
-                <div>
-                  <label className="form-label">Account no.</label>
-                  <input className="form-input" placeholder={creds.qf_account_num ? '••••••••' : '12345678'} value={creds.qf_account_num ?? ''} onChange={e => setCreds(c => ({ ...c, qf_account_num: e.target.value || null }))} />
-                </div>
-                <div>
-                  <label className="form-label">App ID</label>
-                  <input className="form-input" placeholder={creds.qf_app_id ? '••••••••' : 'app-id'} value={creds.qf_app_id ?? ''} onChange={e => setCreds(c => ({ ...c, qf_app_id: e.target.value || null }))} />
-                </div>
-                <div>
-                  <label className="form-label">API key</label>
-                  <input className="form-input" type="password" placeholder={creds.qf_api_key ? '••••••••' : 'api-key'} value={creds.qf_api_key ?? ''} onChange={e => setCreds(c => ({ ...c, qf_api_key: e.target.value || null }))} autoComplete="new-password" />
+              <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="form-grid-3">
+                  <div>
+                    <label className="form-label">Account no.</label>
+                    <input className="form-input" placeholder={creds.qf_account_num ? '••••••••' : '12345678'} value={creds.qf_account_num ?? ''} onChange={e => setCreds(c => ({ ...c, qf_account_num: e.target.value || null }))} />
+                  </div>
+                  <div>
+                    <label className="form-label">App ID</label>
+                    <input className="form-input" placeholder={creds.qf_app_id ? '••••••••' : 'app-id'} value={creds.qf_app_id ?? ''} onChange={e => setCreds(c => ({ ...c, qf_app_id: e.target.value || null }))} />
+                  </div>
+                  <div>
+                    <label className="form-label">API key</label>
+                    <input className="form-input" type="password" placeholder={creds.qf_api_key ? '••••••••' : 'api-key'} value={creds.qf_api_key ?? ''} onChange={e => setCreds(c => ({ ...c, qf_api_key: e.target.value || null }))} autoComplete="new-password" />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
           </div>
         </div>
