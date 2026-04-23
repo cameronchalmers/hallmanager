@@ -59,6 +59,25 @@ export default function Dashboard() {
 
   useEffect(() => { if (currentSite) fetchAll() }, [currentSite?.id])
 
+  useEffect(() => {
+    if (!currentSite) return
+    const channel = supabase
+      .channel(`dashboard-bookings:${currentSite.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'bookings', filter: `site_id=eq.${currentSite.id}` },
+        (payload) => {
+          const updated = payload.new as Booking
+          setBookings(prev => prev.map(b =>
+            b.id === updated.id ? { ...b, ...updated, sites: currentSite } : b
+          ))
+          setPreview(prev => prev?.id === updated.id ? { ...prev, ...updated, sites: currentSite } : prev)
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [currentSite?.id])
+
   async function fetchAll() {
     if (!currentSite) return
     setLoading(true)

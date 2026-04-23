@@ -88,7 +88,7 @@ export default function Bookings() {
   const [staffUsers, setStaffUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'oneoff' | 'recurring'>('oneoff')
-  const [statusFilter, setStatusFilter] = useState('active')
+  const [statusFilter, setStatusFilter] = useState('upcoming')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<BookingWithSite | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -418,7 +418,7 @@ export default function Bookings() {
               color: tab === t ? 'var(--accent)' : undefined,
               display: 'flex', alignItems: 'center', gap: 6,
             }}
-            onClick={() => { setTab(t); setStatusFilter('active') }}
+            onClick={() => { setTab(t); setStatusFilter(t === 'oneoff' ? 'upcoming' : 'active') }}
           >
             {label}
             {t === 'oneoff' && pendingCount > 0 && (
