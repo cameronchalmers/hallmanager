@@ -71,6 +71,7 @@ export interface Database {
           site_id: string
           stripe_secret_key: string | null
           stripe_publishable_key: string | null
+          stripe_webhook_secret: string | null
           qf_account_num: string | null
           qf_app_id: string | null
           qf_api_key: string | null
@@ -81,6 +82,7 @@ export interface Database {
           site_id: string
           stripe_secret_key?: string | null
           stripe_publishable_key?: string | null
+          stripe_webhook_secret?: string | null
           qf_account_num?: string | null
           qf_app_id?: string | null
           qf_api_key?: string | null
@@ -91,6 +93,7 @@ export interface Database {
           site_id?: string
           stripe_secret_key?: string | null
           stripe_publishable_key?: string | null
+          stripe_webhook_secret?: string | null
           qf_account_num?: string | null
           qf_app_id?: string | null
           qf_api_key?: string | null

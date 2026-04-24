@@ -19,8 +19,10 @@ function getAvailability(av: unknown): WeekAvailability {
   return { ...DEFAULT_AVAILABILITY }
 }
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
+
 const EMPTY_CREDS: Omit<SiteCredentials, 'site_id' | 'updated_at'> = {
-  stripe_secret_key: null, stripe_publishable_key: null,
+  stripe_secret_key: null, stripe_publishable_key: null, stripe_webhook_secret: null,
   qf_account_num: null, qf_app_id: null, qf_api_key: null,
   google_calendar_id: null,
 }
@@ -152,6 +154,7 @@ export default function SiteSettings() {
         if (data) setCreds({
           stripe_secret_key: data.stripe_secret_key ?? null,
           stripe_publishable_key: data.stripe_publishable_key ?? null,
+          stripe_webhook_secret: data.stripe_webhook_secret ?? null,
           qf_account_num: data.qf_account_num ?? null,
           qf_app_id: data.qf_app_id ?? null,
           qf_api_key: data.qf_api_key ?? null,
@@ -427,6 +430,38 @@ export default function SiteSettings() {
                   <label className="form-label">Publishable key</label>
                   <input className="form-input" placeholder={creds.stripe_publishable_key ? '••••••••' : 'pk_live_...'} value={creds.stripe_publishable_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_publishable_key: e.target.value || null }))} />
                 </div>
+                <div>
+                  <label className="form-label">Webhook signing secret</label>
+                  <input className="form-input" type="password" placeholder={creds.stripe_webhook_secret ? '••••••••' : 'whsec_...'} value={creds.stripe_webhook_secret ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_webhook_secret: e.target.value || null }))} autoComplete="new-password" />
+                </div>
+                {currentSite && (
+                  <div>
+                    <label className="form-label">Webhook endpoint URL</label>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input
+                        className="form-input"
+                        readOnly
+                        value={`${SUPABASE_URL}/functions/v1/stripe-webhook?site_id=${currentSite.id}`}
+                        style={{ fontSize: 11, color: 'var(--text-muted)', cursor: 'default' }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ whiteSpace: 'nowrap', fontSize: 12 }}
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${SUPABASE_URL}/functions/v1/stripe-webhook?site_id=${currentSite.id}`)
+                          setCopied('webhook')
+                          setTimeout(() => setCopied(null), 2000)
+                        }}
+                      >
+                        {copied === 'webhook' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Register this URL in Stripe → Developers → Webhooks. Listen for <code>payment_intent.succeeded</code>.
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

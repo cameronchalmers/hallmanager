@@ -4,15 +4,41 @@ import Stripe from 'https://esm.sh/stripe@13.3.0?target=deno&no-check=true'
 import { getGoogleAccessToken, createCalendarEvent } from '../_shared/google-calendar.ts'
 
 const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY')!
-const STRIPE_WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET')!
+const GLOBAL_WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
 
 serve(async (req) => {
+  const url = new URL(req.url)
+  const siteId = url.searchParams.get('site_id')
+
   const signature = req.headers.get('stripe-signature')
   if (!signature) {
     return new Response('Missing stripe-signature', { status: 400 })
   }
 
   const body = await req.text()
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  )
+
+  // Resolve webhook secret: per-site takes priority over global fallback
+  let webhookSecret = GLOBAL_WEBHOOK_SECRET
+  if (siteId) {
+    const { data: siteCreds } = await supabase
+      .from('site_credentials')
+      .select('stripe_webhook_secret')
+      .eq('site_id', siteId)
+      .single()
+    if (siteCreds?.stripe_webhook_secret) {
+      webhookSecret = siteCreds.stripe_webhook_secret
+    }
+  }
+
+  if (!webhookSecret) {
+    console.error('No webhook secret configured for site_id:', siteId)
+    return new Response('Webhook secret not configured', { status: 400 })
+  }
 
   const stripe = new Stripe(STRIPE_SECRET_KEY, {
     apiVersion: '2023-10-16',
@@ -21,16 +47,11 @@ serve(async (req) => {
 
   let event: Stripe.Event
   try {
-    event = await stripe.webhooks.constructEventAsync(body, signature, STRIPE_WEBHOOK_SECRET)
+    event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret)
   } catch (err) {
     console.error('Webhook signature verification failed:', err)
     return new Response('Invalid signature', { status: 400 })
   }
-
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  )
 
   // Payment Element flow
   if (event.type === 'payment_intent.succeeded') {
