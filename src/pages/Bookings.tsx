@@ -96,6 +96,10 @@ export default function Bookings() {
   const [saving, setSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [refundInput, setRefundInput] = useState<string | null>(null)
+  const [refundError, setRefundError] = useState<string | null>(null)
+  const [resendType, setResendType] = useState('')
+  const [resendLoading, setResendLoading] = useState(false)
+  const [resendSent, setResendSent] = useState<'ok' | 'error' | null>(null)
   const [copiedPayment, setCopiedPayment] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState(DEFAULT_FORM)
@@ -106,6 +110,7 @@ export default function Bookings() {
   const [invoiceSaving, setInvoiceSaving] = useState(false)
 
   useEffect(() => { if (currentSite) fetchBookings() }, [currentSite?.id])
+  useEffect(() => { setResendType(''); setResendSent(null) }, [selected?.id])
 
   async function fetchBookings() {
     if (!currentSite) return
@@ -160,6 +165,7 @@ export default function Bookings() {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed', stripe_payment_status: 'paid' } : b))
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'confirmed', stripe_payment_status: 'paid' } : null)
     setActionLoading(null)
+    sendEmail('booking_confirmed', id)
     const booking = bookings.find(b => b.id === id)
     if (booking?.type === 'oneoff') {
       supabase.functions.invoke('manage-calendar-event', { body: { action: 'create', booking_id: id } })
@@ -169,6 +175,7 @@ export default function Bookings() {
 
   async function refundDeposit(id: string, amountPence: number) {
     setActionLoading('refund')
+    setRefundError(null)
     const { error } = await supabase.functions.invoke('stripe-action', {
       body: { action: 'refund_deposit', booking_id: id, amount: amountPence },
     })
@@ -178,10 +185,24 @@ export default function Bookings() {
       setRefundInput(null)
       supabase.functions.invoke('quickfile', { body: { action: 'refund_deposit', booking_id: id } })
         .catch(() => {/* QF not configured — ignore */})
+    } else {
+      let msg = 'Refund failed'
+      try {
+        const body = await (error as any).context.json()
+        if (body?.error) msg = body.error
+      } catch {}
+      setRefundError(msg)
     }
     setActionLoading(null)
   }
 
+  async function handleResendEmail(id: string, type: string) {
+    setResendLoading(true)
+    setResendSent(null)
+    const { error } = await supabase.functions.invoke('send-email', { body: { type, id } })
+    setResendSent(error ? 'error' : 'ok')
+    setResendLoading(false)
+  }
 
   function startEdit(b: BookingWithSite) {
     setEditForm({
@@ -371,9 +392,12 @@ export default function Bookings() {
     setShowCreate(false)
     setForm(DEFAULT_FORM)
     setSaving(false)
-    if (newBooking?.id && form.status === 'confirmed' && form.type === 'oneoff') {
-      supabase.functions.invoke('manage-calendar-event', { body: { action: 'create', booking_id: newBooking.id } })
-        .catch(() => {/* Calendar not configured */})
+    if (newBooking?.id && form.status === 'confirmed') {
+      sendEmail('booking_confirmed', newBooking.id)
+      if (form.type === 'oneoff') {
+        supabase.functions.invoke('manage-calendar-event', { body: { action: 'create', booking_id: newBooking.id } })
+          .catch(() => {/* Calendar not configured */})
+      }
     }
   }
 
@@ -842,10 +866,11 @@ export default function Bookings() {
                     >
                       {actionLoading === 'refund' ? 'Refunding…' : 'Confirm'}
                     </button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setRefundInput(null)}>Cancel</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setRefundInput(null); setRefundError(null) }}>Cancel</button>
+                    {refundError && <span style={{ fontSize: 12, color: '#ef4444', alignSelf: 'center' }}>{refundError}</span>}
                   </>
                 ) : (
-                  <button className="btn btn-primary btn-sm" onClick={() => setRefundInput((selected.deposit / 100).toFixed(2))} disabled={!!actionLoading}>
+                  <button className="btn btn-primary btn-sm" onClick={() => { setRefundInput((selected.deposit / 100).toFixed(2)); setRefundError(null) }} disabled={!!actionLoading}>
                     Issue Refund
                   </button>
                 )
@@ -912,6 +937,40 @@ export default function Bookings() {
                 {selected.notes}
               </div>
             )}
+            <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 12 }}>
+              <select
+                className="form-input"
+                style={{ flex: 1, fontSize: 12 }}
+                value={resendType}
+                onChange={e => { setResendType(e.target.value); setResendSent(null) }}
+              >
+                <option value="">— Resend email —</option>
+                <option value="booking_submitted">Booking received (hirer)</option>
+                {['approved', 'confirmed'].includes(selected.status) && (
+                  <option value="booking_approved">Booking approved + payment link</option>
+                )}
+                {selected.status === 'confirmed' && (
+                  <option value="booking_confirmed">Payment confirmed</option>
+                )}
+                {selected.status === 'confirmed' && selected.type === 'oneoff' && (
+                  <option value="booking_review">Review request</option>
+                )}
+                {selected.status === 'cancelled' && (
+                  <option value="booking_cancelled">Booking cancelled</option>
+                )}
+                {selected.status === 'denied' && (
+                  <option value="booking_denied">Booking not approved</option>
+                )}
+              </select>
+              <button
+                className="btn btn-ghost btn-sm"
+                disabled={!resendType || resendLoading}
+                onClick={() => handleResendEmail(selected.id, resendType)}
+                style={{ whiteSpace: 'nowrap', color: resendSent === 'ok' ? 'var(--green)' : resendSent === 'error' ? '#ef4444' : undefined }}
+              >
+                {resendLoading ? 'Sending…' : resendSent === 'ok' ? '✓ Sent' : resendSent === 'error' ? '✗ Failed' : 'Send'}
+              </button>
+            </div>
             <div className="price-bar">
               <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(selected.sites?.rate ?? 0)}/hr</div></div>
               <div><div className="pi-label">Hours</div><div className="pi-value">{selected.hours}</div></div>

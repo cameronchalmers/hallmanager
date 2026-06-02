@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import Stripe from 'https://esm.sh/stripe@13.3.0?target=deno&no-check=true'
+import { depositRefunded } from '../send-email/templates.ts'
 
 // No global Stripe key — credentials must be configured per site in site_credentials
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://hallmanager.vercel.app'
@@ -75,6 +76,36 @@ serve(async (req) => {
 
       await supabase.from('bookings').update({ stripe_payment_status: 'deposit_refunded', refunded_amount: refundAmount }).eq('id', booking_id)
 
+      // Send refund confirmation email — fire-and-forget, don't fail the refund if this errors
+      try {
+        const resendKey = Deno.env.get('RESEND_API_KEY')
+        const from = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
+        if (resendKey) {
+          const { data: site } = await supabase.from('sites').select('name, whatsapp_number').eq('id', booking.site_id).single()
+          const email = depositRefunded({
+            name: booking.name,
+            email: booking.email,
+            event: booking.event,
+            date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+            start_time: booking.start_time,
+            end_time: booking.end_time,
+            hours: booking.hours,
+            site_name: site?.name ?? 'Unknown venue',
+            deposit: booking.deposit,
+            total: booking.total,
+            refunded_amount: refundAmount,
+            whatsapp_number: site?.whatsapp_number ?? null,
+          })
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from, to: booking.email, subject: email.subject, html: email.html }),
+          })
+        }
+      } catch (emailErr) {
+        console.error('Failed to send refund email:', emailErr)
+      }
+
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -82,8 +113,9 @@ serve(async (req) => {
 
     throw new Error(`Unknown action: ${action}`)
   } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Internal server error'
     console.error('stripe-action error:', err)
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+    return new Response(JSON.stringify({ error: msg }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

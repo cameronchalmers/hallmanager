@@ -3,8 +3,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
   bookingSubmitted,
   bookingApproved,
+  bookingConfirmed,
   bookingDenied,
   bookingCancelled,
+  depositRefunded,
   extraSlotApproved,
   extraSlotDenied,
   bookingSubmittedAdmin,
@@ -98,7 +100,7 @@ serve(async (req) => {
 
     // ── Booking emails ────────────────────────────────────────────────────────
 
-    if (['booking_submitted', 'booking_approved', 'booking_denied', 'booking_cancelled'].includes(type)) {
+    if (['booking_submitted', 'booking_approved', 'booking_confirmed', 'booking_denied', 'booking_cancelled'].includes(type)) {
       let b: BookingData
 
       if (type === 'booking_submitted' && inlineData) {
@@ -154,6 +156,9 @@ serve(async (req) => {
       } else if (type === 'booking_approved') {
         const email = bookingApproved(b)
         await sendEmail(b.email, email.subject, email.html)
+      } else if (type === 'booking_confirmed') {
+        const email = bookingConfirmed(b)
+        await sendEmail(b.email, email.subject, email.html)
       } else if (type === 'booking_cancelled') {
         const email = bookingCancelled(b)
         await sendEmail(b.email, email.subject, email.html)
@@ -161,6 +166,18 @@ serve(async (req) => {
         const email = bookingDenied(b)
         await sendEmail(b.email, email.subject, email.html)
       }
+    }
+
+    // ── Review request ────────────────────────────────────────────────────────
+
+    else if (type === 'booking_review') {
+      const { data: booking, error } = await supabase.from('bookings').select('*').eq('id', id).single()
+      if (error || !booking) throw new Error(`Booking not found: ${id}`)
+      const { data: site } = await supabase.from('sites').select('name, whatsapp_number, google_review_url').eq('id', booking.site_id).single()
+      const siteName = site?.name ?? 'our venue'
+      const email = bookingReview(booking.name, booking.event, siteName, site?.google_review_url ?? null, site?.whatsapp_number ?? null)
+      await sendEmail(booking.email, email.subject, email.html)
+      await supabase.from('bookings').update({ review_sent: true }).eq('id', id)
     }
 
     // ── Extra slot emails ─────────────────────────────────────────────────────
@@ -247,6 +264,8 @@ serve(async (req) => {
       else if (template === 'slot_approved')      email = extraSlotApproved(dummySlot)
       else if (template === 'slot_denied')        email = extraSlotDenied(dummySlot)
       else if (template === 'booking_review')     email = bookingReview('Jane Smith', 'Community Yoga', 'The Old Town Hall')
+      else if (template === 'booking_confirmed')   email = bookingConfirmed(dummyBooking)
+      else if (template === 'deposit_refunded')   email = depositRefunded({ ...dummyBooking, refunded_amount: 5000 })
       else throw new Error(`Unknown template: ${template}`)
 
       await Promise.all(allAdmins.map(addr => sendEmail(addr, `[TEST] ${email.subject}`, email.html)))

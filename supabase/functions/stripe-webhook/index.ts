@@ -2,8 +2,8 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import Stripe from 'https://esm.sh/stripe@13.3.0?target=deno&no-check=true'
 import { getGoogleAccessToken, createCalendarEvent } from '../_shared/google-calendar.ts'
+import { bookingConfirmed } from '../send-email/templates.ts'
 
-const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY')!
 const GLOBAL_WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
 
 serve(async (req) => {
@@ -22,17 +22,22 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
 
-  // Resolve webhook secret: per-site takes priority over global fallback
+  // Resolve per-site Stripe key and webhook secret
+  let stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? ''
   let webhookSecret = GLOBAL_WEBHOOK_SECRET
   if (siteId) {
     const { data: siteCreds } = await supabase
       .from('site_credentials')
-      .select('stripe_webhook_secret')
+      .select('stripe_secret_key, stripe_webhook_secret')
       .eq('site_id', siteId)
       .single()
-    if (siteCreds?.stripe_webhook_secret) {
-      webhookSecret = siteCreds.stripe_webhook_secret
-    }
+    if (siteCreds?.stripe_secret_key) stripeKey = siteCreds.stripe_secret_key
+    if (siteCreds?.stripe_webhook_secret) webhookSecret = siteCreds.stripe_webhook_secret
+  }
+
+  if (!stripeKey) {
+    console.error('No Stripe key configured for site_id:', siteId)
+    return new Response('Stripe not configured', { status: 400 })
   }
 
   if (!webhookSecret) {
@@ -40,7 +45,7 @@ serve(async (req) => {
     return new Response('Webhook secret not configured', { status: 400 })
   }
 
-  const stripe = new Stripe(STRIPE_SECRET_KEY, {
+  const stripe = new Stripe(stripeKey, {
     apiVersion: '2023-10-16',
     httpClient: Stripe.createFetchHttpClient(),
   })
@@ -105,6 +110,36 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
     return
   }
   console.log(`Booking ${bookingId} confirmed`)
+
+  // Send confirmation email — fire-and-forget
+  try {
+    const resendKey = Deno.env.get('RESEND_API_KEY')
+    const from = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
+    if (resendKey) {
+      const { data: site } = await supabase.from('sites').select('name, whatsapp_number').eq('id', booking.site_id).single()
+      const email = bookingConfirmed({
+        name: booking.name,
+        email: booking.email,
+        event: booking.event,
+        date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        start_time: booking.start_time,
+        end_time: booking.end_time,
+        hours: booking.hours,
+        site_name: site?.name ?? (booking.sites as { name: string } | null)?.name ?? 'Unknown venue',
+        deposit: booking.deposit,
+        total: booking.total,
+        notes: booking.notes,
+        whatsapp_number: site?.whatsapp_number ?? null,
+      })
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to: booking.email, subject: email.subject, html: email.html }),
+      })
+    }
+  } catch (emailErr) {
+    console.error('Failed to send confirmation email:', emailErr)
+  }
 
   if (booking.type === 'oneoff') {
     try {

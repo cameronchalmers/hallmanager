@@ -3,6 +3,8 @@ import { supabase } from './supabase'
 type EmailType =
   | 'booking_submitted'
   | 'booking_approved'
+  | 'booking_confirmed'
+  | 'booking_review'
   | 'booking_denied'
   | 'booking_cancelled'
   | 'slot_approved'

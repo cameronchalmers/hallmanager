@@ -105,6 +105,7 @@ export interface BookingData {
   notes?: string | null
   payment_url?: string | null
   whatsapp_number?: string | null
+  refunded_amount?: number
 }
 
 export interface ExtraSlotData {
@@ -305,6 +306,52 @@ export function bookingReview(name: string, event: string, siteName: string, rev
         <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">It only takes a moment and means the world to us. Thank you!</p>
       </div>
     `, whatsappNumber),
+  }
+}
+
+// ── Booking confirmed (payment received) ──────────────────────────────────────
+
+export function bookingConfirmed(b: BookingData): { subject: string; html: string } {
+  return {
+    subject: `Booking confirmed — ${b.event} at ${b.site_name}`,
+    html: layout(`
+      <div style="padding:32px 32px 0;border-bottom:3px solid #059669;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#059669;letter-spacing:0.5px;text-transform:uppercase;">Booking Confirmed</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Your booking is confirmed</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(b.name)}, your payment has been received and your booking is now confirmed. See you there!</p>
+      </div>
+      <div style="padding:24px 32px;">
+        ${pill('Confirmed', '#065f46', '#ecfdf5')}
+        ${bookingTable(b)}
+        ${b.notes ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-radius:8px;border-left:3px solid #e5e7eb;"><p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Notes</p><p style="margin:4px 0 0;font-size:14px;color:#374151;">${esc(b.notes)}</p></div>` : ''}
+        <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;">If you need to make any changes or have questions, please get in touch.</p>
+      </div>
+    `, b.whatsapp_number),
+  }
+}
+
+// ── Deposit refunded ──────────────────────────────────────────────────────────
+
+export function depositRefunded(b: BookingData): { subject: string; html: string } {
+  const amount = b.refunded_amount ?? b.deposit
+  return {
+    subject: `Deposit refund confirmed — ${b.event}`,
+    html: layout(`
+      <div style="padding:32px 32px 0;border-bottom:3px solid #059669;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#059669;letter-spacing:0.5px;text-transform:uppercase;">Refund Confirmed</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Your deposit has been refunded</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(b.name)}, we've processed a refund of <strong>£${fp(amount)}</strong> to your original payment method.</p>
+      </div>
+      <div style="padding:24px 32px;">
+        ${pill('Deposit Refunded', '#065f46', '#ecfdf5')}
+        ${bookingTable(b)}
+        <div style="margin-top:24px;padding:16px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;">
+          <p style="margin:0;font-size:14px;color:#166534;font-weight:500;">Refund of <strong>£${fp(amount)}</strong> processed</p>
+          <p style="margin:6px 0 0;font-size:13px;color:#166534;">Please allow 5–10 working days for the funds to appear in your account, depending on your bank.</p>
+        </div>
+        <p style="margin:20px 0 0;font-size:13px;color:#9ca3af;">If you have any questions about this refund, please get in touch directly.</p>
+      </div>
+    `, b.whatsapp_number),
   }
 }
 
