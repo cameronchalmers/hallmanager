@@ -952,6 +952,9 @@ export default function Bookings() {
                 {selected.status === 'confirmed' && (
                   <option value="booking_confirmed">Payment confirmed</option>
                 )}
+                {selected.stripe_payment_status === 'deposit_refunded' && (
+                  <option value="deposit_refunded">Deposit refunded</option>
+                )}
                 {selected.status === 'confirmed' && selected.type === 'oneoff' && (
                   <option value="booking_review">Review request</option>
                 )}

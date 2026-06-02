@@ -168,6 +168,29 @@ serve(async (req) => {
       }
     }
 
+    // ── Deposit refunded ──────────────────────────────────────────────────────
+
+    else if (type === 'deposit_refunded') {
+      const { data: booking, error } = await supabase.from('bookings').select('*').eq('id', id).single()
+      if (error || !booking) throw new Error(`Booking not found: ${id}`)
+      const { data: site } = await supabase.from('sites').select('name, whatsapp_number').eq('id', booking.site_id).single()
+      const email = depositRefunded({
+        name: booking.name,
+        email: booking.email,
+        event: booking.event,
+        date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        start_time: booking.start_time,
+        end_time: booking.end_time,
+        hours: booking.hours,
+        site_name: site?.name ?? 'Unknown venue',
+        deposit: booking.deposit,
+        total: booking.total,
+        refunded_amount: booking.refunded_amount ?? booking.deposit,
+        whatsapp_number: site?.whatsapp_number ?? null,
+      })
+      await sendEmail(booking.email, email.subject, email.html)
+    }
+
     // ── Review request ────────────────────────────────────────────────────────
 
     else if (type === 'booking_review') {
