@@ -4,7 +4,7 @@ import { sendEmail } from '../lib/email'
 import { useSite } from '../context/SiteContext'
 import type { AppUser, Booking, Site } from '../lib/database.types'
 import { getRatePackages, type RatePackage } from '../lib/database.types'
-import { formatPence, poundsToPence, perDayTotal, DEPOSIT_FRACTION } from '../lib/money'
+import { formatPence, poundsToPence, perDayTotal, packageBaseRate, DEPOSIT_FRACTION } from '../lib/money'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
 import { format } from 'date-fns'
@@ -95,6 +95,7 @@ const DEFAULT_FORM = {
   waive_deposit: false,
   package_label: '',
   package_end: '',
+  is_district: false,
 }
 
 
@@ -119,8 +120,9 @@ function packageHoursForDays(pkg: RatePackage, siteType: string | undefined, day
 
 // Resolve a package booking's length, end date, hours and total. Fixed
 // packages use pkg.days; per-day packages use the chosen end date and apply
-// the highest qualifying whole-booking discount tier.
-function resolvePackage(pkg: RatePackage, siteType: string | undefined, startDate: string, endDateInput: string) {
+// the highest qualifying whole-booking discount tier. District bookings use
+// the package's discounted rate where one is set.
+function resolvePackage(pkg: RatePackage, siteType: string | undefined, startDate: string, endDateInput: string, isDistrict = false) {
   const isPerDay = pkg.pricing === 'per_day'
   let days: number, endDate: string | null
   if (isPerDay) {
@@ -134,9 +136,10 @@ function resolvePackage(pkg: RatePackage, siteType: string | undefined, startDat
     days = Math.max(1, pkg.days)
     endDate = days > 1 && startDate ? addDays(startDate, days - 1) : null
   }
-  const { total, discountPct } = isPerDay ? perDayTotal(pkg, days) : { total: pkg.price, discountPct: 0 }
+  const { total, discountPct } = isPerDay ? perDayTotal(pkg, days, isDistrict) : { total: packageBaseRate(pkg, isDistrict), discountPct: 0 }
   const hours = days > 0 ? packageHoursForDays(pkg, siteType, days) : 0
-  return { isPerDay, days, endDate, total, discountPct, hours }
+  const usedDistrict = isDistrict && pkg.district_price != null
+  return { isPerDay, days, endDate, total, discountPct, hours, usedDistrict }
 }
 
 
@@ -296,6 +299,7 @@ export default function Bookings() {
       waive_deposit: false,
       package_label: b.package_label ?? '',
       package_end: b.end_date ?? '',
+      is_district: b.is_district ?? false,
     })
     setEditMode(true)
   }
@@ -314,7 +318,7 @@ export default function Bookings() {
       setSaving(false)
       return
     }
-    const editResolved = editPkg ? resolvePackage(editPkg, site?.site_type, editForm.date, editForm.package_end) : null
+    const editResolved = editPkg ? resolvePackage(editPkg, site?.site_type, editForm.date, editForm.package_end, editForm.is_district) : null
     if (editPkg && editResolved && editResolved.days < 1) {
       setActionError(editPkg.pricing === 'per_day' ? 'Choose a valid end date for this hire.' : 'Invalid package.')
       setSaving(false)
@@ -340,6 +344,7 @@ export default function Bookings() {
       end_time: editPkg ? editPkg.end_time : editForm.end_time,
       end_date: editResolved ? editResolved.endDate : null,
       package_label: editPkg ? editPkg.label : null,
+      is_district: editPkg ? editForm.is_district : false,
       hours,
       type: editPkg ? 'oneoff' : editForm.type,
       recurrence: isRecurring ? editForm.recurrence : null,
@@ -480,7 +485,7 @@ export default function Bookings() {
       setSaving(false)
       return
     }
-    const resolved = pkg ? resolvePackage(pkg, site.site_type, form.date, form.package_end) : null
+    const resolved = pkg ? resolvePackage(pkg, site.site_type, form.date, form.package_end, form.is_district) : null
     if (pkg && resolved && resolved.days < 1) {
       setActionError(pkg.pricing === 'per_day' ? 'Choose a valid end date for this hire.' : 'Invalid package.')
       setSaving(false)
@@ -510,6 +515,7 @@ export default function Bookings() {
       recurrence_days: isRecurring && form.recurrence === 'Weekly' && form.recurrence_days.length > 0 ? form.recurrence_days : null,
       notes: form.notes || null,
       status: form.status,
+      is_district: pkg ? form.is_district : false,
       // Package sites carry no separate damage deposit (25% split handles it)
       deposit: pkg ? 0 : (isRecurring || form.waive_deposit ? 0 : site.deposit),
       total: resolved
@@ -552,7 +558,8 @@ export default function Bookings() {
   const formIsPackages = formSite?.pricing_mode === 'packages' || formSite?.site_type === 'vehicle'
   const formSitePackages = formIsPackages ? getRatePackages(formSite) : []
   const formPackage = formIsPackages ? formSitePackages.find(p => p.label === form.package_label) ?? null : null
-  const formResolved = formPackage ? resolvePackage(formPackage, formSite?.site_type, form.date, form.package_end) : null
+  const formResolved = formPackage ? resolvePackage(formPackage, formSite?.site_type, form.date, form.package_end, form.is_district) : null
+  const formOffersDistrict = !!formSite && getRatePackages(formSite).some(p => p.district_price != null)
   const formHours = formResolved ? formResolved.hours : calcHours(form.start_time, form.end_time)
   const formLinkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
   const formEffectiveRate = form.type === 'recurring' && formLinkedUser && formSite
@@ -875,6 +882,15 @@ export default function Bookings() {
               : `${formPackage.start_time.slice(0, 5)}–${formPackage.end_time.slice(0, 5)}`}
             {formResolved.days > 1 && formResolved.endDate ? ` · covers ${fmtDateRange(form.date, formResolved.endDate)}` : ''}
             {formResolved.discountPct > 0 ? ` · ${formResolved.discountPct}% length discount` : ''}
+            {formResolved.usedDistrict ? ' · district rate' : ''}
+          </div>
+        )}
+        {formIsPackages && formOffersDistrict && (
+          <div className="form-row">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+              <input type="checkbox" checked={form.is_district} onChange={e => setForm(f => ({ ...f, is_district: e.target.checked }))} />
+              <span>In-district group{formSite?.district_label ? ` (${formSite.district_label})` : ''} — apply district pricing</span>
+            </label>
           </div>
         )}
         {!formIsPackages && form.type === 'recurring' && (
@@ -1100,6 +1116,11 @@ export default function Bookings() {
               <div><div className="detail-label">Type</div><div className="detail-value"><span className={`badge ${selected.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>{selected.type === 'recurring' ? `↻ ${selected.recurrence}${selected.recurrence_days && selected.recurrence_days.length > 1 ? ' · ' + selected.recurrence_days.slice().sort((a,c)=>a-c).map(d => WEEK_DAYS[d]).join(', ') : ''}` : 'One-off'}</span></div></div>
               <div><div className="detail-label">Capacity</div><div className="detail-value">{selected.sites?.site_type === 'vehicle' ? `${selected.sites?.capacity} seats` : `Up to ${selected.sites?.capacity} guests`}</div></div>
             </div>
+            {selected.is_district && (
+              <div className={`notice ${selected.status === 'pending' ? 'notice-warn' : 'notice-accent'}`} style={{ marginBottom: 12, fontSize: 12 }}>
+                🏷️ Claims to be an in-district group{selected.sites?.district_label ? ` (${selected.sites.district_label})` : ''} — district pricing applied.{selected.status === 'pending' ? ' Verify eligibility before approving; use Edit to remove it and re-price if they don\'t qualify.' : ''}
+              </div>
+            )}
             {selected.custom_answers && Object.keys(selected.custom_answers).length > 0 && (
               <div style={{ background: 'var(--surface2)', borderRadius: 7, padding: '9px 12px', fontSize: 12, marginBottom: 12, border: '1px solid var(--border)' }}>
                 <div style={{ fontWeight: 700, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Booking Questions</div>
@@ -1289,6 +1310,15 @@ export default function Bookings() {
                     : `${editSelPkg.start_time.slice(0, 5)}–${editSelPkg.end_time.slice(0, 5)}`}
                   {editRes.days > 1 && editRes.endDate ? ` · covers ${fmtDateRange(editForm.date, editRes.endDate)}` : ''}
                   {editRes.discountPct > 0 ? ` · ${editRes.discountPct}% length discount` : ''}
+                  {editRes.usedDistrict ? ' · district rate' : ''}
+                </div>
+              )}
+              {editIsPackages && editSitePackages.some(p => p.district_price != null) && (
+                <div className="form-row">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={editForm.is_district} onChange={e => setEditForm(f => ({ ...f, is_district: e.target.checked }))} />
+                    <span>In-district group{selected.sites?.district_label ? ` (${selected.sites.district_label})` : ''} — apply district pricing</span>
+                  </label>
                 </div>
               )}
               {!editIsPackages && editForm.type === 'recurring' && (

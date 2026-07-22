@@ -27,6 +27,7 @@ export interface Database {
           rate_packages: Json | null
           site_type: 'hall' | 'vehicle'
           custom_questions: Json | null
+          district_label: string | null
         }
         Insert: {
           id?: string
@@ -51,6 +52,7 @@ export interface Database {
           rate_packages?: Json | null
           site_type?: 'hall' | 'vehicle'
           custom_questions?: Json | null
+          district_label?: string | null
         }
         Update: {
           id?: string
@@ -75,6 +77,7 @@ export interface Database {
           rate_packages?: Json | null
           site_type?: 'hall' | 'vehicle'
           custom_questions?: Json | null
+          district_label?: string | null
         }
         Relationships: []
       }
@@ -148,6 +151,7 @@ export interface Database {
           custom_answers: Record<string, string> | null
           amount_paid: number
           google_calendar_event_id: string | null
+          is_district: boolean
         }
         Insert: {
           id?: string
@@ -182,6 +186,7 @@ export interface Database {
           custom_answers?: Record<string, string> | null
           amount_paid?: number
           google_calendar_event_id?: string | null
+          is_district?: boolean
         }
         Update: {
           id?: string
@@ -216,6 +221,7 @@ export interface Database {
           custom_answers?: Record<string, string> | null
           amount_paid?: number
           google_calendar_event_id?: string | null
+          is_district?: boolean
         }
         Relationships: []
       }
@@ -389,6 +395,8 @@ export interface RatePackage {
   min_days?: number
   max_days?: number
   tiers?: PerDayTier[]
+  /** Discounted rate for in-district groups (total for fixed, daily rate for per_day). */
+  district_price?: number | null
 }
 
 export function getRatePackages(site: Pick<Site, 'rate_packages'> | null | undefined): RatePackage[] {

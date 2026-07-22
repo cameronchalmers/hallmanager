@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 import { useForceLightMode } from '../hooks/useForceLightMode'
 import type { Site, WeekAvailability } from '../lib/database.types'
 import { getRatePackages, getCustomQuestions, type RatePackage } from '../lib/database.types'
-import { formatPence, perDayTotal, DEPOSIT_FRACTION } from '../lib/money'
+import { formatPence, perDayTotal, packageBaseRate, DEPOSIT_FRACTION } from '../lib/money'
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
 
@@ -208,6 +208,7 @@ export default function BookingForm() {
   const [siteBookings, setSiteBookings] = useState<SlotBooking[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [perDayEnd, setPerDayEnd] = useState('')
+  const [isDistrict, setIsDistrict] = useState(false)
 
   useEffect(() => {
     supabase.from('sites').select('*').then(({ data }) => {
@@ -244,6 +245,10 @@ export default function BookingForm() {
   const packages = isPackages ? getRatePackages(activeSite) : []
   const selectedPackage: RatePackage | null = isPackages ? packages.find(p => p.label === form.package_label) ?? null : null
   const isPerDay = selectedPackage?.pricing === 'per_day'
+  // District pricing is offered if any package has a district rate set
+  const offersDistrict = isPackages && packages.some(p => p.district_price != null)
+  const districtLabel = (activeSite?.district_label ?? '').trim() || 'our district'
+  const applyDistrict = isDistrict && offersDistrict
   const customQuestions = getCustomQuestions(activeSite)
   const textQuestions = customQuestions.filter(q => q.type !== 'terms')
   const termsQuestion = customQuestions.find(q => q.type === 'terms') ?? null
@@ -262,9 +267,9 @@ export default function BookingForm() {
     : calcHours(form.start_time, form.end_time)
   // Package sites have no separate damage deposit — 25% of the total confirms
   const deposit = isPackages ? 0 : (activeSite?.deposit ?? 0)
-  const perDayPricing = selectedPackage && isPerDay && packageDays > 0 ? perDayTotal(selectedPackage, packageDays) : null
+  const perDayPricing = selectedPackage && isPerDay && packageDays > 0 ? perDayTotal(selectedPackage, packageDays, applyDistrict) : null
   const total = selectedPackage
-    ? (isPerDay ? (perDayPricing?.total ?? 0) : selectedPackage.price)
+    ? (isPerDay ? (perDayPricing?.total ?? 0) : packageBaseRate(selectedPackage, applyDistrict))
     : activeSite ? Math.round(hours * activeSite.rate) + deposit : 0
   const packageEndDate = selectedPackage && form.date && packageDays > 1
     ? (isPerDay ? perDayEnd : addDays(form.date, packageDays - 1))
@@ -336,6 +341,7 @@ export default function BookingForm() {
       recurrence: !selectedPackage && form.type === 'recurring' ? form.recurrence : null,
       notes: form.notes || null,
       custom_answers: Object.values(answers).some(v => v) ? answers : null,
+      is_district: applyDistrict,
       status: 'pending',
       deposit,
       total,
@@ -379,7 +385,7 @@ export default function BookingForm() {
           </div>
           <button
             style={{ background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-            onClick={() => { setForm(f => ({ ...f, name: '', email: '', phone: '', event: '', date: '', start_time: '', end_time: '', notes: '', package_label: '' })); setAnswers({}); setPerDayEnd(''); setSubmitted(false) }}
+            onClick={() => { setForm(f => ({ ...f, name: '', email: '', phone: '', event: '', date: '', start_time: '', end_time: '', notes: '', package_label: '' })); setAnswers({}); setPerDayEnd(''); setIsDistrict(false); setSubmitted(false) }}
           >
             Submit another request
           </button>
@@ -630,6 +636,15 @@ export default function BookingForm() {
                     )}
                   </div>
                 )}
+                {offersDistrict && (
+                  <label className="form-row" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', background: applyDistrict ? 'var(--accent-light,#f5f3ff)' : 'var(--surface2,#f4f4f6)', border: `1px solid ${applyDistrict ? '#ddd6fe' : 'var(--border,#e5e7eb)'}`, borderRadius: 10, padding: '11px 14px' }}>
+                    <input type="checkbox" checked={isDistrict} onChange={e => setIsDistrict(e.target.checked)} style={{ marginTop: 2 }} />
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text,#111827)' }}>Booking on behalf of a group within {districtLabel}?</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted,#71717a)', marginTop: 2 }}>Tick this if you're a group within {districtLabel} to get discounted rates. We'll confirm eligibility when we review your request.</div>
+                    </div>
+                  </label>
+                )}
                 {!isPackages && form.type === 'recurring' && (
                   <div className="form-row">
                     <label className="form-label">Recurrence</label>
@@ -768,8 +783,11 @@ export default function BookingForm() {
                   <div className="price-bar" style={{ marginBottom: isPackages ? 8 : 14 }}>
                     {selectedPackage ? (
                       <>
-                        <div><div className="pi-label">Package</div><div className="pi-value">{selectedPackage.label}</div></div>
+                        <div><div className="pi-label">Package</div><div className="pi-value">{selectedPackage.label}{applyDistrict && selectedPackage.district_price != null ? ' ✦' : ''}</div></div>
                         <div><div className="pi-label">{isVehicle || packageDays > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{isVehicle || packageDays > 1 ? packageDays : hours}</div></div>
+                        {applyDistrict && selectedPackage.district_price != null && (
+                          <div><div className="pi-label">Rate</div><div className="pi-value" style={{ color: 'var(--accent,#7c3aed)' }}>District</div></div>
+                        )}
                         {perDayPricing && perDayPricing.discountPct > 0 && (
                           <div><div className="pi-label">Discount</div><div className="pi-value" style={{ color: 'var(--accent,#7c3aed)' }}>−{perDayPricing.discountPct}%</div></div>
                         )}

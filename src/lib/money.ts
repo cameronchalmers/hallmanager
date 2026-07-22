@@ -17,12 +17,19 @@ import type { RatePackage } from './database.types'
 /** Fraction of the total taken upfront to confirm a package-site booking. */
 export const DEPOSIT_FRACTION = 0.25
 
+/** The daily rate (per_day) or flat price (fixed) in force for this booking,
+ *  using the district rate when claimed and configured. */
+export function packageBaseRate(pkg: RatePackage, isDistrict: boolean): number {
+  if (isDistrict && pkg.district_price != null) return pkg.district_price
+  return pkg.price
+}
+
 /** Total (pence) for a per-day package over `days`, applying the highest
- *  whole-booking discount tier the length qualifies for. */
-export function perDayTotal(pkg: RatePackage, days: number): { total: number; discountPct: number } {
+ *  whole-booking discount tier the length qualifies for, on the active rate. */
+export function perDayTotal(pkg: RatePackage, days: number, isDistrict = false): { total: number; discountPct: number } {
   let pct = 0
   for (const t of pkg.tiers ?? []) {
     if (days >= t.min_days && t.discount_pct > pct) pct = t.discount_pct
   }
-  return { total: Math.round(days * pkg.price * (100 - pct) / 100), discountPct: pct }
+  return { total: Math.round(days * packageBaseRate(pkg, isDistrict) * (100 - pct) / 100), discountPct: pct }
 }

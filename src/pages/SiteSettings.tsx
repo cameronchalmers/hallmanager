@@ -45,6 +45,7 @@ export default function SiteSettings() {
   const [siteType, setSiteType] = useState<'hall' | 'vehicle'>('hall')
   const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([])
   const [termsUrl, setTermsUrl] = useState('')
+  const [districtLabel, setDistrictLabel] = useState('')
   const [availability, setAvailability] = useState<WeekAvailability>({ ...DEFAULT_AVAILABILITY })
   const [amenities, setAmenities] = useState<string[]>([])
   const [description, setDescription] = useState('')
@@ -155,6 +156,7 @@ export default function SiteSettings() {
       min_hours: currentSite.min_hours ?? 1,
     })
     setSiteType(currentSite.site_type ?? 'hall')
+    setDistrictLabel(currentSite.district_label ?? '')
     {
       const qs = getCustomQuestions(currentSite)
       setCustomQuestions(qs.filter(q => q.type !== 'terms'))
@@ -211,6 +213,7 @@ export default function SiteSettings() {
     const payload = {
       ...form,
       site_type: siteType,
+      district_label: districtLabel.trim() || null,
       custom_questions: [
         ...customQuestions.filter(q => q.label.trim()),
         ...(termsUrl.trim() ? [{ label: 'I agree to the hiring terms and conditions', required: true, type: 'terms' as const, url: termsUrl.trim() }] : []),
@@ -474,6 +477,13 @@ export default function SiteSettings() {
                               <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#ef4444', marginBottom: 2 }}
                                 onClick={() => setRatePackages(ps => ps.filter((_, xi) => xi !== i))}>✕</button>
                             </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', paddingTop: 2 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>District {pd ? 'rate £/day' : 'price £'}:</span>
+                              <input className="form-input" type="number" min="0" step="0.01" placeholder="—"
+                                value={p.district_price == null ? '' : p.district_price / 100} style={{ width: 90, padding: '3px 8px', fontSize: 12 }}
+                                onChange={e => upd({ district_price: e.target.value === '' ? null : poundsToPence(Number(e.target.value)) })} />
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>discounted rate for in-district groups — leave blank to charge them the standard rate</span>
+                            </div>
                             {pd && (
                               <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', paddingTop: 2 }}>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Discounts:</span>
@@ -524,6 +534,15 @@ export default function SiteSettings() {
                           ? 'Fixed packages cover a set number of days (weekend Fri–Sun = 3). Per-day packages let the hirer pick their own dates — price is days × daily rate, with the highest qualifying discount applied to the whole hire.'
                           : 'Fixed packages book a set time window; Days > 1 blocks consecutive days. Per-day packages let the customer pick a date range.'}
                       </div>
+                      {ratePackages.some(p => p.district_price != null) && (
+                        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
+                          <label className="form-label">District name <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+                          <input className="form-input" placeholder="e.g. Greater London North Scout District" value={districtLabel} onChange={e => setDistrictLabel(e.target.value)} style={{ maxWidth: 380 }} />
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                            Shown on the booking form: "Booking on behalf of a group within {districtLabel.trim() || 'our district'}?" Bookers self-select and you confirm it when approving.
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
