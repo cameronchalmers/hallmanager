@@ -223,6 +223,12 @@ export default function BookingForm() {
     })
   }, [slug])
 
+  // Tab title: venue name on a locked-venue page, generic otherwise
+  useEffect(() => {
+    document.title = lockedSite ? `${lockedSite.name} — Book` : 'HallManager — Book'
+    return () => { document.title = 'HallManager' }
+  }, [lockedSite?.id])
+
   async function fetchSiteBookings(siteId: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase as any).rpc('get_site_bookings', { p_site_id: siteId })
@@ -661,8 +667,8 @@ export default function BookingForm() {
               <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Your details</div>
                 <div className="form-row">
-                  <label className="form-label">Full name</label>
-                  <input className="form-input" required placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
+                  <label className="form-label">{isVehicle ? 'Group name' : 'Full name'}</label>
+                  <input className="form-input" required placeholder={isVehicle ? 'e.g. 1st Anytown Scouts' : 'Jane Smith'} value={form.name} onChange={e => set('name', e.target.value)} />
                 </div>
                 <div className="form-grid-2">
                   <div>

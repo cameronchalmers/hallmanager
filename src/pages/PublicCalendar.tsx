@@ -109,6 +109,10 @@ export default function PublicCalendar() {
   const [accentColor, setAccentColor] = useState('#7c3aed')
 
   useEffect(() => { loadSite(); loadAccent() }, [slug])
+  useEffect(() => {
+    document.title = site ? `${site.name} — Availability` : 'HallManager'
+    return () => { document.title = 'HallManager' }
+  }, [site?.id])
   useEffect(() => { if (site) fetchMonth() }, [cal, site])
 
   async function loadSite() {
