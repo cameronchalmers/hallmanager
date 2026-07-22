@@ -465,7 +465,10 @@ export default function SiteSettings() {
                 )}
                 <div>
                   <label className="form-label">Description <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(shown on booking page)</span></label>
-                  <textarea className="form-input" rows={3} style={{ resize: 'none' }} value={description} onChange={e => setDescription(e.target.value)} />
+                  <textarea className="form-input" rows={6} style={{ resize: 'vertical' }} value={description} onChange={e => setDescription(e.target.value)} />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Line breaks are kept, and Markdown works: **bold**, *italic*, ## heading, - bullet list, [link](https://…)
+                  </div>
                 </div>
               </div>
             </div>

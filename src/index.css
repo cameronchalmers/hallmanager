@@ -318,3 +318,19 @@ body {
 }
 /* Generic booking page (no locked venue) stays a narrow single column */
 .booking-narrow { max-width: 640px; margin: 0 auto; }
+
+/* Markdown-rendered venue description */
+.site-description p { margin: 0 0 10px; }
+.site-description p:last-child { margin-bottom: 0; }
+.site-description ul, .site-description ol { margin: 0 0 10px; padding-left: 20px; }
+.site-description li { margin-bottom: 3px; }
+.site-description h1, .site-description h2, .site-description h3 {
+  font-size: 15px; font-weight: 700; color: var(--text, #18181b); margin: 14px 0 6px;
+}
+.site-description h1:first-child, .site-description h2:first-child, .site-description h3:first-child { margin-top: 0; }
+.site-description strong { color: var(--text, #18181b); }
+.site-description a { color: var(--accent, #7c3aed); font-weight: 600; }
+.site-description blockquote {
+  margin: 0 0 10px; padding: 6px 12px; border-left: 3px solid var(--border, #e5e7eb);
+}
+.site-description hr { border: none; border-top: 1px solid var(--border, #e5e7eb); margin: 12px 0; }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import { supabase } from '../lib/supabase'
 import { useForceLightMode } from '../hooks/useForceLightMode'
 import type { Site, WeekAvailability } from '../lib/database.types'
@@ -450,7 +452,9 @@ export default function BookingForm() {
                 </a>
 
                 {lockedSite.description && (
-                  <p style={{ fontSize: 14, color: 'var(--text-muted,#71717a)', marginTop: 0, marginBottom: 16, lineHeight: 1.7 }}>{lockedSite.description}</p>
+                  <div className="site-description" style={{ fontSize: 14, color: 'var(--text-muted,#71717a)', marginBottom: 16, lineHeight: 1.7 }}>
+                    <ReactMarkdown remarkPlugins={[remarkBreaks]}>{lockedSite.description}</ReactMarkdown>
+                  </div>
                 )}
 
                 {lockedSite.amenities && lockedSite.amenities.length > 0 && (
