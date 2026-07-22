@@ -25,6 +25,8 @@ export interface Database {
           google_review_url: string | null
           pricing_mode: 'hourly' | 'packages'
           rate_packages: Json | null
+          site_type: 'hall' | 'vehicle'
+          custom_questions: Json | null
         }
         Insert: {
           id?: string
@@ -47,6 +49,8 @@ export interface Database {
           google_review_url?: string | null
           pricing_mode?: 'hourly' | 'packages'
           rate_packages?: Json | null
+          site_type?: 'hall' | 'vehicle'
+          custom_questions?: Json | null
         }
         Update: {
           id?: string
@@ -69,6 +73,8 @@ export interface Database {
           google_review_url?: string | null
           pricing_mode?: 'hourly' | 'packages'
           rate_packages?: Json | null
+          site_type?: 'hall' | 'vehicle'
+          custom_questions?: Json | null
         }
         Relationships: []
       }
@@ -139,6 +145,7 @@ export interface Database {
           assigned_to: string | null
           package_label: string | null
           end_date: string | null
+          custom_answers: Record<string, string> | null
         }
         Insert: {
           id?: string
@@ -170,6 +177,7 @@ export interface Database {
           assigned_to?: string | null
           package_label?: string | null
           end_date?: string | null
+          custom_answers?: Record<string, string> | null
         }
         Update: {
           id?: string
@@ -201,6 +209,7 @@ export interface Database {
           assigned_to?: string | null
           package_label?: string | null
           end_date?: string | null
+          custom_answers?: Record<string, string> | null
         }
         Relationships: []
       }
@@ -369,6 +378,18 @@ export function getRatePackages(site: Pick<Site, 'rate_packages'> | null | undef
   const raw = site?.rate_packages
   if (!Array.isArray(raw)) return []
   return (raw as unknown as RatePackage[]).filter(p => p && p.label && p.start_time && p.end_time)
+}
+
+/** Extra booking-form question defined per site (e.g. driver details for a vehicle). */
+export interface CustomQuestion {
+  label: string
+  required: boolean
+}
+
+export function getCustomQuestions(site: Pick<Site, 'custom_questions'> | null | undefined): CustomQuestion[] {
+  const raw = site?.custom_questions
+  if (!Array.isArray(raw)) return []
+  return (raw as unknown as CustomQuestion[]).filter(q => q && q.label)
 }
 
 export type WeekAvailability = {

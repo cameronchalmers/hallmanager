@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useForceLightMode } from '../hooks/useForceLightMode'
 import type { Site, WeekAvailability } from '../lib/database.types'
-import { getRatePackages, type RatePackage } from '../lib/database.types'
+import { getRatePackages, getCustomQuestions, type RatePackage } from '../lib/database.types'
 import { formatPence } from '../lib/money'
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
@@ -92,6 +92,19 @@ function calcHours(start: string, end: string) {
   return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
 }
 
+// Signed variant — a vehicle can be returned earlier in the day than it was
+// picked up (e.g. pickup Fri 17:00, return Sun 09:00)
+function calcHoursSigned(start: string, end: string) {
+  if (!start || !end) return 0
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  return (eh * 60 + em - sh * 60 - sm) / 60
+}
+
+function fmt(t: string) {
+  return t.slice(0, 5)
+}
+
 export default function BookingForm() {
   useForceLightMode()
   const { slug } = useParams<{ slug?: string }>()
@@ -105,6 +118,7 @@ export default function BookingForm() {
   const [notFound, setNotFound] = useState(false)
   const [photoIndex, setPhotoIndex] = useState(0)
   const [siteBookings, setSiteBookings] = useState<SlotBooking[]>([])
+  const [answers, setAnswers] = useState<Record<string, string>>({})
 
   useEffect(() => {
     supabase.from('sites').select('*').then(({ data }) => {
@@ -130,11 +144,15 @@ export default function BookingForm() {
   }
 
   const activeSite = lockedSite ?? sites.find(s => s.id === form.site_id)
-  const isPackages = activeSite?.pricing_mode === 'packages'
+  const isVehicle = activeSite?.site_type === 'vehicle'
+  const isPackages = activeSite?.pricing_mode === 'packages' || isVehicle
   const packages = isPackages ? getRatePackages(activeSite) : []
   const selectedPackage: RatePackage | null = isPackages ? packages.find(p => p.label === form.package_label) ?? null : null
+  const customQuestions = getCustomQuestions(activeSite)
   const hours = selectedPackage
-    ? calcHours(selectedPackage.start_time, selectedPackage.end_time) * Math.max(1, selectedPackage.days)
+    ? (isVehicle
+        ? (Math.max(1, selectedPackage.days) - 1) * 24 + calcHoursSigned(selectedPackage.start_time, selectedPackage.end_time)
+        : calcHours(selectedPackage.start_time, selectedPackage.end_time) * Math.max(1, selectedPackage.days))
     : calcHours(form.start_time, form.end_time)
   const deposit = selectedPackage ? (selectedPackage.deposit ?? activeSite?.deposit ?? 0) : (activeSite?.deposit ?? 0)
   const total = selectedPackage
@@ -201,6 +219,7 @@ export default function BookingForm() {
       type: selectedPackage ? 'oneoff' : form.type,
       recurrence: !selectedPackage && form.type === 'recurring' ? form.recurrence : null,
       notes: form.notes || null,
+      custom_answers: Object.values(answers).some(v => v) ? answers : null,
       status: 'pending',
       deposit,
       total,
@@ -244,7 +263,7 @@ export default function BookingForm() {
           </div>
           <button
             style={{ background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-            onClick={() => { setForm(f => ({ ...f, name: '', email: '', phone: '', event: '', date: '', start_time: '', end_time: '', notes: '', package_label: '' })); setSubmitted(false) }}
+            onClick={() => { setForm(f => ({ ...f, name: '', email: '', phone: '', event: '', date: '', start_time: '', end_time: '', notes: '', package_label: '' })); setAnswers({}); setSubmitted(false) }}
           >
             Submit another request
           </button>
@@ -282,7 +301,7 @@ export default function BookingForm() {
                     <span className="badge badge-accent">{formatPence(lockedSite.rate)}/hr</span>
                   )}
                   <span className="badge badge-neutral">{formatPence(lockedSite.deposit)} deposit</span>
-                  <span className="badge badge-neutral">Up to {lockedSite.capacity} {lockedSite.pricing_mode === 'packages' ? 'seats' : 'guests'}</span>
+                  <span className="badge badge-neutral">{lockedSite.site_type === 'vehicle' ? `${lockedSite.capacity} seats` : `Up to ${lockedSite.capacity} guests`}</span>
                   {lockedSite.pricing_mode !== 'packages' && lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
                 </div>
 
@@ -378,7 +397,7 @@ export default function BookingForm() {
                         <span className="badge badge-accent">{formatPence(activeSite.rate)}/hr</span>
                       )}
                       <span className="badge badge-neutral">{formatPence(activeSite.deposit)} deposit</span>
-                      <span className="badge badge-neutral">Up to {activeSite.capacity} {isPackages ? 'seats' : 'guests'}</span>
+                      <span className="badge badge-neutral">{isVehicle ? `${activeSite.capacity} seats` : `Up to ${activeSite.capacity} guests`}</span>
                       {!isPackages && activeSite.min_hours && <span className="badge badge-neutral">Min. {activeSite.min_hours}hr</span>}
                       {activeSite.available_from && activeSite.available_until && (
                         <span className="badge badge-neutral">{activeSite.available_from}–{activeSite.available_until}</span>
@@ -412,8 +431,8 @@ export default function BookingForm() {
               <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Event details</div>
                 <div className="form-row">
-                  <label className="form-label">Event / purpose</label>
-                  <input className="form-input" required placeholder="e.g. Birthday party, Dance class…" value={form.event} onChange={e => set('event', e.target.value)} />
+                  <label className="form-label">{isVehicle ? 'Purpose of hire' : 'Event / purpose'}</label>
+                  <input className="form-input" required placeholder={isVehicle ? 'e.g. Youth club trip, Airport run…' : 'e.g. Birthday party, Dance class…'} value={form.event} onChange={e => set('event', e.target.value)} />
                 </div>
                 <div className="form-grid-2">
                   {!isPackages && (
@@ -453,7 +472,9 @@ export default function BookingForm() {
                             <div>
                               <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text,#111827)' }}>{p.label}</div>
                               <div style={{ fontSize: 12, color: 'var(--text-muted,#71717a)', marginTop: 2 }}>
-                                {p.start_time.slice(0, 5)}–{p.end_time.slice(0, 5)}{p.days > 1 ? ` · ${p.days} days` : ''}
+                                {isVehicle
+                                  ? `Pickup ${fmt(p.start_time)} · return ${fmt(p.end_time)}${p.days > 1 ? ` (${p.days} days)` : ' same day'}`
+                                  : `${fmt(p.start_time)}–${fmt(p.end_time)}${p.days > 1 ? ` · ${p.days} days` : ''}`}
                               </div>
                             </div>
                             <div style={{ textAlign: 'right' }}>
@@ -466,7 +487,9 @@ export default function BookingForm() {
                     </div>
                     {selectedPackage && selectedPackage.days > 1 && form.date && packageEndDate && (
                       <div className="notice notice-accent" style={{ marginTop: 8 }}>
-                        📅 Covers {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} – {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        {isVehicle
+                          ? <>🚐 Pickup {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at {fmt(selectedPackage.start_time)} — return {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} by {fmt(selectedPackage.end_time)}</>
+                          : <>📅 Covers {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} – {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</>}
                       </div>
                     )}
                   </div>
@@ -548,6 +571,17 @@ export default function BookingForm() {
                     </div>
                   )
                 })()}
+                {customQuestions.map(q => (
+                  <div className="form-row" key={q.label}>
+                    <label className="form-label">{q.label}{!q.required && <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}> (optional)</span>}</label>
+                    <input
+                      className="form-input"
+                      required={q.required}
+                      value={answers[q.label] ?? ''}
+                      onChange={e => setAnswers(a => ({ ...a, [q.label]: e.target.value }))}
+                    />
+                  </div>
+                ))}
                 <div className="form-row">
                   <label className="form-label">Additional notes <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(optional)</span></label>
                   <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Any special requirements…" value={form.notes} onChange={e => set('notes', e.target.value)} />

@@ -104,6 +104,18 @@ function calcHours(start: string, end: string) {
   return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
 }
 
+// Hours for a package booking: vehicles measure elapsed pickup → return time
+// across the covered days; halls repeat a daily window
+function packageHours(pkg: RatePackage, siteType: string | undefined) {
+  const days = Math.max(1, pkg.days)
+  if (siteType === 'vehicle') {
+    const [sh, sm] = pkg.start_time.split(':').map(Number)
+    const [eh, em] = pkg.end_time.split(':').map(Number)
+    return (days - 1) * 24 + (eh * 60 + em - sh * 60 - sm) / 60
+  }
+  return calcHours(pkg.start_time, pkg.end_time) * days
+}
+
 
 export default function Bookings() {
   const { currentSite } = useSite()
@@ -265,16 +277,17 @@ export default function Bookings() {
     setSaving(true)
     setActionError(null)
     const site = selected.sites
-    const editPkg: RatePackage | null = site?.pricing_mode === 'packages'
+    const editUsesPackages = site?.pricing_mode === 'packages' || site?.site_type === 'vehicle'
+    const editPkg: RatePackage | null = editUsesPackages
       ? getRatePackages(site).find(p => p.label === editForm.package_label) ?? null
       : null
-    if (site?.pricing_mode === 'packages' && !editPkg) {
+    if (editUsesPackages && !editPkg) {
       setActionError('Choose a package for this booking.')
       setSaving(false)
       return
     }
     const hours = editPkg
-      ? calcHours(editPkg.start_time, editPkg.end_time) * Math.max(1, editPkg.days)
+      ? packageHours(editPkg, site?.site_type)
       : calcHours(editForm.start_time, editForm.end_time)
     // Custom rates only apply to recurring bookings — same rule as createBooking
     const isRecurring = !editPkg && editForm.type === 'recurring'
@@ -426,16 +439,17 @@ export default function Bookings() {
     if (!site) return
     setSaving(true)
     setActionError(null)
-    const pkg: RatePackage | null = site.pricing_mode === 'packages'
+    const siteUsesPackages = site.pricing_mode === 'packages' || site.site_type === 'vehicle'
+    const pkg: RatePackage | null = siteUsesPackages
       ? getRatePackages(site).find(p => p.label === form.package_label) ?? null
       : null
-    if (site.pricing_mode === 'packages' && !pkg) {
+    if (siteUsesPackages && !pkg) {
       setActionError('Choose a package for this booking.')
       setSaving(false)
       return
     }
     const hours = pkg
-      ? calcHours(pkg.start_time, pkg.end_time) * Math.max(1, pkg.days)
+      ? packageHours(pkg, site.site_type)
       : calcHours(form.start_time, form.end_time)
     const isRecurring = !pkg && form.type === 'recurring'
     const linkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
@@ -499,11 +513,11 @@ export default function Bookings() {
   const pendingCount = bookings.filter(b => b.type === 'oneoff' && b.status === 'pending').length
   const recurringActive = bookings.filter(b => b.type === 'recurring' && !['cancelled','denied'].includes(b.status)).length
   const formSite = sites.find(s => s.id === form.site_id)
-  const formSitePackages = formSite?.pricing_mode === 'packages' ? getRatePackages(formSite) : []
-  const formIsPackages = formSitePackages.length > 0 || formSite?.pricing_mode === 'packages'
+  const formIsPackages = formSite?.pricing_mode === 'packages' || formSite?.site_type === 'vehicle'
+  const formSitePackages = formIsPackages ? getRatePackages(formSite) : []
   const formPackage = formIsPackages ? formSitePackages.find(p => p.label === form.package_label) ?? null : null
   const formHours = formPackage
-    ? calcHours(formPackage.start_time, formPackage.end_time) * Math.max(1, formPackage.days)
+    ? packageHours(formPackage, formSite?.site_type)
     : calcHours(form.start_time, form.end_time)
   const formLinkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
   const formEffectiveRate = form.type === 'recurring' && formLinkedUser && formSite
@@ -609,7 +623,10 @@ export default function Bookings() {
                 <div>
                   <div>{fmtDateRange(b.date, b.end_date)}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    {b.package_label ? `${b.package_label} · ` : ''}{b.start_time.slice(0, 5)}–{b.end_time.slice(0, 5)}
+                    {b.package_label ? `${b.package_label} · ` : ''}
+                    {b.sites?.site_type === 'vehicle'
+                      ? `pickup ${b.start_time.slice(0, 5)} · return ${b.end_time.slice(0, 5)}`
+                      : `${b.start_time.slice(0, 5)}–${b.end_time.slice(0, 5)}`}
                   </div>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name ?? '—'}</div>
@@ -813,7 +830,9 @@ export default function Bookings() {
         </div>
         {formPackage && (
           <div className="notice notice-accent" style={{ marginBottom: 8, fontSize: 12 }}>
-            {formPackage.start_time.slice(0, 5)}–{formPackage.end_time.slice(0, 5)}
+            {formSite?.site_type === 'vehicle'
+              ? `Pickup ${formPackage.start_time.slice(0, 5)} · return ${formPackage.end_time.slice(0, 5)}`
+              : `${formPackage.start_time.slice(0, 5)}–${formPackage.end_time.slice(0, 5)}`}
             {formPackage.days > 1 && form.date ? ` · covers ${fmtDateRange(form.date, addDays(form.date, formPackage.days - 1))}` : ''}
           </div>
         )}
@@ -1024,10 +1043,26 @@ export default function Bookings() {
               <div><div className="detail-label">Email</div><div className="detail-value" style={{ fontSize: 12 }}>{selected.email}</div></div>
               <div><div className="detail-label">Phone</div><div className="detail-value" style={{ fontSize: 12 }}>{selected.phone}</div></div>
               <div><div className="detail-label">Date</div><div className="detail-value">{fmtDateRange(selected.date, selected.end_date)}</div></div>
-              <div><div className="detail-label">Time</div><div className="detail-value">{selected.package_label ? `${selected.package_label} · ` : ''}{selected.start_time.slice(0, 5)}–{selected.end_time.slice(0, 5)} ({selected.hours}h)</div></div>
+              <div><div className="detail-label">Time</div><div className="detail-value">
+                {selected.package_label ? `${selected.package_label} · ` : ''}
+                {selected.sites?.site_type === 'vehicle'
+                  ? `pickup ${selected.start_time.slice(0, 5)} · return ${selected.end_time.slice(0, 5)}`
+                  : `${selected.start_time.slice(0, 5)}–${selected.end_time.slice(0, 5)} (${selected.hours}h)`}
+              </div></div>
               <div><div className="detail-label">Type</div><div className="detail-value"><span className={`badge ${selected.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>{selected.type === 'recurring' ? `↻ ${selected.recurrence}${selected.recurrence_days && selected.recurrence_days.length > 1 ? ' · ' + selected.recurrence_days.slice().sort((a,c)=>a-c).map(d => WEEK_DAYS[d]).join(', ') : ''}` : 'One-off'}</span></div></div>
-              <div><div className="detail-label">Capacity</div><div className="detail-value">Up to {selected.sites?.capacity} guests</div></div>
+              <div><div className="detail-label">Capacity</div><div className="detail-value">{selected.sites?.site_type === 'vehicle' ? `${selected.sites?.capacity} seats` : `Up to ${selected.sites?.capacity} guests`}</div></div>
             </div>
+            {selected.custom_answers && Object.keys(selected.custom_answers).length > 0 && (
+              <div style={{ background: 'var(--surface2)', borderRadius: 7, padding: '9px 12px', fontSize: 12, marginBottom: 12, border: '1px solid var(--border)' }}>
+                <div style={{ fontWeight: 700, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Booking Questions</div>
+                {Object.entries(selected.custom_answers).map(([q, a]) => (
+                  <div key={q} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>{q}</span>
+                    <span style={{ fontWeight: 600, textAlign: 'right' }}>{a || '—'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
               <div>
                 <label className="form-label" style={{ display: 'block', marginBottom: 5 }}>Linked hirer</label>
@@ -1108,7 +1143,7 @@ export default function Bookings() {
           </>
         )}
         {selected && editMode && (() => {
-          const editIsPackages = selected.sites?.pricing_mode === 'packages'
+          const editIsPackages = selected.sites?.pricing_mode === 'packages' || selected.sites?.site_type === 'vehicle'
           const editSitePackages = editIsPackages ? getRatePackages(selected.sites) : []
           const editSelPkg = editIsPackages ? editSitePackages.find(p => p.label === editForm.package_label) ?? null : null
           const editHours = editSelPkg
@@ -1182,7 +1217,9 @@ export default function Bookings() {
               </div>
               {editSelPkg && (
                 <div className="notice notice-accent" style={{ marginBottom: 8, fontSize: 12 }}>
-                  {editSelPkg.start_time.slice(0, 5)}–{editSelPkg.end_time.slice(0, 5)}
+                  {selected.sites?.site_type === 'vehicle'
+                    ? `Pickup ${editSelPkg.start_time.slice(0, 5)} · return ${editSelPkg.end_time.slice(0, 5)}`
+                    : `${editSelPkg.start_time.slice(0, 5)}–${editSelPkg.end_time.slice(0, 5)}`}
                   {editSelPkg.days > 1 && editForm.date ? ` · covers ${fmtDateRange(editForm.date, addDays(editForm.date, editSelPkg.days - 1))}` : ''}
                 </div>
               )}

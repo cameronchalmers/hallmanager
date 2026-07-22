@@ -27,6 +27,7 @@ interface SiteData {
   available_until: string | null
   availability: Record<string, DaySchedule> | null
   blocked_dates: string[] | null
+  pricing_mode?: 'hourly' | 'packages' | null
 }
 
 function toSlug(name: string) {
@@ -76,6 +77,9 @@ function buildSlotMap(bookings: SlotBooking[], year: number, month: number): Map
 }
 
 function getDaySchedule(site: SiteData, date: Date): { open: boolean; from: string | null; until: string | null } {
+  // Package-priced sites (e.g. vehicles) have no opening hours — every day is
+  // bookable and availability is just a matter of existing bookings
+  if (site.pricing_mode === 'packages') return { open: true, from: null, until: null }
   const dayName = DAY_NAMES_LONG[date.getDay()]
   if (site.availability && typeof site.availability === 'object') {
     const cfg = site.availability[dayName]
@@ -108,7 +112,7 @@ export default function PublicCalendar() {
   useEffect(() => { if (site) fetchMonth() }, [cal, site])
 
   async function loadSite() {
-    const { data } = await (supabase as any).from('sites').select('id, name, available_from, available_until, availability, blocked_dates')
+    const { data } = await (supabase as any).from('sites').select('id, name, available_from, available_until, availability, blocked_dates, pricing_mode')
     const all: SiteData[] = data ?? []
     const match = slug ? all.find(s => toSlug(s.name) === slug) : all[0]
     setSite(match ?? null)
@@ -228,12 +232,14 @@ export default function PublicCalendar() {
                 else if (isToday) bg = accentColor
                 else if (isSel) bg = `${accentColor}18`
                 else if (slots.length > 0) {
+                  // Multi-day (package) bookings occupy the whole day
+                  const hasMultiDay = slots.some(s => s.end_date && s.end_date !== s.date)
                   const totalHours = slots.reduce((acc, s) => {
                     const [sh, sm] = s.start_time.split(':').map(Number)
                     const [eh, em] = s.end_time.split(':').map(Number)
                     return acc + (eh + em / 60) - (sh + sm / 60)
                   }, 0)
-                  bg = totalHours >= 4 ? '#fee2e2' : '#fef3c7'
+                  bg = hasMultiDay || totalHours >= 4 ? '#fee2e2' : '#fef3c7'
                 } else {
                   bg = '#f0fdf4' // open & free
                 }
@@ -284,7 +290,7 @@ export default function PublicCalendar() {
                             textOverflow: 'ellipsis',
                             lineHeight: 1.4,
                           }}>
-                            {fmt12(s.start_time)}–{fmt12(s.end_time)}
+                            {s.end_date && s.end_date !== s.date ? 'Booked' : `${fmt12(s.start_time)}–${fmt12(s.end_time)}`}
                           </span>
                         ))}
                         {slots.length > 2 && (
@@ -352,12 +358,16 @@ export default function PublicCalendar() {
                 <div key={i} style={{ padding: '12px 16px', borderBottom: i < selSlots.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span style={{ fontWeight: 700, fontSize: 14, color: '#18181b', fontVariantNumeric: 'tabular-nums' }}>
-                      {fmt12(s.start_time)} – {fmt12(s.end_time)}
+                      {s.end_date && s.end_date !== s.date ? 'All day (multi-day hire)' : `${fmt12(s.start_time)} – ${fmt12(s.end_time)}`}
                     </span>
                     <span style={{ fontSize: 10, background: '#fee2e2', color: '#991b1b', borderRadius: 5, padding: '2px 7px', fontWeight: 600 }}>Booked</span>
                   </div>
                   <div style={{ fontSize: 11, color: '#71717a', marginTop: 3 }}>
                     {(() => {
+                      if (s.end_date && s.end_date !== s.date) {
+                        const f = (ds: string) => new Date(ds + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                        return `${f(s.date)} – ${f(s.end_date)}`
+                      }
                       const [sh, sm] = s.start_time.split(':').map(Number)
                       const [eh, em] = s.end_time.split(':').map(Number)
                       const hrs = (eh + em / 60) - (sh + sm / 60)

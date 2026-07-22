@@ -140,17 +140,18 @@ serve(async (req) => {
 
       const { data: site } = await supabase
         .from('sites')
-        .select('name, whatsapp_number')
+        .select('name, whatsapp_number, site_type')
         .eq('id', booking.site_id)
         .single()
 
+      const isVehicle = site?.site_type === 'vehicle'
       const b: BookingData = {
         name: booking.name,
         email: booking.email,
         event: booking.event,
         date: formatBookingDate(booking.date, booking.end_date),
-        start_time: booking.start_time,
-        end_time: booking.end_time,
+        start_time: isVehicle ? `Pickup ${String(booking.start_time).slice(0, 5)}` : booking.start_time,
+        end_time: isVehicle ? `return ${String(booking.end_time).slice(0, 5)}` : booking.end_time,
         hours: booking.hours,
         site_name: site?.name ?? 'Unknown venue',
         site_id: booking.site_id,

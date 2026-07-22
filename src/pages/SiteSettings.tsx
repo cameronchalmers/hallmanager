@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSite } from '../context/SiteContext'
 import { useAuth } from '../context/AuthContext'
-import type { AppUser, SiteCredentials, RatePackage } from '../lib/database.types'
-import { DEFAULT_AVAILABILITY, getRatePackages, type WeekAvailability } from '../lib/database.types'
+import type { AppUser, SiteCredentials, RatePackage, CustomQuestion } from '../lib/database.types'
+import { DEFAULT_AVAILABILITY, getRatePackages, getCustomQuestions, type WeekAvailability } from '../lib/database.types'
 import { poundsToPence } from '../lib/money'
 
 const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿', '🚐']
 const AMENITY_OPTIONS = ['WiFi', 'Parking', 'Kitchen', 'Toilets', 'Disabled Access', 'PA System', 'Stage', 'Projector & Screen', 'Tables & Chairs', 'Outdoor Space', 'Bar', 'Air Conditioning', 'Changing Rooms', 'CCTV']
+const VEHICLE_AMENITY_OPTIONS = ['Air Conditioning', 'Wheelchair Accessible', 'Seatbelts', 'Bluetooth Audio', 'USB Charging', 'Reversing Camera', 'Sat Nav', 'Tow Bar', 'First Aid Kit', 'Luggage Space', 'Child Seat Points']
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 
 function toSlug(name: string) {
@@ -41,6 +42,8 @@ export default function SiteSettings() {
   const [form, setForm] = useState({ name: '', address: '', capacity: 0, rate: 0, deposit: 0, emoji: '🏛️', min_hours: 1 })
   const [pricingMode, setPricingMode] = useState<'hourly' | 'packages'>('hourly')
   const [ratePackages, setRatePackages] = useState<RatePackage[]>([])
+  const [siteType, setSiteType] = useState<'hall' | 'vehicle'>('hall')
+  const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([])
   const [availability, setAvailability] = useState<WeekAvailability>({ ...DEFAULT_AVAILABILITY })
   const [amenities, setAmenities] = useState<string[]>([])
   const [description, setDescription] = useState('')
@@ -150,7 +153,9 @@ export default function SiteSettings() {
       emoji: currentSite.emoji,
       min_hours: currentSite.min_hours ?? 1,
     })
-    setPricingMode(currentSite.pricing_mode ?? 'hourly')
+    setSiteType(currentSite.site_type ?? 'hall')
+    setCustomQuestions(getCustomQuestions(currentSite))
+    setPricingMode(currentSite.site_type === 'vehicle' ? 'packages' : (currentSite.pricing_mode ?? 'hourly'))
     setRatePackages(getRatePackages(currentSite))
     setAvailability(getAvailability(currentSite.availability))
     setAmenities(currentSite.amenities ?? [])
@@ -192,15 +197,18 @@ export default function SiteSettings() {
     setSaving(true)
     setSaveError('')
     setSaved(false)
-    if (pricingMode === 'packages' && ratePackages.length === 0) {
-      setSaveError('Add at least one package, or switch back to hourly pricing.')
+    const effectivePricingMode = siteType === 'vehicle' ? 'packages' : pricingMode
+    if (effectivePricingMode === 'packages' && ratePackages.length === 0) {
+      setSaveError(siteType === 'vehicle' ? 'Add at least one hire package for the vehicle.' : 'Add at least one package, or switch back to hourly pricing.')
       setSaving(false)
       return
     }
     const payload = {
       ...form,
-      pricing_mode: pricingMode,
-      rate_packages: (pricingMode === 'packages' ? ratePackages : getRatePackages(currentSite)) as unknown as import('../lib/database.types').Json,
+      site_type: siteType,
+      custom_questions: customQuestions.filter(q => q.label.trim()) as unknown as import('../lib/database.types').Json,
+      pricing_mode: effectivePricingMode,
+      rate_packages: (effectivePricingMode === 'packages' ? ratePackages : getRatePackages(currentSite)) as unknown as import('../lib/database.types').Json,
       availability: availability as unknown as import('../lib/database.types').Json,
       amenities,
       description: description || null,
@@ -303,6 +311,26 @@ export default function SiteSettings() {
               <div className="card-header"><span className="card-title">Basic Info</span></div>
               <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
+                  <label className="form-label">Site type</label>
+                  <div style={{ display: 'flex', gap: 2, background: 'var(--surface2)', borderRadius: 9, padding: 3, width: 'fit-content', marginTop: 4 }}>
+                    {([['hall', '🏛️ Hall / venue'], ['vehicle', '🚐 Vehicle']] as const).map(([t, label]) => (
+                      <button key={t} type="button"
+                        onClick={() => { setSiteType(t); if (t === 'vehicle') setPricingMode('packages') }}
+                        style={{ padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                          background: siteType === t ? 'var(--surface)' : 'transparent',
+                          color: siteType === t ? 'var(--text)' : 'var(--text-muted)',
+                          boxShadow: siteType === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {siteType === 'vehicle' && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Vehicles are hired by package (pickup → return) — no opening hours, and times on each package are the pickup and return times.
+                    </div>
+                  )}
+                </div>
+                <div>
                   <label className="form-label">Emoji</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
                     {EMOJI_OPTIONS.map(e => (
@@ -325,25 +353,27 @@ export default function SiteSettings() {
                     <input className="form-input" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
                   </div>
                 </div>
-                <div>
-                  <label className="form-label">Pricing</label>
-                  <div style={{ display: 'flex', gap: 2, background: 'var(--surface2)', borderRadius: 9, padding: 3, width: 'fit-content', marginTop: 4 }}>
-                    {([['hourly', 'Hourly rate'], ['packages', 'Fixed packages']] as const).map(([mode, label]) => (
-                      <button key={mode} type="button" onClick={() => setPricingMode(mode)}
-                        style={{ padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                          background: pricingMode === mode ? 'var(--surface)' : 'transparent',
-                          color: pricingMode === mode ? 'var(--text)' : 'var(--text-muted)',
-                          boxShadow: pricingMode === mode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>
-                        {label}
-                      </button>
-                    ))}
+                {siteType === 'hall' && (
+                  <div>
+                    <label className="form-label">Pricing</label>
+                    <div style={{ display: 'flex', gap: 2, background: 'var(--surface2)', borderRadius: 9, padding: 3, width: 'fit-content', marginTop: 4 }}>
+                      {([['hourly', 'Hourly rate'], ['packages', 'Fixed packages']] as const).map(([mode, label]) => (
+                        <button key={mode} type="button" onClick={() => setPricingMode(mode)}
+                          style={{ padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                            background: pricingMode === mode ? 'var(--surface)' : 'transparent',
+                            color: pricingMode === mode ? 'var(--text)' : 'var(--text-muted)',
+                            boxShadow: pricingMode === mode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {pricingMode === 'hourly'
+                        ? 'Customers pick their own times and pay per hour.'
+                        : 'Customers pick a date and a package (e.g. Full day, Evening, Weekend).'}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                    {pricingMode === 'hourly'
-                      ? 'Customers pick their own times and pay per hour.'
-                      : 'Customers pick a date and a package (e.g. Full day, Evening, Weekend) — ideal for minibus hire.'}
-                  </div>
-                </div>
+                )}
                 <div className="form-grid-3">
                   <div>
                     <label className="form-label">Capacity</label>
@@ -368,9 +398,9 @@ export default function SiteSettings() {
                       style={{ maxWidth: 120 }} />
                   </div>
                 )}
-                {pricingMode === 'packages' && (
+                {(pricingMode === 'packages' || siteType === 'vehicle') && (
                   <div>
-                    <label className="form-label">Packages</label>
+                    <label className="form-label">{siteType === 'vehicle' ? 'Hire packages' : 'Packages'}</label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
                       {ratePackages.map((p, i) => (
                         <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr 0.9fr 0.9fr 0.6fr auto', gap: 6, alignItems: 'end', background: 'var(--surface2)', borderRadius: 9, padding: '8px 10px' }}>
@@ -391,12 +421,12 @@ export default function SiteSettings() {
                               onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, deposit: e.target.value === '' ? null : poundsToPence(Number(e.target.value)) } : x))} />
                           </div>
                           <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>From</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>{siteType === 'vehicle' ? 'Pickup' : 'From'}</div>
                             <input className="form-input" type="time" value={p.start_time}
                               onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, start_time: e.target.value } : x))} />
                           </div>
                           <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Until</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>{siteType === 'vehicle' ? 'Return' : 'Until'}</div>
                             <input className="form-input" type="time" value={p.end_time}
                               onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, end_time: e.target.value } : x))} />
                           </div>
@@ -414,7 +444,9 @@ export default function SiteSettings() {
                         + Add package
                       </button>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        Each package books a fixed time window. Days &gt; 1 blocks consecutive days (e.g. Weekend = 2 days starting Saturday). Leave deposit blank to use the default deposit.
+                        {siteType === 'vehicle'
+                          ? 'Pickup is on the first day, return on the last. Days = calendar days from pickup to return, e.g. Weekend with pickup Friday 17:00 and return Sunday 17:00 = 3 days. Leave deposit blank to use the default deposit.'
+                          : 'Each package books a fixed time window. Days > 1 blocks consecutive days (e.g. Weekend = 2 days starting Saturday). Leave deposit blank to use the default deposit.'}
                       </div>
                     </div>
                   </div>
@@ -427,14 +459,46 @@ export default function SiteSettings() {
             </div>
 
             <div className="card">
-              <div className="card-header"><span className="card-title">Amenities</span></div>
+              <div className="card-header"><span className="card-title">{siteType === 'vehicle' ? 'Vehicle Features' : 'Amenities'}</span></div>
               <div style={{ padding: '14px 18px' }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {AMENITY_OPTIONS.map(a => (
+                  {(siteType === 'vehicle' ? VEHICLE_AMENITY_OPTIONS : AMENITY_OPTIONS).map(a => (
                     <button key={a} onClick={() => toggleAmenity(a)} style={{ padding: '5px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${amenities.includes(a) ? 'var(--accent)' : 'var(--border)'}`, background: amenities.includes(a) ? 'var(--accent-light)' : 'var(--surface2)', color: amenities.includes(a) ? 'var(--accent-text)' : 'var(--text-muted)' }}>
                       {a}
                     </button>
                   ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Booking Questions</span>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Extra fields on the booking form</span>
+              </div>
+              <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {customQuestions.map((q, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input className="form-input" style={{ flex: 1 }} placeholder={siteType === 'vehicle' ? "e.g. Driver's full name" : 'e.g. Expected number of guests'}
+                      value={q.label}
+                      onChange={e => setCustomQuestions(qs => qs.map((x, xi) => xi === i ? { ...x, label: e.target.value } : x))} />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
+                      <input type="checkbox" checked={q.required}
+                        onChange={e => setCustomQuestions(qs => qs.map((x, xi) => xi === i ? { ...x, required: e.target.checked } : x))} />
+                      Required
+                    </label>
+                    <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#ef4444' }}
+                      onClick={() => setCustomQuestions(qs => qs.filter((_, xi) => xi !== i))}>✕</button>
+                  </div>
+                ))}
+                <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }}
+                  onClick={() => setCustomQuestions(qs => [...qs, { label: '', required: true }])}>
+                  + Add question
+                </button>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {siteType === 'vehicle'
+                    ? 'Asked when someone requests a hire — e.g. driver\'s name, licence number, years held, destination.'
+                    : 'Asked when someone requests a booking, in addition to the standard contact and event fields.'}
                 </div>
               </div>
             </div>
@@ -444,6 +508,7 @@ export default function SiteSettings() {
           {/* Right column — availability + photos */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+          {siteType === 'hall' && (
           <div className="card" style={{ position: 'sticky', top: 16 }}>
             <div className="card-header"><span className="card-title">Availability</span></div>
             <div style={{ overflow: 'hidden' }}>
@@ -473,6 +538,7 @@ export default function SiteSettings() {
               })}
             </div>
           </div>
+          )}
 
           <div className="card">
             <div className="card-header"><span className="card-title">Photos</span></div>

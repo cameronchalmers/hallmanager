@@ -130,15 +130,16 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
     const resendKey = Deno.env.get('RESEND_API_KEY')
     const from = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
     if (resendKey) {
-      const { data: site } = await supabase.from('sites').select('name, whatsapp_number').eq('id', booking.site_id).single()
+      const { data: site } = await supabase.from('sites').select('name, whatsapp_number, site_type').eq('id', booking.site_id).single()
       const fmtD = (ds: string) => new Date(ds + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      const isVehicle = site?.site_type === 'vehicle'
       const email = bookingConfirmed({
         name: booking.name,
         email: booking.email,
         event: booking.event,
         date: booking.end_date && booking.end_date !== booking.date ? `${fmtD(booking.date)} – ${fmtD(booking.end_date)}` : fmtD(booking.date),
-        start_time: booking.start_time,
-        end_time: booking.end_time,
+        start_time: isVehicle ? `Pickup ${String(booking.start_time).slice(0, 5)}` : booking.start_time,
+        end_time: isVehicle ? `return ${String(booking.end_time).slice(0, 5)}` : booking.end_time,
         hours: booking.hours,
         site_name: site?.name ?? (booking.sites as { name: string } | null)?.name ?? 'Unknown venue',
         deposit: booking.deposit,
