@@ -32,7 +32,13 @@ serve(async (req) => {
       .eq('site_id', siteId)
       .single()
     if (siteCreds?.stripe_secret_key) stripeKey = siteCreds.stripe_secret_key
-    if (siteCreds?.stripe_webhook_secret) webhookSecret = siteCreds.stripe_webhook_secret
+    // A site-scoped endpoint must use that site's own signing secret — falling
+    // back to the global secret would make verification fail silently.
+    if (!siteCreds?.stripe_webhook_secret) {
+      console.error('No webhook secret configured for site_id:', siteId)
+      return new Response('Webhook secret not configured for this site', { status: 400 })
+    }
+    webhookSecret = siteCreds.stripe_webhook_secret
   }
 
   if (!stripeKey) {
@@ -70,18 +76,6 @@ serve(async (req) => {
     return new Response(JSON.stringify({ received: true }), { status: 200 })
   }
 
-  // Legacy Checkout Session flow (kept for backward compatibility)
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as Stripe.Checkout.Session
-    const bookingId = session.metadata?.booking_id
-    if (!bookingId) {
-      console.error('No booking_id in session metadata')
-      return new Response(JSON.stringify({ received: true }), { status: 200 })
-    }
-    await confirmBooking(supabase, bookingId, null)
-    return new Response(JSON.stringify({ received: true }), { status: 200 })
-  }
-
   return new Response(JSON.stringify({ received: true }), { status: 200 })
 })
 
@@ -95,6 +89,26 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
 
   if (bookingErr || !booking) {
     console.error('Booking not found:', bookingId, bookingErr)
+    return
+  }
+
+  // Stripe retries deliveries — don't re-confirm (and re-email) a booking
+  if (booking.status === 'confirmed') {
+    console.log(`Booking ${bookingId} already confirmed — skipping`)
+    return
+  }
+
+  // A payment can land on a booking that was cancelled/denied after the pay
+  // page was opened. Don't silently confirm it — flag it for manual review.
+  if (booking.status !== 'approved') {
+    console.error(
+      `PAYMENT RECEIVED FOR NON-APPROVED BOOKING — needs manual review. ` +
+      `booking=${bookingId} status=${booking.status} payment_intent=${paymentIntentId}`,
+    )
+    await supabase
+      .from('bookings')
+      .update({ stripe_payment_status: 'paid', ...(paymentIntentId ? { stripe_payment_intent_id: paymentIntentId } : {}) })
+      .eq('id', bookingId)
     return
   }
 

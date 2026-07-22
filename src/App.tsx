@@ -42,11 +42,6 @@ function ProtectedRoute({ children, minRole = 'manager' }: { children: React.Rea
 }
 
 function RootRedirect() {
-  // Supabase puts invite/recovery tokens in the hash — redirect to login to handle them
-  if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
-    return <Navigate to={`/login${window.location.hash}`} replace />
-  }
-
   const { profile, loading } = useAuth()
   const [firstSiteId, setFirstSiteId] = useState<string | null | undefined>(undefined)
 
@@ -64,6 +59,11 @@ function RootRedirect() {
     }
     load()
   }, [profile?.id])
+
+  // Supabase puts invite/recovery tokens in the hash — redirect to login to handle them
+  if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
+    return <Navigate to={`/login${window.location.hash}`} replace />
+  }
 
   if (loading || firstSiteId === undefined) return <Spinner />
   if ((profile as AppUser | null)?.role === 'regular') return <Navigate to="/portal" replace />

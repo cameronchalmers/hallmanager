@@ -76,71 +76,84 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    const { type, id, data: inlineData, template } = await req.json() as { type: string; id?: string; data?: BookingData; template?: string }
+    const { type, id, data: inlineData, template } = await req.json() as { type: string; id?: string; data?: Partial<BookingData>; template?: string }
 
-    // booking_submitted with inline data comes from the public form (anon) — allow it.
-    // All other types require an authenticated admin/manager.
-    const isPublicBookingSubmit = type === 'booking_submitted' && !!inlineData
-    if (!isPublicBookingSubmit) {
-      const authHeader = req.headers.get('Authorization')
-      if (!authHeader) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
-      }
+    // Staff (admin/site_admin/manager) can send any email type. Unauthenticated
+    // callers can only trigger 'booking_submitted', and even then the email is
+    // built from a real, recently created pending booking row — never from
+    // caller-supplied content.
+    let isStaff = false
+    const authHeader = req.headers.get('Authorization')
+    if (authHeader) {
       const token = authHeader.replace('Bearer ', '')
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (authError || !user) {
-        console.error('Auth error:', authError)
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+      const { data: { user } } = await supabase.auth.getUser(token)
+      if (user) {
+        const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
+        if (profile && ['admin', 'site_admin', 'manager'].includes(profile.role)) isStaff = true
       }
-      const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
-      if (!profile || !['admin', 'site_admin', 'manager'].includes(profile.role)) {
-        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
-      }
+    }
+    if (!isStaff && type !== 'booking_submitted') {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
     }
 
     // ── Booking emails ────────────────────────────────────────────────────────
 
     if (['booking_submitted', 'booking_approved', 'booking_confirmed', 'booking_denied', 'booking_cancelled'].includes(type)) {
-      let b: BookingData
+      // deno-lint-ignore no-explicit-any
+      let booking: any = null
 
-      if (type === 'booking_submitted' && inlineData) {
-        // Public form passes data directly (anon can't SELECT back their own insert)
-        b = {
-          ...inlineData,
-          date: new Date(inlineData.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+      if (!isStaff) {
+        // Public form submission — resolve the booking it just inserted. The
+        // legacy client passes form data; use it only to locate the row.
+        let q = supabase
+          .from('bookings')
+          .select('*')
+          .eq('status', 'pending')
+          .gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString())
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (id) {
+          q = q.eq('id', id)
+        } else if (inlineData?.site_id && inlineData?.email && inlineData?.date) {
+          q = q.eq('site_id', inlineData.site_id).eq('email', inlineData.email).eq('date', inlineData.date)
+        } else {
+          throw new Error('booking id required')
         }
+        const { data: rows, error } = await q
+        if (error || !rows?.length) throw new Error('Booking not found')
+        booking = rows[0]
       } else {
-        // Admin actions pass an id; look up the booking with service role
-        const { data: booking, error } = await supabase
+        // Staff actions pass an id; look up the booking with service role
+        const { data: row, error } = await supabase
           .from('bookings')
           .select('*')
           .eq('id', id)
           .single()
+        if (error || !row) throw new Error(`Booking not found: ${id}`)
+        booking = row
+      }
 
-        if (error || !booking) throw new Error(`Booking not found: ${id}`)
+      const { data: site } = await supabase
+        .from('sites')
+        .select('name, whatsapp_number')
+        .eq('id', booking.site_id)
+        .single()
 
-        const { data: site } = await supabase
-          .from('sites')
-          .select('name, whatsapp_number')
-          .eq('id', booking.site_id)
-          .single()
-
-        b = {
-          name: booking.name,
-          email: booking.email,
-          event: booking.event,
-          date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
-          start_time: booking.start_time,
-          end_time: booking.end_time,
-          hours: booking.hours,
-          site_name: site?.name ?? 'Unknown venue',
-          site_id: booking.site_id,
-          deposit: booking.deposit,
-          total: booking.total,
-          notes: booking.notes,
-          payment_url: `${SITE_URL}/pay/${booking.id}`,
-          whatsapp_number: site?.whatsapp_number ?? null,
-        }
+      const b: BookingData = {
+        name: booking.name,
+        email: booking.email,
+        event: booking.event,
+        date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        start_time: booking.start_time,
+        end_time: booking.end_time,
+        hours: booking.hours,
+        site_name: site?.name ?? 'Unknown venue',
+        site_id: booking.site_id,
+        deposit: booking.deposit,
+        total: booking.total,
+        notes: booking.notes,
+        payment_url: `${SITE_URL}/pay/${booking.id}`,
+        whatsapp_number: site?.whatsapp_number ?? null,
       }
 
       if (type === 'booking_submitted') {

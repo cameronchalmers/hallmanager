@@ -10,8 +10,10 @@ export default function BookingPaid() {
   const bookingId = params.get('booking_id')
 
   // Stripe appends redirect_status when returning from confirmPayment.
-  // If it's missing, we're here from a direct link — treat as success.
+  // If it's missing, we're here from a direct link — don't claim the payment
+  // definitely succeeded, since we haven't verified anything.
   const failed = redirectStatus != null && redirectStatus !== 'succeeded'
+  const verified = redirectStatus === 'succeeded'
 
   const pageStyle: React.CSSProperties = {
     minHeight: '100vh',
@@ -86,10 +88,12 @@ export default function BookingPaid() {
             margin: '0 auto 20px', fontSize: 26,
           }}>✓</div>
           <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111827' }}>
-            Payment received — you're confirmed!
+            {verified ? "Payment received — you're confirmed!" : 'Thanks for your booking'}
           </h1>
           <p style={{ margin: '0 0 24px', fontSize: 15, color: '#6b7280', lineHeight: 1.6 }}>
-            Thank you for your payment. Your booking is now confirmed and you'll receive a confirmation email shortly.
+            {verified
+              ? "Thank you for your payment. Your booking is now confirmed and you'll receive a confirmation email shortly."
+              : "Once your payment has been processed, your booking will be confirmed and you'll receive a confirmation email."}
           </p>
           <p style={{ margin: 0, fontSize: 13, color: '#9ca3af' }}>
             If you have any questions, please get in touch with us directly.

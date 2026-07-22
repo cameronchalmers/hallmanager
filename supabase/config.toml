@@ -1,0 +1,40 @@
+project_id = "nxdgcglrwbyketctlqpn"
+
+# JWT verification per function. Functions that receive requests from outside
+# the app (Stripe, pg_cron, the public booking/payment pages) must have it off —
+# they authenticate by other means (webhook signature / service-role key check).
+# Keep these in sync when deploying: `supabase functions deploy <name>` reads
+# this file, so the flags below are the source of truth.
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.create-payment-intent]
+verify_jwt = false
+
+[functions.auto-cancel]
+verify_jwt = false
+
+[functions.invite-user]
+verify_jwt = false
+
+[functions.delete-user]
+verify_jwt = false
+
+[functions.update-user]
+verify_jwt = false
+
+[functions.quickfile]
+verify_jwt = false
+
+[functions.manage-calendar-event]
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = true
+
+[functions.send-reminder]
+verify_jwt = true
+
+[functions.stripe-action]
+verify_jwt = true

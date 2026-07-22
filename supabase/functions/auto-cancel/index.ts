@@ -88,11 +88,14 @@ serve(async (req) => {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - CANCEL_DAYS)
 
+  // stripe_payment_status guard: never cancel a booking Stripe has marked paid,
+  // even if its status update failed for some reason
   const { data: overdue, error } = await supabase
     .from('bookings')
     .select('*, sites(name)')
     .eq('status', 'approved')
     .neq('type', 'recurring')
+    .or('stripe_payment_status.is.null,stripe_payment_status.neq.paid')
     .lt('approved_at', cutoff.toISOString())
 
   if (error) {

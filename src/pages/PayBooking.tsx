@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { loadStripe, type Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
-import { supabase } from '../lib/supabase'
 import { useForceLightMode } from '../hooks/useForceLightMode'
 
 const ACCENT = '#7c3aed'
@@ -109,7 +108,7 @@ export default function PayBooking() {
     if (!bookingId) return
     setState('loading')
 
-    const SUPABASE_URL = (supabase as unknown as { supabaseUrl: string }).supabaseUrl
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
     const res = await fetch(`${SUPABASE_URL}/functions/v1/create-payment-intent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

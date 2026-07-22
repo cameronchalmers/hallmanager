@@ -41,13 +41,25 @@ function expandRecurring(b: BookingWithSite): string[] {
     return dates.sort()
   }
 
+  if (b.recurrence === 'Monthly') {
+    // Same day-of-month each month, skipping months without it (e.g. the 31st
+    // in February) — matches getBookingsOnDate in BookingForm/PublicCalendar
+    const start = new Date(b.date + 'T12:00:00')
+    const dates: string[] = []
+    for (let n = 0; ; n++) {
+      const cur = new Date(start.getFullYear(), start.getMonth() + n, start.getDate(), 12)
+      if (cur > max) break
+      if (cur.getDate() === start.getDate()) dates.push(toDs(cur))
+    }
+    return dates
+  }
+
   const dates: string[] = []
   const cur = new Date(b.date + 'T12:00:00')
   while (cur <= max) {
-    dates.push(cur.toISOString().split('T')[0])
+    dates.push(toDs(cur))
     if (b.recurrence === 'Weekly') cur.setDate(cur.getDate() + 7)
     else if (b.recurrence === 'Fortnightly') cur.setDate(cur.getDate() + 14)
-    else if (b.recurrence === 'Monthly') cur.setMonth(cur.getMonth() + 1)
     else break
   }
   return dates
@@ -108,6 +120,7 @@ export default function Bookings() {
   const [showInvoice, setShowInvoice] = useState(false)
   const [invoiceForm, setInvoiceForm] = useState({ description: '', amount: '', date: '', status: 'paid' })
   const [invoiceSaving, setInvoiceSaving] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => { if (currentSite) fetchBookings() }, [currentSite?.id])
   useEffect(() => { setResendType(''); setResendSent(null) }, [selected?.id])
@@ -132,7 +145,9 @@ export default function Bookings() {
   }
 
   async function updateStatus(id: string, status: string) {
-    await supabase.from('bookings').update({ status }).eq('id', id)
+    setActionError(null)
+    const { error } = await supabase.from('bookings').update({ status }).eq('id', id)
+    if (error) { setActionError(`Failed to update booking: ${error.message}`); return }
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b))
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status } : null)
     if (status === 'denied') sendEmail('booking_denied', id)
@@ -140,7 +155,9 @@ export default function Bookings() {
 
   async function approveBooking(id: string) {
     setActionLoading('approve')
-    await supabase.from('bookings').update({ status: 'approved' }).eq('id', id)
+    setActionError(null)
+    const { error } = await supabase.from('bookings').update({ status: 'approved' }).eq('id', id)
+    if (error) { setActionError(`Failed to approve booking: ${error.message}`); setActionLoading(null); return }
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'approved' } : b))
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'approved' } : null)
     sendEmail('booking_approved', id)
@@ -149,7 +166,9 @@ export default function Bookings() {
 
   async function cancelBooking(id: string) {
     setActionLoading('cancel')
-    await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', id)
+    setActionError(null)
+    const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', id)
+    if (error) { setActionError(`Failed to cancel booking: ${error.message}`); setActionLoading(null); return }
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b))
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'cancelled' } : null)
     sendEmail('booking_cancelled', id)
@@ -161,7 +180,9 @@ export default function Bookings() {
 
   async function markAsPaid(id: string) {
     setActionLoading('paid')
-    await supabase.from('bookings').update({ status: 'confirmed', stripe_payment_status: 'paid' }).eq('id', id)
+    setActionError(null)
+    const { error } = await supabase.from('bookings').update({ status: 'confirmed', stripe_payment_status: 'paid' }).eq('id', id)
+    if (error) { setActionError(`Failed to mark as paid: ${error.message}`); setActionLoading(null); return }
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed', stripe_payment_status: 'paid' } : b))
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'confirmed', stripe_payment_status: 'paid' } : null)
     setActionLoading(null)
@@ -228,13 +249,16 @@ export default function Bookings() {
   async function saveEdit() {
     if (!selected) return
     setSaving(true)
+    setActionError(null)
     const hours = calcHours(editForm.start_time, editForm.end_time)
     const site = selected.sites
-    const linkedUser = selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
+    // Custom rates only apply to recurring bookings — same rule as createBooking
+    const isRecurring = editForm.type === 'recurring'
+    const linkedUser = isRecurring && selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
     const customRate = linkedUser ? (linkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
     const effectiveRate = customRate ?? site?.rate ?? 0
     const total = site ? Math.round(hours * effectiveRate) + selected.deposit : selected.total
-    await supabase.from('bookings').update({
+    const { error } = await supabase.from('bookings').update({
       name: editForm.name,
       email: editForm.email,
       phone: editForm.phone,
@@ -249,6 +273,7 @@ export default function Bookings() {
       notes: editForm.notes || null,
       total,
     }).eq('id', selected.id)
+    if (error) { setActionError(`Failed to save changes: ${error.message}`); setSaving(false); return }
 
     await fetchBookings()
     setEditMode(false)
@@ -266,13 +291,15 @@ export default function Bookings() {
       if (customRate) updates.total = Math.round(booking.hours * customRate)
     }
 
-    await supabase.from('bookings').update(updates).eq('id', bookingId)
+    const { error } = await supabase.from('bookings').update(updates).eq('id', bookingId)
+    if (error) { setActionError(`Failed to link hirer: ${error.message}`); return }
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, ...updates } : b))
     if (selected?.id === bookingId) setSelected(prev => prev ? { ...prev, ...updates } : null)
   }
 
   async function assignStaff(bookingId: string, userId: string | null) {
-    await supabase.from('bookings').update({ assigned_to: userId }).eq('id', bookingId)
+    const { error } = await supabase.from('bookings').update({ assigned_to: userId }).eq('id', bookingId)
+    if (error) { setActionError(`Failed to assign: ${error.message}`); return }
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, assigned_to: userId } : b))
     if (selected?.id === bookingId) setSelected(prev => prev ? { ...prev, assigned_to: userId } : null)
   }
@@ -311,7 +338,8 @@ export default function Bookings() {
     if (!booking) return
     const existing = booking.cancelled_sessions ?? []
     const updated = [...new Set([...existing, ...dates])]
-    await supabase.from('bookings').update({ cancelled_sessions: updated }).eq('id', bookingId)
+    const { error } = await supabase.from('bookings').update({ cancelled_sessions: updated }).eq('id', bookingId)
+    if (error) { setActionError(`Failed to cancel sessions: ${error.message}`); return }
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, cancelled_sessions: updated } : b))
     setCheckedSessions(prev => { const next = new Map(prev); next.delete(bookingId); return next })
   }
@@ -320,7 +348,8 @@ export default function Bookings() {
     const booking = bookings.find(b => b.id === bookingId)
     if (!booking) return
     const updated = (booking.cancelled_sessions ?? []).filter(d => d !== date)
-    await supabase.from('bookings').update({ cancelled_sessions: updated }).eq('id', bookingId)
+    const { error } = await supabase.from('bookings').update({ cancelled_sessions: updated }).eq('id', bookingId)
+    if (error) { setActionError(`Failed to restore session: ${error.message}`); return }
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, cancelled_sessions: updated } : b))
   }
 
@@ -340,7 +369,8 @@ export default function Bookings() {
   async function createInvoice() {
     if (!selected) return
     setInvoiceSaving(true)
-    await supabase.from('invoices').insert({
+    setActionError(null)
+    const { error } = await supabase.from('invoices').insert({
       booking_id: selected.id,
       user_id: selected.user_id ?? null,
       description: invoiceForm.description,
@@ -348,13 +378,16 @@ export default function Bookings() {
       status: invoiceForm.status,
       date: invoiceForm.date,
     })
+    if (error) setActionError(`Failed to create invoice: ${error.message}`)
     setInvoiceSaving(false)
-    setShowInvoice(false)
+    if (!error) setShowInvoice(false)
   }
 
   async function deleteBooking(id: string) {
     if (!window.confirm('Permanently delete this booking? No email will be sent.')) return
-    await supabase.from('bookings').delete().eq('id', id)
+    setActionError(null)
+    const { error } = await supabase.from('bookings').delete().eq('id', id)
+    if (error) { setActionError(`Failed to delete booking: ${error.message}`); return }
     setBookings(prev => prev.filter(b => b.id !== id))
     setSelected(null)
   }
@@ -363,13 +396,14 @@ export default function Bookings() {
     const site = sites.find(s => s.id === form.site_id)
     if (!site) return
     setSaving(true)
+    setActionError(null)
     const hours = calcHours(form.start_time, form.end_time)
     const isRecurring = form.type === 'recurring'
     const linkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
     const effectiveRate = isRecurring && linkedUser
       ? ((linkedUser.custom_rates as Record<string, number> | null)?.[form.site_id] ?? site.rate)
       : site.rate
-    const { data: newBooking } = await supabase.from('bookings').insert({
+    const { data: newBooking, error: createErr } = await supabase.from('bookings').insert({
       name: form.name,
       email: form.email,
       phone: form.phone,
@@ -388,6 +422,7 @@ export default function Bookings() {
       deposit: isRecurring || form.waive_deposit ? 0 : site.deposit,
       total: isRecurring || form.waive_deposit ? Math.round(hours * effectiveRate) : Math.round(hours * site.rate) + site.deposit,
     }).select('id').single()
+    if (createErr) { setActionError(`Failed to create booking: ${createErr.message}`); setSaving(false); return }
     await fetchBookings()
     setShowCreate(false)
     setForm(DEFAULT_FORM)
@@ -487,6 +522,13 @@ export default function Bookings() {
           ))
         )}
       </div>
+
+      {actionError && (
+        <div className="notice notice-warn" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <span>⚠️ {actionError}</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
 
       <div className="card">
         <div className="tbl-header cols-bookings">
@@ -984,7 +1026,7 @@ export default function Bookings() {
         )}
         {selected && editMode && (() => {
           const editHours = calcHours(editForm.start_time, editForm.end_time)
-          const editLinkedUser = selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
+          const editLinkedUser = editForm.type === 'recurring' && selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
           const editCustomRate = editLinkedUser ? (editLinkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
           const editEffectiveRate = editCustomRate ?? selected.sites?.rate ?? 0
           const editTotal = selected.sites ? Math.round(editHours * editEffectiveRate) + selected.deposit : selected.total

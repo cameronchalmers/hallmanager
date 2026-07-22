@@ -156,7 +156,11 @@ export default function BookingForm() {
 
     setSubmitting(true)
     setError('')
+    // Generate the id client-side so we can reference the booking in the
+    // confirmation email call (anon can't SELECT back its own insert)
+    const bookingId = crypto.randomUUID()
     const { error: err } = await supabase.from('bookings').insert({
+      id: bookingId,
       name: form.name,
       email: form.email,
       phone: form.phone,
@@ -174,25 +178,8 @@ export default function BookingForm() {
       total,
     })
     if (err) { setError(err.message); setSubmitting(false); return }
-    // Pass booking data directly — anon can't SELECT back their own insert
     const { error: emailErr } = await supabase.functions.invoke('send-email', {
-      body: {
-        type: 'booking_submitted',
-        data: {
-          name: form.name,
-          email: form.email,
-          event: form.event,
-          date: form.date,
-          start_time: form.start_time,
-          end_time: form.end_time,
-          hours,
-          site_name: activeSite.name,
-          site_id: activeSite.id,
-          deposit,
-          total,
-          notes: form.notes || null,
-        },
-      },
+      body: { type: 'booking_submitted', id: bookingId },
     })
     if (emailErr) console.error('Email invoke error:', emailErr)
     setSubmitted(true)

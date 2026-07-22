@@ -27,6 +27,12 @@ const EMPTY_CREDS: Omit<SiteCredentials, 'site_id' | 'updated_at'> = {
   google_calendar_id: null,
 }
 
+// Secret credentials are write-only: the client can never read them back, only
+// see whether they're set (via the get_site_credentials_status RPC) and
+// overwrite them by typing a new value.
+const SECRET_FIELDS = ['stripe_secret_key', 'stripe_webhook_secret', 'qf_api_key'] as const
+const EMPTY_SECRET_STATUS = { stripe_secret_key: false, stripe_webhook_secret: false, qf_api_key: false }
+
 type Section = 'venue' | 'integrations' | 'booking-link' | 'people'
 
 export default function SiteSettings() {
@@ -41,6 +47,7 @@ export default function SiteSettings() {
   const [whatsappNumber, setWhatsappNumber] = useState('')
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [creds, setCreds] = useState<Omit<SiteCredentials, 'site_id' | 'updated_at'>>(EMPTY_CREDS)
+  const [secretStatus, setSecretStatus] = useState<Record<(typeof SECRET_FIELDS)[number], boolean>>(EMPTY_SECRET_STATUS)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saved, setSaved] = useState(false)
@@ -148,17 +155,30 @@ export default function SiteSettings() {
     setWhatsappNumber(currentSite.whatsapp_number ?? '')
     setGoogleReviewUrl(currentSite.google_review_url ?? '')
     setCreds(EMPTY_CREDS)
-    supabase.from('site_credentials').select('*').eq('site_id', currentSite.id).single()
+    setSecretStatus(EMPTY_SECRET_STATUS)
+    // Secret columns aren't readable from the client — load the rest, plus
+    // set/unset flags for the secrets
+    supabase.from('site_credentials')
+      .select('stripe_publishable_key, qf_account_num, qf_app_id, google_calendar_id')
+      .eq('site_id', currentSite.id).single()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then(({ data }: { data: any }) => {
-        if (data) setCreds({
-          stripe_secret_key: data.stripe_secret_key ?? null,
+        if (data) setCreds(c => ({
+          ...c,
           stripe_publishable_key: data.stripe_publishable_key ?? null,
-          stripe_webhook_secret: data.stripe_webhook_secret ?? null,
           qf_account_num: data.qf_account_num ?? null,
           qf_app_id: data.qf_app_id ?? null,
-          qf_api_key: data.qf_api_key ?? null,
           google_calendar_id: data.google_calendar_id ?? null,
+        }))
+      })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(supabase as any).rpc('get_site_credentials_status', { p_site_id: currentSite.id })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then(({ data }: { data: any }) => {
+        if (data) setSecretStatus({
+          stripe_secret_key: !!data.stripe_secret_key,
+          stripe_webhook_secret: !!data.stripe_webhook_secret,
+          qf_api_key: !!data.qf_api_key,
         })
       })
   }, [currentSite?.id])
@@ -180,8 +200,28 @@ export default function SiteSettings() {
     const { error } = await supabase.from('sites').update(payload).eq('id', currentSite.id)
     if (error) { setSaveError(error.message); setSaving(false); return }
     if (Object.values(creds).some(v => v)) {
-      const { error: credsError } = await supabase.from('site_credentials').upsert({ site_id: currentSite.id, ...creds, updated_at: new Date().toISOString() })
+      // Only send secret fields the user actually typed — omitting them from
+      // the upsert leaves the stored values untouched
+      const credsPayload: Partial<SiteCredentials> & { site_id: string } = {
+        site_id: currentSite.id,
+        stripe_publishable_key: creds.stripe_publishable_key,
+        qf_account_num: creds.qf_account_num,
+        qf_app_id: creds.qf_app_id,
+        google_calendar_id: creds.google_calendar_id,
+        updated_at: new Date().toISOString(),
+      }
+      for (const field of SECRET_FIELDS) {
+        if (creds[field]) credsPayload[field] = creds[field]
+      }
+      const { error: credsError } = await supabase.from('site_credentials').upsert(credsPayload)
       if (credsError) { setSaveError(credsError.message); setSaving(false); return }
+      // Reflect newly saved secrets in the status flags and clear the inputs
+      setSecretStatus(s => ({
+        stripe_secret_key: s.stripe_secret_key || !!creds.stripe_secret_key,
+        stripe_webhook_secret: s.stripe_webhook_secret || !!creds.stripe_webhook_secret,
+        qf_api_key: s.qf_api_key || !!creds.qf_api_key,
+      }))
+      setCreds(c => ({ ...c, stripe_secret_key: null, stripe_webhook_secret: null, qf_api_key: null }))
     }
     setCurrentSite({ ...currentSite, ...payload })
     setSaving(false)
@@ -424,7 +464,7 @@ export default function SiteSettings() {
               <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
                   <label className="form-label">Secret key</label>
-                  <input className="form-input" type="password" placeholder={creds.stripe_secret_key ? '••••••••' : 'sk_live_...'} value={creds.stripe_secret_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_secret_key: e.target.value || null }))} autoComplete="new-password" />
+                  <input className="form-input" type="password" placeholder={secretStatus.stripe_secret_key ? '•••••••• (saved — type to replace)' : 'sk_live_...'} value={creds.stripe_secret_key ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_secret_key: e.target.value || null }))} autoComplete="new-password" />
                 </div>
                 <div>
                   <label className="form-label">Publishable key</label>
@@ -432,7 +472,7 @@ export default function SiteSettings() {
                 </div>
                 <div>
                   <label className="form-label">Webhook signing secret</label>
-                  <input className="form-input" type="password" placeholder={creds.stripe_webhook_secret ? '••••••••' : 'whsec_...'} value={creds.stripe_webhook_secret ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_webhook_secret: e.target.value || null }))} autoComplete="new-password" />
+                  <input className="form-input" type="password" placeholder={secretStatus.stripe_webhook_secret ? '•••••••• (saved — type to replace)' : 'whsec_...'} value={creds.stripe_webhook_secret ?? ''} onChange={e => setCreds(c => ({ ...c, stripe_webhook_secret: e.target.value || null }))} autoComplete="new-password" />
                 </div>
                 {currentSite && (
                   <div>
@@ -482,7 +522,7 @@ export default function SiteSettings() {
                   </div>
                   <div>
                     <label className="form-label">API key</label>
-                    <input className="form-input" type="password" placeholder={creds.qf_api_key ? '••••••••' : 'api-key'} value={creds.qf_api_key ?? ''} onChange={e => setCreds(c => ({ ...c, qf_api_key: e.target.value || null }))} autoComplete="new-password" />
+                    <input className="form-input" type="password" placeholder={secretStatus.qf_api_key ? '•••••••• (saved — type to replace)' : 'api-key'} value={creds.qf_api_key ?? ''} onChange={e => setCreds(c => ({ ...c, qf_api_key: e.target.value || null }))} autoComplete="new-password" />
                   </div>
                 </div>
               </div>
