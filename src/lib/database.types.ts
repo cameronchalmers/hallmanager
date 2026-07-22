@@ -23,6 +23,8 @@ export interface Database {
           blocked_dates: string[] | null
           whatsapp_number: string | null
           google_review_url: string | null
+          pricing_mode: 'hourly' | 'packages'
+          rate_packages: Json | null
         }
         Insert: {
           id?: string
@@ -43,6 +45,8 @@ export interface Database {
           blocked_dates?: string[] | null
           whatsapp_number?: string | null
           google_review_url?: string | null
+          pricing_mode?: 'hourly' | 'packages'
+          rate_packages?: Json | null
         }
         Update: {
           id?: string
@@ -63,6 +67,8 @@ export interface Database {
           blocked_dates?: string[] | null
           whatsapp_number?: string | null
           google_review_url?: string | null
+          pricing_mode?: 'hourly' | 'packages'
+          rate_packages?: Json | null
         }
         Relationships: []
       }
@@ -131,6 +137,8 @@ export interface Database {
           session_attendance: Record<string, boolean> | null
           cancelled_sessions: string[] | null
           assigned_to: string | null
+          package_label: string | null
+          end_date: string | null
         }
         Insert: {
           id?: string
@@ -160,6 +168,8 @@ export interface Database {
           session_attendance?: Record<string, boolean> | null
           cancelled_sessions?: string[] | null
           assigned_to?: string | null
+          package_label?: string | null
+          end_date?: string | null
         }
         Update: {
           id?: string
@@ -189,6 +199,8 @@ export interface Database {
           session_attendance?: Record<string, boolean> | null
           cancelled_sessions?: string[] | null
           assigned_to?: string | null
+          package_label?: string | null
+          end_date?: string | null
         }
         Relationships: []
       }
@@ -339,6 +351,24 @@ export interface DaySchedule {
   open: boolean
   from: string
   until: string
+}
+
+/** Fixed-price package for sites with pricing_mode 'packages' (e.g. minibus hire).
+ *  price/deposit in pence; deposit null falls back to the site deposit;
+ *  days = consecutive days covered (weekend = 2). */
+export interface RatePackage {
+  label: string
+  price: number
+  deposit: number | null
+  start_time: string
+  end_time: string
+  days: number
+}
+
+export function getRatePackages(site: Pick<Site, 'rate_packages'> | null | undefined): RatePackage[] {
+  const raw = site?.rate_packages
+  if (!Array.isArray(raw)) return []
+  return (raw as unknown as RatePackage[]).filter(p => p && p.label && p.start_time && p.end_time)
 }
 
 export type WeekAvailability = {

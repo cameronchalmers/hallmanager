@@ -47,6 +47,11 @@ async function getAllAdminEmails(supabase: any): Promise<string[]> {
   return (data ?? []).map((u: { email: string }) => u.email).filter(Boolean)
 }
 
+function formatBookingDate(date: string, endDate?: string | null): string {
+  const fmt = (ds: string) => new Date(ds + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  return endDate && endDate !== date ? `${fmt(date)} – ${fmt(endDate)}` : fmt(date)
+}
+
 async function sendEmail(to: string, subject: string, html: string) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -143,7 +148,7 @@ serve(async (req) => {
         name: booking.name,
         email: booking.email,
         event: booking.event,
-        date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        date: formatBookingDate(booking.date, booking.end_date),
         start_time: booking.start_time,
         end_time: booking.end_time,
         hours: booking.hours,
@@ -191,7 +196,7 @@ serve(async (req) => {
         name: booking.name,
         email: booking.email,
         event: booking.event,
-        date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        date: formatBookingDate(booking.date, booking.end_date),
         start_time: booking.start_time,
         end_time: booking.end_time,
         hours: booking.hours,

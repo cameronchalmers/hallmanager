@@ -71,6 +71,7 @@ serve(async (req) => {
         name: booking.name,
         event: booking.event,
         date: booking.date,
+        end_date: booking.end_date,
         start_time: booking.start_time,
         end_time: booking.end_time,
         site_name: (booking.sites as { name: string } | null)?.name ?? 'Unknown venue',

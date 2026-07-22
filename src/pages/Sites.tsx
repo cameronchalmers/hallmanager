@@ -6,7 +6,7 @@ import { DEFAULT_AVAILABILITY, type WeekAvailability } from '../lib/database.typ
 import { formatPence, poundsToPence } from '../lib/money'
 import Modal from '../components/ui/Modal'
 
-const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿']
+const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿', '🚐']
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 
 function toSlug(name: string) {

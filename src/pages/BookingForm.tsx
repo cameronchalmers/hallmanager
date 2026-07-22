@@ -3,12 +3,14 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useForceLightMode } from '../hooks/useForceLightMode'
 import type { Site, WeekAvailability } from '../lib/database.types'
+import { getRatePackages, type RatePackage } from '../lib/database.types'
 import { formatPence } from '../lib/money'
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
 
 interface SlotBooking {
   date: string
+  end_date: string | null
   start_time: string
   end_time: string
   type: string
@@ -17,13 +19,20 @@ interface SlotBooking {
   recurrence_days: number[] | null
 }
 
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T12:00:00')
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function getBookingsOnDate(bookings: SlotBooking[], dateStr: string): SlotBooking[] {
   if (!dateStr) return []
   const targetDow = (new Date(dateStr + 'T12:00:00').getDay() + 6) % 7
   return bookings.filter(b => {
     const cancelled = new Set(b.cancelled_sessions ?? [])
     if (cancelled.has(dateStr)) return false
-    if (b.type !== 'recurring') return b.date === dateStr
+    // One-off bookings can span multiple days (package bookings with end_date)
+    if (b.type !== 'recurring') return dateStr >= b.date && dateStr <= (b.end_date ?? b.date)
     if (dateStr < b.date) return false
 
     const isMultiDay = b.recurrence === 'Weekly' && b.recurrence_days && b.recurrence_days.length > 1
@@ -63,6 +72,7 @@ const DEFAULT_FORM = {
   type: 'oneoff',
   recurrence: '',
   notes: '',
+  package_label: '',
 }
 
 const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
@@ -120,9 +130,19 @@ export default function BookingForm() {
   }
 
   const activeSite = lockedSite ?? sites.find(s => s.id === form.site_id)
-  const hours = calcHours(form.start_time, form.end_time)
-  const deposit = activeSite?.deposit ?? 0
-  const total = activeSite ? Math.round(hours * activeSite.rate) + deposit : 0
+  const isPackages = activeSite?.pricing_mode === 'packages'
+  const packages = isPackages ? getRatePackages(activeSite) : []
+  const selectedPackage: RatePackage | null = isPackages ? packages.find(p => p.label === form.package_label) ?? null : null
+  const hours = selectedPackage
+    ? calcHours(selectedPackage.start_time, selectedPackage.end_time) * Math.max(1, selectedPackage.days)
+    : calcHours(form.start_time, form.end_time)
+  const deposit = selectedPackage ? (selectedPackage.deposit ?? activeSite?.deposit ?? 0) : (activeSite?.deposit ?? 0)
+  const total = selectedPackage
+    ? selectedPackage.price + deposit
+    : activeSite ? Math.round(hours * activeSite.rate) + deposit : 0
+  const packageEndDate = selectedPackage && selectedPackage.days > 1 && form.date
+    ? addDays(form.date, selectedPackage.days - 1)
+    : null
 
   function set(key: keyof typeof form, value: string) {
     setForm(f => ({ ...f, [key]: value }))
@@ -130,27 +150,33 @@ export default function BookingForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!activeSite || hours <= 0) { setError('Please check your times — end must be after start.'); return }
+    if (!activeSite) { setError('Please choose a venue.'); return }
 
-    // Enforce site hiring policy
-    if (activeSite.min_hours && hours < activeSite.min_hours) {
-      setError(`Minimum booking at ${activeSite.name} is ${activeSite.min_hours} hour${activeSite.min_hours !== 1 ? 's' : ''}.`)
-      return
-    }
-    const sched = getSiteSchedule(activeSite, form.date)
-    if (sched) {
-      if (!sched.open) {
-        const dayName = DAY_NAMES[new Date(form.date + 'T12:00:00').getDay()]
-        setError(`${activeSite.name} is closed on ${dayName.charAt(0).toUpperCase() + dayName.slice(1)}s.`)
+    if (isPackages) {
+      if (!selectedPackage) { setError('Please choose a package.'); return }
+    } else {
+      if (hours <= 0) { setError('Please check your times — end must be after start.'); return }
+
+      // Enforce site hiring policy (hourly sites only — package windows are fixed)
+      if (activeSite.min_hours && hours < activeSite.min_hours) {
+        setError(`Minimum booking at ${activeSite.name} is ${activeSite.min_hours} hour${activeSite.min_hours !== 1 ? 's' : ''}.`)
         return
       }
-      if (form.start_time < sched.from) {
-        setError(`${activeSite.name} doesn't open until ${sched.from} on this day.`)
-        return
-      }
-      if (form.end_time > sched.until) {
-        setError(`${activeSite.name} closes at ${sched.until} on this day.`)
-        return
+      const sched = getSiteSchedule(activeSite, form.date)
+      if (sched) {
+        if (!sched.open) {
+          const dayName = DAY_NAMES[new Date(form.date + 'T12:00:00').getDay()]
+          setError(`${activeSite.name} is closed on ${dayName.charAt(0).toUpperCase() + dayName.slice(1)}s.`)
+          return
+        }
+        if (form.start_time < sched.from) {
+          setError(`${activeSite.name} doesn't open until ${sched.from} on this day.`)
+          return
+        }
+        if (form.end_time > sched.until) {
+          setError(`${activeSite.name} closes at ${sched.until} on this day.`)
+          return
+        }
       }
     }
 
@@ -167,11 +193,13 @@ export default function BookingForm() {
       event: form.event,
       site_id: activeSite.id,
       date: form.date,
-      start_time: form.start_time,
-      end_time: form.end_time,
+      start_time: selectedPackage ? selectedPackage.start_time : form.start_time,
+      end_time: selectedPackage ? selectedPackage.end_time : form.end_time,
+      end_date: packageEndDate,
+      package_label: selectedPackage ? selectedPackage.label : null,
       hours,
-      type: form.type,
-      recurrence: form.type === 'recurring' ? form.recurrence : null,
+      type: selectedPackage ? 'oneoff' : form.type,
+      recurrence: !selectedPackage && form.type === 'recurring' ? form.recurrence : null,
       notes: form.notes || null,
       status: 'pending',
       deposit,
@@ -209,12 +237,14 @@ export default function BookingForm() {
           </div>
           <div style={{ background: 'var(--surface2,#f4f4f6)', borderRadius: 10, padding: '12px 16px', fontSize: 13, textAlign: 'left', marginBottom: 24 }}>
             <div style={{ fontWeight: 700, marginBottom: 4, color: 'var(--text,#111)' }}>{form.event}</div>
-            <div style={{ color: 'var(--text-muted,#71717a)' }}>{activeSite?.name} · {form.date} · {form.start_time}–{form.end_time}</div>
+            <div style={{ color: 'var(--text-muted,#71717a)' }}>
+              {activeSite?.name} · {form.date}{packageEndDate ? ` – ${packageEndDate}` : ''} · {selectedPackage ? selectedPackage.label : `${form.start_time}–${form.end_time}`}
+            </div>
             <div style={{ marginTop: 6, fontWeight: 700, color: 'var(--text,#111)' }}>Total: {formatPence(total)} <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(deposit: {formatPence(deposit)})</span></div>
           </div>
           <button
             style={{ background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-            onClick={() => { setForm(f => ({ ...f, name: '', email: '', phone: '', event: '', date: '', start_time: '', end_time: '', notes: '' })); setSubmitted(false) }}
+            onClick={() => { setForm(f => ({ ...f, name: '', email: '', phone: '', event: '', date: '', start_time: '', end_time: '', notes: '', package_label: '' })); setSubmitted(false) }}
           >
             Submit another request
           </button>
@@ -244,10 +274,16 @@ export default function BookingForm() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 16 }}>
-                  <span className="badge badge-accent">{formatPence(lockedSite.rate)}/hr</span>
+                  {lockedSite.pricing_mode === 'packages' ? (
+                    <span className="badge badge-accent">
+                      {(() => { const ps = getRatePackages(lockedSite); return ps.length ? `from ${formatPence(Math.min(...ps.map(p => p.price)))}` : 'Package pricing' })()}
+                    </span>
+                  ) : (
+                    <span className="badge badge-accent">{formatPence(lockedSite.rate)}/hr</span>
+                  )}
                   <span className="badge badge-neutral">{formatPence(lockedSite.deposit)} deposit</span>
-                  <span className="badge badge-neutral">Up to {lockedSite.capacity} guests</span>
-                  {lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
+                  <span className="badge badge-neutral">Up to {lockedSite.capacity} {lockedSite.pricing_mode === 'packages' ? 'seats' : 'guests'}</span>
+                  {lockedSite.pricing_mode !== 'packages' && lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
                 </div>
 
                 {lockedSite.photos && lockedSite.photos.length > 0 && (
@@ -334,10 +370,16 @@ export default function BookingForm() {
                   </div>
                   {activeSite && (
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                      <span className="badge badge-accent">{formatPence(activeSite.rate)}/hr</span>
+                      {isPackages ? (
+                        <span className="badge badge-accent">
+                          {packages.length ? `from ${formatPence(Math.min(...packages.map(p => p.price)))}` : 'Package pricing'}
+                        </span>
+                      ) : (
+                        <span className="badge badge-accent">{formatPence(activeSite.rate)}/hr</span>
+                      )}
                       <span className="badge badge-neutral">{formatPence(activeSite.deposit)} deposit</span>
-                      <span className="badge badge-neutral">Up to {activeSite.capacity} guests</span>
-                      {activeSite.min_hours && <span className="badge badge-neutral">Min. {activeSite.min_hours}hr</span>}
+                      <span className="badge badge-neutral">Up to {activeSite.capacity} {isPackages ? 'seats' : 'guests'}</span>
+                      {!isPackages && activeSite.min_hours && <span className="badge badge-neutral">Min. {activeSite.min_hours}hr</span>}
                       {activeSite.available_from && activeSite.available_until && (
                         <span className="badge badge-neutral">{activeSite.available_from}–{activeSite.available_until}</span>
                       )}
@@ -374,19 +416,62 @@ export default function BookingForm() {
                   <input className="form-input" required placeholder="e.g. Birthday party, Dance class…" value={form.event} onChange={e => set('event', e.target.value)} />
                 </div>
                 <div className="form-grid-2">
+                  {!isPackages && (
+                    <div>
+                      <label className="form-label">Booking type</label>
+                      <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+                        <option value="oneoff">One-off</option>
+                        <option value="recurring">Recurring</option>
+                      </select>
+                    </div>
+                  )}
                   <div>
-                    <label className="form-label">Booking type</label>
-                    <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
-                      <option value="oneoff">One-off</option>
-                      <option value="recurring">Recurring</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="form-label">Date</label>
+                    <label className="form-label">{isPackages && selectedPackage && selectedPackage.days > 1 ? 'Start date' : 'Date'}</label>
                     <input className="form-input" type="date" required value={form.date} onChange={e => set('date', e.target.value)} />
                   </div>
                 </div>
-                {form.type === 'recurring' && (
+                {isPackages && (
+                  <div className="form-row">
+                    <label className="form-label">Choose a package</label>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {packages.map(p => {
+                        const sel = form.package_label === p.label
+                        const dep = p.deposit ?? activeSite?.deposit ?? 0
+                        return (
+                          <button
+                            type="button"
+                            key={p.label}
+                            onClick={() => set('package_label', sel ? '' : p.label)}
+                            style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+                              padding: '12px 16px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                              border: `2px solid ${sel ? 'var(--accent,#7c3aed)' : 'var(--border,#e5e7eb)'}`,
+                              background: sel ? 'var(--accent-light,#f5f3ff)' : 'var(--surface,#fff)',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text,#111827)' }}>{p.label}</div>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted,#71717a)', marginTop: 2 }}>
+                                {p.start_time.slice(0, 5)}–{p.end_time.slice(0, 5)}{p.days > 1 ? ` · ${p.days} days` : ''}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text,#111827)' }}>{formatPence(p.price)}</div>
+                              {dep > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted,#71717a)' }}>+ {formatPence(dep)} deposit</div>}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {selectedPackage && selectedPackage.days > 1 && form.date && packageEndDate && (
+                      <div className="notice notice-accent" style={{ marginTop: 8 }}>
+                        📅 Covers {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} – {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!isPackages && form.type === 'recurring' && (
                   <div className="form-row">
                     <label className="form-label">Recurrence</label>
                     <select className="form-input" value={form.recurrence} onChange={e => set('recurrence', e.target.value)}>
@@ -398,6 +483,7 @@ export default function BookingForm() {
                   </div>
                 )}
                 {(() => {
+                  if (isPackages) return null
                   const sched = activeSite && form.date ? getSiteSchedule(activeSite, form.date) : null
                   if (!sched) return null
                   if (!sched.open) {
@@ -408,23 +494,34 @@ export default function BookingForm() {
                 })()}
                 {(() => {
                   if (!form.date) return null
-                  const booked = getBookingsOnDate(siteBookings, form.date).filter(b => b.type !== 'recurring')
+                  const coveredDates = selectedPackage && selectedPackage.days > 1 && packageEndDate
+                    ? Array.from({ length: selectedPackage.days }, (_, i) => addDays(form.date, i))
+                    : [form.date]
+                  const booked = coveredDates.flatMap(d =>
+                    getBookingsOnDate(siteBookings, d).filter(b => b.type !== 'recurring').map(b => ({ day: d, b })))
                   if (booked.length === 0) return null
                   return (
                     <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: '#c2410c', marginBottom: 6 }}>⚠️ Already booked on this date</div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#c2410c', marginBottom: 6 }}>
+                        ⚠️ Already booked on {coveredDates.length > 1 ? 'these dates' : 'this date'}
+                      </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-                        {booked.sort((a, b) => a.start_time.localeCompare(b.start_time)).map((b, i) => (
+                        {booked.sort((a, b) => (a.day + a.b.start_time).localeCompare(b.day + b.b.start_time)).map(({ day, b }, i) => (
                           <span key={i} style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: '#fed7aa', color: '#9a3412' }}>
-                            {b.start_time}–{b.end_time}
+                            {coveredDates.length > 1 ? `${new Date(day + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ` : ''}{b.start_time.slice(0, 5)}–{b.end_time.slice(0, 5)}
                           </span>
                         ))}
                       </div>
-                      <div style={{ fontSize: 12, color: '#9a3412' }}>You can still submit a request for a different time slot — we'll confirm availability.</div>
+                      <div style={{ fontSize: 12, color: '#9a3412' }}>
+                        {isPackages
+                          ? 'You can still submit a request — we\'ll confirm availability with you.'
+                          : 'You can still submit a request for a different time slot — we\'ll confirm availability.'}
+                      </div>
                     </div>
                   )
                 })()}
                 {(() => {
+                  if (isPackages) return null
                   const sched = activeSite && form.date ? getSiteSchedule(activeSite, form.date) : null
                   const openFrom = sched?.open ? sched.from : null
                   const openUntil = sched?.open ? sched.until : null
@@ -458,10 +555,19 @@ export default function BookingForm() {
               </div>
 
               {/* Price summary */}
-              {activeSite && hours > 0 && (
+              {activeSite && (selectedPackage || (!isPackages && hours > 0)) && (
                 <div className="price-bar" style={{ marginBottom: 14 }}>
-                  <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(activeSite.rate)}/hr</div></div>
-                  <div><div className="pi-label">Hours</div><div className="pi-value">{hours}</div></div>
+                  {selectedPackage ? (
+                    <>
+                      <div><div className="pi-label">Package</div><div className="pi-value">{selectedPackage.label}</div></div>
+                      <div><div className="pi-label">{selectedPackage.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{selectedPackage.days > 1 ? selectedPackage.days : hours}</div></div>
+                    </>
+                  ) : (
+                    <>
+                      <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(activeSite.rate)}/hr</div></div>
+                      <div><div className="pi-label">Hours</div><div className="pi-value">{hours}</div></div>
+                    </>
+                  )}
                   <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(deposit)}</div></div>
                   <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(total)}</div></div>
                 </div>

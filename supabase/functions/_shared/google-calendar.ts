@@ -7,6 +7,7 @@ export interface BookingDetails {
   name: string
   event: string
   date: string       // "2026-04-18"
+  end_date?: string | null // last day for multi-day (package) bookings
   start_time: string // "09:00"
   end_time: string   // "11:00"
   site_name: string
@@ -88,7 +89,7 @@ export async function createCalendarEvent(
     location: booking.site_name,
     description: booking.notes || undefined,
     start: { dateTime: `${booking.date}T${booking.start_time}:00`, timeZone: 'Europe/London' },
-    end:   { dateTime: `${booking.date}T${booking.end_time}:00`,   timeZone: 'Europe/London' },
+    end:   { dateTime: `${booking.end_date ?? booking.date}T${booking.end_time}:00`, timeZone: 'Europe/London' },
   }
 
   const res = await fetch(

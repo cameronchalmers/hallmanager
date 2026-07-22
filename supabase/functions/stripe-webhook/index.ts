@@ -131,11 +131,12 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
     const from = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
     if (resendKey) {
       const { data: site } = await supabase.from('sites').select('name, whatsapp_number').eq('id', booking.site_id).single()
+      const fmtD = (ds: string) => new Date(ds + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
       const email = bookingConfirmed({
         name: booking.name,
         email: booking.email,
         event: booking.event,
-        date: new Date(booking.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        date: booking.end_date && booking.end_date !== booking.date ? `${fmtD(booking.date)} – ${fmtD(booking.end_date)}` : fmtD(booking.date),
         start_time: booking.start_time,
         end_time: booking.end_time,
         hours: booking.hours,
@@ -171,6 +172,7 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
             name: booking.name,
             event: booking.event,
             date: booking.date,
+            end_date: booking.end_date,
             start_time: booking.start_time,
             end_time: booking.end_time,
             site_name: (booking.sites as { name: string } | null)?.name ?? 'Unknown venue',

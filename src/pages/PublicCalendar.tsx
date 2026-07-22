@@ -9,6 +9,7 @@ const DAY_NAMES_LONG = ['sunday','monday','tuesday','wednesday','thursday','frid
 
 interface SlotBooking {
   date: string
+  end_date: string | null
   start_time: string
   end_time: string
   type: string
@@ -56,10 +57,19 @@ function buildSlotMap(bookings: SlotBooking[], year: number, month: number): Map
 
   for (const b of bookings) {
     if (b.type === 'recurring') continue // hide recurring from public view
-    if (b.date >= monthStart && b.date <= monthEnd) {
-      const list = map.get(b.date) ?? []
-      list.push(b)
-      map.set(b.date, list)
+    // Multi-day (package) bookings block every day from date to end_date
+    const last = b.end_date ?? b.date
+    if (last < monthStart || b.date > monthEnd) continue
+    const cur = new Date(b.date + 'T12:00:00')
+    while (true) {
+      const ds = toDs(cur)
+      if (ds > last) break
+      if (ds >= monthStart && ds <= monthEnd) {
+        const list = map.get(ds) ?? []
+        list.push(b)
+        map.set(ds, list)
+      }
+      cur.setDate(cur.getDate() + 1)
     }
   }
   return map

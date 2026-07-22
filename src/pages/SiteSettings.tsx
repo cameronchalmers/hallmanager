@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSite } from '../context/SiteContext'
 import { useAuth } from '../context/AuthContext'
-import type { AppUser, SiteCredentials } from '../lib/database.types'
-import { DEFAULT_AVAILABILITY, type WeekAvailability } from '../lib/database.types'
+import type { AppUser, SiteCredentials, RatePackage } from '../lib/database.types'
+import { DEFAULT_AVAILABILITY, getRatePackages, type WeekAvailability } from '../lib/database.types'
 import { poundsToPence } from '../lib/money'
 
-const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿']
+const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿', '🚐']
 const AMENITY_OPTIONS = ['WiFi', 'Parking', 'Kitchen', 'Toilets', 'Disabled Access', 'PA System', 'Stage', 'Projector & Screen', 'Tables & Chairs', 'Outdoor Space', 'Bar', 'Air Conditioning', 'Changing Rooms', 'CCTV']
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 
@@ -39,6 +39,8 @@ export default function SiteSettings() {
   const { currentSite, setCurrentSite } = useSite()
   const { profile } = useAuth()
   const [form, setForm] = useState({ name: '', address: '', capacity: 0, rate: 0, deposit: 0, emoji: '🏛️', min_hours: 1 })
+  const [pricingMode, setPricingMode] = useState<'hourly' | 'packages'>('hourly')
+  const [ratePackages, setRatePackages] = useState<RatePackage[]>([])
   const [availability, setAvailability] = useState<WeekAvailability>({ ...DEFAULT_AVAILABILITY })
   const [amenities, setAmenities] = useState<string[]>([])
   const [description, setDescription] = useState('')
@@ -148,6 +150,8 @@ export default function SiteSettings() {
       emoji: currentSite.emoji,
       min_hours: currentSite.min_hours ?? 1,
     })
+    setPricingMode(currentSite.pricing_mode ?? 'hourly')
+    setRatePackages(getRatePackages(currentSite))
     setAvailability(getAvailability(currentSite.availability))
     setAmenities(currentSite.amenities ?? [])
     setDescription(currentSite.description ?? '')
@@ -188,8 +192,15 @@ export default function SiteSettings() {
     setSaving(true)
     setSaveError('')
     setSaved(false)
+    if (pricingMode === 'packages' && ratePackages.length === 0) {
+      setSaveError('Add at least one package, or switch back to hourly pricing.')
+      setSaving(false)
+      return
+    }
     const payload = {
       ...form,
+      pricing_mode: pricingMode,
+      rate_packages: (pricingMode === 'packages' ? ratePackages : getRatePackages(currentSite)) as unknown as import('../lib/database.types').Json,
       availability: availability as unknown as import('../lib/database.types').Json,
       amenities,
       description: description || null,
@@ -314,26 +325,100 @@ export default function SiteSettings() {
                     <input className="form-input" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
                   </div>
                 </div>
+                <div>
+                  <label className="form-label">Pricing</label>
+                  <div style={{ display: 'flex', gap: 2, background: 'var(--surface2)', borderRadius: 9, padding: 3, width: 'fit-content', marginTop: 4 }}>
+                    {([['hourly', 'Hourly rate'], ['packages', 'Fixed packages']] as const).map(([mode, label]) => (
+                      <button key={mode} type="button" onClick={() => setPricingMode(mode)}
+                        style={{ padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                          background: pricingMode === mode ? 'var(--surface)' : 'transparent',
+                          color: pricingMode === mode ? 'var(--text)' : 'var(--text-muted)',
+                          boxShadow: pricingMode === mode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {pricingMode === 'hourly'
+                      ? 'Customers pick their own times and pay per hour.'
+                      : 'Customers pick a date and a package (e.g. Full day, Evening, Weekend) — ideal for minibus hire.'}
+                  </div>
+                </div>
                 <div className="form-grid-3">
                   <div>
                     <label className="form-label">Capacity</label>
                     <input className="form-input" type="number" min="1" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: Number(e.target.value) }))} />
                   </div>
+                  {pricingMode === 'hourly' && (
+                    <div>
+                      <label className="form-label">Rate (£/hr)</label>
+                      <input className="form-input" type="number" min="0" step="0.01" value={form.rate / 100} onChange={e => setForm(f => ({ ...f, rate: poundsToPence(Number(e.target.value)) }))} />
+                    </div>
+                  )}
                   <div>
-                    <label className="form-label">Rate (£/hr)</label>
-                    <input className="form-input" type="number" min="0" step="0.01" value={form.rate / 100} onChange={e => setForm(f => ({ ...f, rate: poundsToPence(Number(e.target.value)) }))} />
-                  </div>
-                  <div>
-                    <label className="form-label">Deposit (£)</label>
+                    <label className="form-label">{pricingMode === 'packages' ? 'Default deposit (£)' : 'Deposit (£)'}</label>
                     <input className="form-input" type="number" min="0" step="0.01" value={form.deposit / 100} onChange={e => setForm(f => ({ ...f, deposit: poundsToPence(Number(e.target.value)) }))} />
                   </div>
                 </div>
-                <div>
-                  <label className="form-label">Minimum booking duration (hours)</label>
-                  <input className="form-input" type="number" min="0.5" step="0.5" value={form.min_hours}
-                    onChange={e => setForm(f => ({ ...f, min_hours: Number(e.target.value) }))}
-                    style={{ maxWidth: 120 }} />
-                </div>
+                {pricingMode === 'hourly' && (
+                  <div>
+                    <label className="form-label">Minimum booking duration (hours)</label>
+                    <input className="form-input" type="number" min="0.5" step="0.5" value={form.min_hours}
+                      onChange={e => setForm(f => ({ ...f, min_hours: Number(e.target.value) }))}
+                      style={{ maxWidth: 120 }} />
+                  </div>
+                )}
+                {pricingMode === 'packages' && (
+                  <div>
+                    <label className="form-label">Packages</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                      {ratePackages.map((p, i) => (
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr 0.9fr 0.9fr 0.6fr auto', gap: 6, alignItems: 'end', background: 'var(--surface2)', borderRadius: 9, padding: '8px 10px' }}>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Name</div>
+                            <input className="form-input" placeholder="Full day" value={p.label}
+                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, label: e.target.value } : x))} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Price £</div>
+                            <input className="form-input" type="number" min="0" step="0.01" value={p.price / 100}
+                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, price: poundsToPence(Number(e.target.value)) } : x))} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Deposit £</div>
+                            <input className="form-input" type="number" min="0" step="0.01" placeholder={String(form.deposit / 100)}
+                              value={p.deposit == null ? '' : p.deposit / 100}
+                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, deposit: e.target.value === '' ? null : poundsToPence(Number(e.target.value)) } : x))} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>From</div>
+                            <input className="form-input" type="time" value={p.start_time}
+                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, start_time: e.target.value } : x))} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Until</div>
+                            <input className="form-input" type="time" value={p.end_time}
+                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, end_time: e.target.value } : x))} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Days</div>
+                            <input className="form-input" type="number" min="1" max="14" value={p.days}
+                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, days: Math.max(1, Number(e.target.value) || 1) } : x))} />
+                          </div>
+                          <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#ef4444', marginBottom: 2 }}
+                            onClick={() => setRatePackages(ps => ps.filter((_, xi) => xi !== i))}>✕</button>
+                        </div>
+                      ))}
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }}
+                        onClick={() => setRatePackages(ps => [...ps, { label: '', price: 0, deposit: null, start_time: '09:00', end_time: '17:00', days: 1 }])}>
+                        + Add package
+                      </button>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        Each package books a fixed time window. Days &gt; 1 blocks consecutive days (e.g. Weekend = 2 days starting Saturday). Leave deposit blank to use the default deposit.
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="form-label">Description <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(shown on booking page)</span></label>
                   <textarea className="form-input" rows={3} style={{ resize: 'none' }} value={description} onChange={e => setDescription(e.target.value)} />

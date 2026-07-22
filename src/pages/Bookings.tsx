@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { sendEmail } from '../lib/email'
 import { useSite } from '../context/SiteContext'
 import type { AppUser, Booking, Site } from '../lib/database.types'
+import { getRatePackages, type RatePackage } from '../lib/database.types'
 import { formatPence, poundsToPence } from '../lib/money'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
@@ -14,6 +15,17 @@ const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 function dateDow(dateStr: string): number {
   return (new Date(dateStr + 'T12:00:00').getDay() + 6) % 7
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T12:00:00')
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function fmtDateRange(date: string, endDate: string | null): string {
+  if (!endDate || endDate === date) return format(new Date(date + 'T12:00:00'), 'dd MMM yyyy')
+  return `${format(new Date(date + 'T12:00:00'), 'dd MMM')} – ${format(new Date(endDate + 'T12:00:00'), 'dd MMM yyyy')}`
 }
 
 function expandRecurring(b: BookingWithSite): string[] {
@@ -81,6 +93,7 @@ const DEFAULT_FORM = {
   notes: '',
   status: 'confirmed',
   waive_deposit: false,
+  package_label: '',
 }
 
 
@@ -242,6 +255,7 @@ export default function Bookings() {
       notes: b.notes ?? '',
       status: b.status,
       waive_deposit: false,
+      package_label: b.package_label ?? '',
     })
     setEditMode(true)
   }
@@ -250,26 +264,41 @@ export default function Bookings() {
     if (!selected) return
     setSaving(true)
     setActionError(null)
-    const hours = calcHours(editForm.start_time, editForm.end_time)
     const site = selected.sites
+    const editPkg: RatePackage | null = site?.pricing_mode === 'packages'
+      ? getRatePackages(site).find(p => p.label === editForm.package_label) ?? null
+      : null
+    if (site?.pricing_mode === 'packages' && !editPkg) {
+      setActionError('Choose a package for this booking.')
+      setSaving(false)
+      return
+    }
+    const hours = editPkg
+      ? calcHours(editPkg.start_time, editPkg.end_time) * Math.max(1, editPkg.days)
+      : calcHours(editForm.start_time, editForm.end_time)
     // Custom rates only apply to recurring bookings — same rule as createBooking
-    const isRecurring = editForm.type === 'recurring'
+    const isRecurring = !editPkg && editForm.type === 'recurring'
     const linkedUser = isRecurring && selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
     const customRate = linkedUser ? (linkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
     const effectiveRate = customRate ?? site?.rate ?? 0
-    const total = site ? Math.round(hours * effectiveRate) + selected.deposit : selected.total
+    // Package edits keep the booking's existing deposit
+    const total = editPkg
+      ? editPkg.price + selected.deposit
+      : site ? Math.round(hours * effectiveRate) + selected.deposit : selected.total
     const { error } = await supabase.from('bookings').update({
       name: editForm.name,
       email: editForm.email,
       phone: editForm.phone,
       event: editForm.event,
       date: editForm.date,
-      start_time: editForm.start_time,
-      end_time: editForm.end_time,
+      start_time: editPkg ? editPkg.start_time : editForm.start_time,
+      end_time: editPkg ? editPkg.end_time : editForm.end_time,
+      end_date: editPkg && editPkg.days > 1 ? addDays(editForm.date, editPkg.days - 1) : null,
+      package_label: editPkg ? editPkg.label : null,
       hours,
-      type: editForm.type,
-      recurrence: editForm.type === 'recurring' ? editForm.recurrence : null,
-      recurrence_days: editForm.type === 'recurring' && editForm.recurrence === 'Weekly' && editForm.recurrence_days.length > 0 ? editForm.recurrence_days : null,
+      type: editPkg ? 'oneoff' : editForm.type,
+      recurrence: isRecurring ? editForm.recurrence : null,
+      recurrence_days: isRecurring && editForm.recurrence === 'Weekly' && editForm.recurrence_days.length > 0 ? editForm.recurrence_days : null,
       notes: editForm.notes || null,
       total,
     }).eq('id', selected.id)
@@ -397,12 +426,23 @@ export default function Bookings() {
     if (!site) return
     setSaving(true)
     setActionError(null)
-    const hours = calcHours(form.start_time, form.end_time)
-    const isRecurring = form.type === 'recurring'
+    const pkg: RatePackage | null = site.pricing_mode === 'packages'
+      ? getRatePackages(site).find(p => p.label === form.package_label) ?? null
+      : null
+    if (site.pricing_mode === 'packages' && !pkg) {
+      setActionError('Choose a package for this booking.')
+      setSaving(false)
+      return
+    }
+    const hours = pkg
+      ? calcHours(pkg.start_time, pkg.end_time) * Math.max(1, pkg.days)
+      : calcHours(form.start_time, form.end_time)
+    const isRecurring = !pkg && form.type === 'recurring'
     const linkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
     const effectiveRate = isRecurring && linkedUser
       ? ((linkedUser.custom_rates as Record<string, number> | null)?.[form.site_id] ?? site.rate)
       : site.rate
+    const pkgDeposit = pkg ? (form.waive_deposit ? 0 : (pkg.deposit ?? site.deposit)) : 0
     const { data: newBooking, error: createErr } = await supabase.from('bookings').insert({
       name: form.name,
       email: form.email,
@@ -411,16 +451,20 @@ export default function Bookings() {
       site_id: form.site_id,
       user_id: form.user_id || null,
       date: form.date,
-      start_time: form.start_time,
-      end_time: form.end_time,
+      start_time: pkg ? pkg.start_time : form.start_time,
+      end_time: pkg ? pkg.end_time : form.end_time,
+      end_date: pkg && pkg.days > 1 ? addDays(form.date, pkg.days - 1) : null,
+      package_label: pkg ? pkg.label : null,
       hours,
-      type: form.type,
+      type: pkg ? 'oneoff' : form.type,
       recurrence: isRecurring ? form.recurrence : null,
       recurrence_days: isRecurring && form.recurrence === 'Weekly' && form.recurrence_days.length > 0 ? form.recurrence_days : null,
       notes: form.notes || null,
       status: form.status,
-      deposit: isRecurring || form.waive_deposit ? 0 : site.deposit,
-      total: isRecurring || form.waive_deposit ? Math.round(hours * effectiveRate) : Math.round(hours * site.rate) + site.deposit,
+      deposit: pkg ? pkgDeposit : (isRecurring || form.waive_deposit ? 0 : site.deposit),
+      total: pkg
+        ? pkg.price + pkgDeposit
+        : (isRecurring || form.waive_deposit ? Math.round(hours * effectiveRate) : Math.round(hours * site.rate) + site.deposit),
     }).select('id').single()
     if (createErr) { setActionError(`Failed to create booking: ${createErr.message}`); setSaving(false); return }
     await fetchBookings()
@@ -455,7 +499,12 @@ export default function Bookings() {
   const pendingCount = bookings.filter(b => b.type === 'oneoff' && b.status === 'pending').length
   const recurringActive = bookings.filter(b => b.type === 'recurring' && !['cancelled','denied'].includes(b.status)).length
   const formSite = sites.find(s => s.id === form.site_id)
-  const formHours = calcHours(form.start_time, form.end_time)
+  const formSitePackages = formSite?.pricing_mode === 'packages' ? getRatePackages(formSite) : []
+  const formIsPackages = formSitePackages.length > 0 || formSite?.pricing_mode === 'packages'
+  const formPackage = formIsPackages ? formSitePackages.find(p => p.label === form.package_label) ?? null : null
+  const formHours = formPackage
+    ? calcHours(formPackage.start_time, formPackage.end_time) * Math.max(1, formPackage.days)
+    : calcHours(form.start_time, form.end_time)
   const formLinkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
   const formEffectiveRate = form.type === 'recurring' && formLinkedUser && formSite
     ? ((formLinkedUser.custom_rates as Record<string, number> | null)?.[form.site_id] ?? formSite.rate)
@@ -558,8 +607,10 @@ export default function Bookings() {
                   {b.assigned_to && (() => { const u = staffUsers.find(u => u.id === b.assigned_to); return u ? <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>👤 {u.name}</div> : null })()}
                 </div>
                 <div>
-                  <div>{format(new Date(b.date), 'dd MMM yyyy')}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.start_time}–{b.end_time}</div>
+                  <div>{fmtDateRange(b.date, b.end_date)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {b.package_label ? `${b.package_label} · ` : ''}{b.start_time.slice(0, 5)}–{b.end_time.slice(0, 5)}
+                  </div>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{site?.name ?? '—'}</div>
                 <div>
@@ -683,7 +734,7 @@ export default function Bookings() {
             <button
               className="btn btn-primary"
               onClick={createBooking}
-              disabled={saving || !form.site_id || !form.name || !form.email || !form.date || !form.start_time || !form.end_time}
+              disabled={saving || !form.site_id || !form.name || !form.email || !form.date || (formIsPackages ? !formPackage : (!form.start_time || !form.end_time))}
             >
               {saving ? 'Creating…' : 'Create Booking'}
             </button>
@@ -727,18 +778,32 @@ export default function Bookings() {
           </div>
         </div>
         <div className="form-grid-2">
+          {formIsPackages ? (
+            <div>
+              <label className="form-label">Package</label>
+              <select className="form-input" value={form.package_label} onChange={e => setForm(f => ({ ...f, package_label: e.target.value }))}>
+                <option value="">Select package…</option>
+                {formSitePackages.map(p => (
+                  <option key={p.label} value={p.label}>
+                    {p.label} — {formatPence(p.price)}{p.days > 1 ? ` (${p.days} days)` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="form-label">Type</label>
+              <select className="form-input" value={form.type} onChange={e => {
+                const t = e.target.value
+                setForm(f => ({ ...f, type: t, recurrence: t === 'recurring' ? (f.recurrence || 'Weekly') : f.recurrence }))
+              }}>
+                <option value="oneoff">One-off</option>
+                <option value="recurring">Recurring</option>
+              </select>
+            </div>
+          )}
           <div>
-            <label className="form-label">Type</label>
-            <select className="form-input" value={form.type} onChange={e => {
-              const t = e.target.value
-              setForm(f => ({ ...f, type: t, recurrence: t === 'recurring' ? (f.recurrence || 'Weekly') : f.recurrence }))
-            }}>
-              <option value="oneoff">One-off</option>
-              <option value="recurring">Recurring</option>
-            </select>
-          </div>
-          <div>
-            <label className="form-label">Date</label>
+            <label className="form-label">{formPackage && formPackage.days > 1 ? 'Start date' : 'Date'}</label>
             <input className="form-input" type="date" value={form.date} onChange={e => {
               const d = e.target.value
               const dow = d ? dateDow(d) : null
@@ -746,7 +811,13 @@ export default function Bookings() {
             }} />
           </div>
         </div>
-        {form.type === 'recurring' && (
+        {formPackage && (
+          <div className="notice notice-accent" style={{ marginBottom: 8, fontSize: 12 }}>
+            {formPackage.start_time.slice(0, 5)}–{formPackage.end_time.slice(0, 5)}
+            {formPackage.days > 1 && form.date ? ` · covers ${fmtDateRange(form.date, addDays(form.date, formPackage.days - 1))}` : ''}
+          </div>
+        )}
+        {!formIsPackages && form.type === 'recurring' && (
           <>
             <div className="form-row">
               <label className="form-label">Recurrence</label>
@@ -796,16 +867,18 @@ export default function Bookings() {
             </div>
           </>
         )}
-        <div className="form-grid-2">
-          <div>
-            <label className="form-label">Start time</label>
-            <input className="form-input" type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} />
+        {!formIsPackages && (
+          <div className="form-grid-2">
+            <div>
+              <label className="form-label">Start time</label>
+              <input className="form-input" type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">End time</label>
+              <input className="form-input" type="time" value={form.end_time} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} />
+            </div>
           </div>
-          <div>
-            <label className="form-label">End time</label>
-            <input className="form-input" type="time" value={form.end_time} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} />
-          </div>
-        </div>
+        )}
         <div className="form-row">
           <label className="form-label">Notes <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
           <textarea className="form-input" rows={2} style={{ resize: 'none' }} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
@@ -822,7 +895,17 @@ export default function Bookings() {
             </label>
           </div>
         )}
-        {formSite && formHours > 0 && (
+        {formSite && formPackage && (
+          <div className="price-bar" style={{ marginTop: 4 }}>
+            <div><div className="pi-label">Package</div><div className="pi-value">{formPackage.label}</div></div>
+            <div><div className="pi-label">{formPackage.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{formPackage.days > 1 ? formPackage.days : formHours}</div></div>
+            {form.waive_deposit
+              ? <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
+              : <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(formPackage.deposit ?? formSite.deposit)}</div></div>}
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(formPackage.price + (form.waive_deposit ? 0 : (formPackage.deposit ?? formSite.deposit)))}</div></div>
+          </div>
+        )}
+        {formSite && !formIsPackages && formHours > 0 && (
           <div className="price-bar" style={{ marginTop: 4 }}>
             <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(formEffectiveRate)}/hr{formEffectiveRate !== formSite.rate ? ' ✦' : ''}</div></div>
             <div><div className="pi-label">Hours</div><div className="pi-value">{formHours}</div></div>
@@ -940,8 +1023,8 @@ export default function Bookings() {
               <div><div className="detail-label">Status</div><div className="detail-value"><Badge status={selected.status} /></div></div>
               <div><div className="detail-label">Email</div><div className="detail-value" style={{ fontSize: 12 }}>{selected.email}</div></div>
               <div><div className="detail-label">Phone</div><div className="detail-value" style={{ fontSize: 12 }}>{selected.phone}</div></div>
-              <div><div className="detail-label">Date</div><div className="detail-value">{format(new Date(selected.date), 'dd MMM yyyy')}</div></div>
-              <div><div className="detail-label">Time</div><div className="detail-value">{selected.start_time}–{selected.end_time} ({selected.hours}h)</div></div>
+              <div><div className="detail-label">Date</div><div className="detail-value">{fmtDateRange(selected.date, selected.end_date)}</div></div>
+              <div><div className="detail-label">Time</div><div className="detail-value">{selected.package_label ? `${selected.package_label} · ` : ''}{selected.start_time.slice(0, 5)}–{selected.end_time.slice(0, 5)} ({selected.hours}h)</div></div>
               <div><div className="detail-label">Type</div><div className="detail-value"><span className={`badge ${selected.type === 'recurring' ? 'badge-recurring' : 'badge-oneoff'}`}>{selected.type === 'recurring' ? `↻ ${selected.recurrence}${selected.recurrence_days && selected.recurrence_days.length > 1 ? ' · ' + selected.recurrence_days.slice().sort((a,c)=>a-c).map(d => WEEK_DAYS[d]).join(', ') : ''}` : 'One-off'}</span></div></div>
               <div><div className="detail-label">Capacity</div><div className="detail-value">Up to {selected.sites?.capacity} guests</div></div>
             </div>
@@ -1025,11 +1108,18 @@ export default function Bookings() {
           </>
         )}
         {selected && editMode && (() => {
-          const editHours = calcHours(editForm.start_time, editForm.end_time)
-          const editLinkedUser = editForm.type === 'recurring' && selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
+          const editIsPackages = selected.sites?.pricing_mode === 'packages'
+          const editSitePackages = editIsPackages ? getRatePackages(selected.sites) : []
+          const editSelPkg = editIsPackages ? editSitePackages.find(p => p.label === editForm.package_label) ?? null : null
+          const editHours = editSelPkg
+            ? calcHours(editSelPkg.start_time, editSelPkg.end_time) * Math.max(1, editSelPkg.days)
+            : calcHours(editForm.start_time, editForm.end_time)
+          const editLinkedUser = !editIsPackages && editForm.type === 'recurring' && selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
           const editCustomRate = editLinkedUser ? (editLinkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
           const editEffectiveRate = editCustomRate ?? selected.sites?.rate ?? 0
-          const editTotal = selected.sites ? Math.round(editHours * editEffectiveRate) + selected.deposit : selected.total
+          const editTotal = editSelPkg
+            ? editSelPkg.price + selected.deposit
+            : selected.sites ? Math.round(editHours * editEffectiveRate) + selected.deposit : selected.total
           const totalChanged = editTotal !== selected.total
           return (
             <>
@@ -1064,19 +1154,39 @@ export default function Bookings() {
                 </div>
               </div>
               <div className="form-grid-2">
+                {editIsPackages ? (
+                  <div>
+                    <label className="form-label">Package</label>
+                    <select className="form-input" value={editForm.package_label} onChange={e => setEditForm(f => ({ ...f, package_label: e.target.value }))}>
+                      <option value="">Select package…</option>
+                      {editSitePackages.map(p => (
+                        <option key={p.label} value={p.label}>
+                          {p.label} — {formatPence(p.price)}{p.days > 1 ? ` (${p.days} days)` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="form-label">Type</label>
+                    <select className="form-input" value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
+                      <option value="oneoff">One-off</option>
+                      <option value="recurring">Recurring</option>
+                    </select>
+                  </div>
+                )}
                 <div>
-                  <label className="form-label">Type</label>
-                  <select className="form-input" value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
-                    <option value="oneoff">One-off</option>
-                    <option value="recurring">Recurring</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Date</label>
+                  <label className="form-label">{editSelPkg && editSelPkg.days > 1 ? 'Start date' : 'Date'}</label>
                   <input className="form-input" type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
                 </div>
               </div>
-              {editForm.type === 'recurring' && (
+              {editSelPkg && (
+                <div className="notice notice-accent" style={{ marginBottom: 8, fontSize: 12 }}>
+                  {editSelPkg.start_time.slice(0, 5)}–{editSelPkg.end_time.slice(0, 5)}
+                  {editSelPkg.days > 1 && editForm.date ? ` · covers ${fmtDateRange(editForm.date, addDays(editForm.date, editSelPkg.days - 1))}` : ''}
+                </div>
+              )}
+              {!editIsPackages && editForm.type === 'recurring' && (
                 <>
                   <div className="form-row">
                     <label className="form-label">Recurrence</label>
@@ -1119,24 +1229,30 @@ export default function Bookings() {
                   )}
                 </>
               )}
-              <div className="form-grid-2">
-                <div>
-                  <label className="form-label">Start time</label>
-                  <input className="form-input" type="time" value={editForm.start_time} onChange={e => setEditForm(f => ({ ...f, start_time: e.target.value }))} />
+              {!editIsPackages && (
+                <div className="form-grid-2">
+                  <div>
+                    <label className="form-label">Start time</label>
+                    <input className="form-input" type="time" value={editForm.start_time} onChange={e => setEditForm(f => ({ ...f, start_time: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="form-label">End time</label>
+                    <input className="form-input" type="time" value={editForm.end_time} onChange={e => setEditForm(f => ({ ...f, end_time: e.target.value }))} />
+                  </div>
                 </div>
-                <div>
-                  <label className="form-label">End time</label>
-                  <input className="form-input" type="time" value={editForm.end_time} onChange={e => setEditForm(f => ({ ...f, end_time: e.target.value }))} />
-                </div>
-              </div>
+              )}
               <div className="form-row">
                 <label className="form-label">Notes <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
                 <textarea className="form-input" rows={2} style={{ resize: 'none' }} value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
               </div>
               {editHours > 0 && selected.sites && (
                 <div className="price-bar" style={{ marginTop: 4 }}>
-                  <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(editEffectiveRate)}/hr{editCustomRate ? ' ✦' : ''}</div></div>
-                  <div><div className="pi-label">Hours</div><div className="pi-value">{editHours}</div></div>
+                  {editSelPkg ? (
+                    <div><div className="pi-label">Package</div><div className="pi-value">{editSelPkg.label}</div></div>
+                  ) : (
+                    <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(editEffectiveRate)}/hr{editCustomRate ? ' ✦' : ''}</div></div>
+                  )}
+                  <div><div className="pi-label">{editSelPkg && editSelPkg.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{editSelPkg && editSelPkg.days > 1 ? editSelPkg.days : editHours}</div></div>
                   <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(selected.deposit)}</div></div>
                   <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(editTotal)}</div></div>
                 </div>

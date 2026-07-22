@@ -25,10 +25,20 @@ function buildSessionMap(bookings: Booking[], year: number, month: number): Map<
 
   for (const b of bookings) {
     if (b.type !== 'recurring' || !b.recurrence) {
-      if (b.date >= monthStart && b.date <= monthEnd) {
-        const list = map.get(b.date) ?? []
-        list.push(b)
-        map.set(b.date, list)
+      // Multi-day (package) bookings block every day from date to end_date
+      const last = b.end_date ?? b.date
+      if (last >= monthStart && b.date <= monthEnd) {
+        const cur = new Date(b.date + 'T12:00:00')
+        while (true) {
+          const ds = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`
+          if (ds > last) break
+          if (ds >= monthStart && ds <= monthEnd) {
+            const list = map.get(ds) ?? []
+            list.push(b)
+            map.set(ds, list)
+          }
+          cur.setDate(cur.getDate() + 1)
+        }
       }
     } else {
       const cancelled = new Set(b.cancelled_sessions ?? [])
