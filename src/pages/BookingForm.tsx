@@ -19,10 +19,14 @@ interface SlotBooking {
   recurrence_days: number[] | null
 }
 
+function toDs(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T12:00:00')
   d.setDate(d.getDate() + days)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return toDs(d)
 }
 
 function getBookingsOnDate(bookings: SlotBooking[], dateStr: string): SlotBooking[] {
@@ -58,6 +62,88 @@ function getSiteSchedule(site: Site, date: string): { open: boolean; from: strin
   if (!date) return null
   const dayName = DAY_NAMES[new Date(date + 'T12:00:00').getDay()]
   return av[dayName] ?? null
+}
+
+const CAL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const CAL_DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+
+/** Inline month calendar for package/vehicle sites — booked days come from the
+ *  same booking list used for the conflict warning; clicking a free day sets
+ *  the (start) date. */
+function AvailabilityCalendar({ bookings, blockedDates, selectedStart, spanDays, onSelect }: {
+  bookings: SlotBooking[]
+  blockedDates: string[]
+  selectedStart: string
+  spanDays: number
+  onSelect: (ds: string) => void
+}) {
+  const today = new Date()
+  const todayDs = toDs(today)
+  const [cal, setCal] = useState({ y: today.getFullYear(), m: today.getMonth() })
+  const isCurrentMonth = cal.y === today.getFullYear() && cal.m === today.getMonth()
+
+  const offset = (new Date(cal.y, cal.m, 1).getDay() + 6) % 7
+  const totalDays = new Date(cal.y, cal.m + 1, 0).getDate()
+  const selEnd = selectedStart ? addDays(selectedStart, Math.max(0, spanDays - 1)) : ''
+
+  const navBtn: React.CSSProperties = {
+    border: '1px solid var(--border,#e5e7eb)', background: 'var(--surface,#fff)', borderRadius: 7,
+    width: 26, height: 26, cursor: 'pointer', fontSize: 14, color: 'var(--text-muted,#71717a)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  }
+
+  return (
+    <div style={{ border: '1px solid var(--border,#e5e7eb)', borderRadius: 10, padding: '12px 12px 10px', background: 'var(--surface,#fff)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <button type="button" style={{ ...navBtn, opacity: isCurrentMonth ? 0.35 : 1, cursor: isCurrentMonth ? 'default' : 'pointer' }} disabled={isCurrentMonth}
+          onClick={() => setCal(c => { const d = new Date(c.y, c.m - 1, 1); return { y: d.getFullYear(), m: d.getMonth() } })}>‹</button>
+        <span style={{ fontWeight: 700, fontSize: 13 }}>{CAL_MONTHS[cal.m]} {cal.y}</span>
+        <button type="button" style={navBtn}
+          onClick={() => setCal(c => { const d = new Date(c.y, c.m + 1, 1); return { y: d.getFullYear(), m: d.getMonth() } })}>›</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+        {CAL_DOW.map((d, i) => (
+          <div key={i} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text-muted,#9ca3af)', padding: '2px 0' }}>{d}</div>
+        ))}
+        {Array.from({ length: offset }).map((_, i) => <div key={`o${i}`} />)}
+        {Array.from({ length: totalDays }).map((_, i) => {
+          const ds = toDs(new Date(cal.y, cal.m, i + 1))
+          const isPast = ds < todayDs
+          const isBlocked = !isPast && blockedDates.includes(ds)
+          const isBooked = !isPast && !isBlocked && getBookingsOnDate(bookings, ds).length > 0
+          const inSel = selectedStart && ds >= selectedStart && ds <= selEnd
+          const clickable = !isPast && !isBlocked && !isBooked
+          let bg = 'var(--surface2,#f0fdf4)'
+          let color = 'var(--text,#111827)'
+          if (isPast) { bg = 'transparent'; color = '#d1d5db' }
+          else if (isBlocked) { bg = '#f3f4f6'; color = '#c4c4c4' }
+          else if (isBooked) { bg = '#fee2e2'; color = '#b91c1c' }
+          else bg = '#f0fdf4'
+          if (inSel) { bg = 'var(--accent,#7c3aed)'; color = '#fff' }
+          return (
+            <button
+              key={ds}
+              type="button"
+              disabled={!clickable}
+              onClick={() => clickable && onSelect(ds)}
+              style={{
+                aspectRatio: '1.15', minHeight: 30, border: 'none', borderRadius: 7, background: bg, color,
+                fontSize: 12, fontWeight: inSel ? 700 : 500, cursor: clickable ? 'pointer' : 'default',
+                fontFamily: 'inherit', padding: 0,
+              }}
+            >
+              {i + 1}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 10, color: 'var(--text-muted,#71717a)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: 3, background: '#f0fdf4', border: '1px solid #bbf7d0', display: 'inline-block' }} /> Available</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: 3, background: '#fee2e2', border: '1px solid #fca5a5', display: 'inline-block' }} /> Booked</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: 3, background: 'var(--accent,#7c3aed)', display: 'inline-block' }} /> Your dates</span>
+      </div>
+    </div>
+  )
 }
 
 const DEFAULT_FORM = {
@@ -449,6 +535,18 @@ export default function BookingForm() {
                     <input className="form-input" type="date" required value={form.date} onChange={e => set('date', e.target.value)} />
                   </div>
                 </div>
+                {isPackages && (
+                  <div className="form-row">
+                    <label className="form-label">Availability <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(tap a date to select it)</span></label>
+                    <AvailabilityCalendar
+                      bookings={siteBookings}
+                      blockedDates={activeSite?.blocked_dates ?? []}
+                      selectedStart={form.date}
+                      spanDays={selectedPackage?.days ?? 1}
+                      onSelect={ds => set('date', ds)}
+                    />
+                  </div>
+                )}
                 {isPackages && (
                   <div className="form-row">
                     <label className="form-label">Choose a package</label>
