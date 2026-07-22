@@ -235,6 +235,8 @@ export default function BookingForm() {
   const packages = isPackages ? getRatePackages(activeSite) : []
   const selectedPackage: RatePackage | null = isPackages ? packages.find(p => p.label === form.package_label) ?? null : null
   const customQuestions = getCustomQuestions(activeSite)
+  const textQuestions = customQuestions.filter(q => q.type !== 'terms')
+  const termsQuestion = customQuestions.find(q => q.type === 'terms') ?? null
   const hours = selectedPackage
     ? (isVehicle
         ? (Math.max(1, selectedPackage.days) - 1) * 24 + calcHoursSigned(selectedPackage.start_time, selectedPackage.end_time)
@@ -360,9 +362,21 @@ export default function BookingForm() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg,#f4f4f6)', padding: '32px 16px', fontFamily: "'Figtree', sans-serif" }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      <div style={{ maxWidth: lockedSite ? 1360 : 1100, margin: '0 auto' }}>
 
-        <div className={lockedSite ? 'booking-layout' : ''}>
+        {/* Header — only shown on the generic (no locked site) page */}
+        {!lockedSite && (
+          <div style={{ textAlign: 'center', marginBottom: 28, maxWidth: 640, marginLeft: 'auto', marginRight: 'auto' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+              H
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>Request a Booking</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 4 }}>Fill in the details below and we'll be in touch to confirm</div>
+            <a href="/availability" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: 'var(--accent,#7c3aed)', fontWeight: 600, textDecoration: 'none' }}>📅 View availability calendar →</a>
+          </div>
+        )}
+
+        <div className={lockedSite ? 'booking-layout booking-layout-3' : 'booking-narrow'}>
 
           {/* Left: venue info (only when a specific site is locked) */}
           {lockedSite && (
@@ -447,21 +461,10 @@ export default function BookingForm() {
             </div>
           )}
 
-          {/* Right: form (or full-width when no locked site) */}
-          <div>
-            {/* Header — only shown on single-column (no locked site) */}
-            {!lockedSite && (
-              <div style={{ textAlign: 'center', marginBottom: 28 }}>
-                <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                  H
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>Request a Booking</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 4 }}>Fill in the details below and we'll be in touch to confirm</div>
-                <a href="/availability" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: 'var(--accent,#7c3aed)', fontWeight: 600, textDecoration: 'none' }}>📅 View availability calendar →</a>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit}>
+          {/* Form spans the remaining columns: event details, then questions */}
+          <form onSubmit={handleSubmit} style={lockedSite ? { display: 'contents' } : undefined}>
+            {/* Column: event details + availability */}
+            <div>
               {/* Venue selector — only shown when no slug */}
               {!lockedSite && (
                 <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
@@ -493,25 +496,6 @@ export default function BookingForm() {
                   )}
                 </div>
               )}
-
-              {/* Contact */}
-              <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Your details</div>
-                <div className="form-grid-2">
-                  <div>
-                    <label className="form-label">Full name</label>
-                    <input className="form-input" required placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="form-label">Email</label>
-                    <input className="form-input" type="email" required placeholder="jane@example.com" value={form.email} onChange={e => set('email', e.target.value)} />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <label className="form-label">Phone</label>
-                  <input className="form-input" type="tel" required placeholder="07700 900000" value={form.phone} onChange={e => set('phone', e.target.value)} />
-                </div>
-              </div>
 
               {/* Event */}
               <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
@@ -571,7 +555,7 @@ export default function BookingForm() {
                               <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text,#111827)' }}>{p.label}</div>
                               <div style={{ fontSize: 12, color: 'var(--text-muted,#71717a)', marginTop: 2 }}>
                                 {isVehicle
-                                  ? `Pickup ${fmt(p.start_time)} · return ${fmt(p.end_time)}${p.days > 1 ? ` (${p.days} days)` : ' same day'}`
+                                  ? (p.days > 1 ? `${p.days}-day hire` : 'Same-day hire')
                                   : `${fmt(p.start_time)}–${fmt(p.end_time)}${p.days > 1 ? ` · ${p.days} days` : ''}`}
                               </div>
                             </div>
@@ -586,7 +570,7 @@ export default function BookingForm() {
                     {selectedPackage && selectedPackage.days > 1 && form.date && packageEndDate && (
                       <div className="notice notice-accent" style={{ marginTop: 8 }}>
                         {isVehicle
-                          ? <>🚐 Pickup {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at {fmt(selectedPackage.start_time)} — return {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} by {fmt(selectedPackage.end_time)}</>
+                          ? <>🚐 Covers {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} – {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</>
                           : <>📅 Covers {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} – {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</>}
                       </div>
                     )}
@@ -669,7 +653,28 @@ export default function BookingForm() {
                     </div>
                   )
                 })()}
-                {customQuestions.map(q => (
+              </div>
+            </div>
+
+            {/* Column: your details + questions + submit */}
+            <div>
+              <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Your details</div>
+                <div className="form-row">
+                  <label className="form-label">Full name</label>
+                  <input className="form-input" required placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
+                </div>
+                <div className="form-grid-2">
+                  <div>
+                    <label className="form-label">Email</label>
+                    <input className="form-input" type="email" required placeholder="jane@example.com" value={form.email} onChange={e => set('email', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="form-label">Phone</label>
+                    <input className="form-input" type="tel" required placeholder="07700 900000" value={form.phone} onChange={e => set('phone', e.target.value)} />
+                  </div>
+                </div>
+                {textQuestions.map(q => (
                   <div className="form-row" key={q.label}>
                     <label className="form-label">{q.label}{!q.required && <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}> (optional)</span>}</label>
                     <input
@@ -684,6 +689,23 @@ export default function BookingForm() {
                   <label className="form-label">Additional notes <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(optional)</span></label>
                   <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Any special requirements…" value={form.notes} onChange={e => set('notes', e.target.value)} />
                 </div>
+                {termsQuestion && (
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, cursor: 'pointer', marginTop: 4, lineHeight: 1.5 }}>
+                    <input
+                      type="checkbox"
+                      required
+                      checked={answers[termsQuestion.label] === 'Yes'}
+                      onChange={e => setAnswers(a => ({ ...a, [termsQuestion.label]: e.target.checked ? 'Yes' : '' }))}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span>
+                      I agree to the{' '}
+                      {termsQuestion.url
+                        ? <a href={termsQuestion.url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent,#7c3aed)', fontWeight: 600 }}>hiring terms and conditions</a>
+                        : 'hiring terms and conditions'}
+                    </span>
+                  </label>
+                )}
               </div>
 
               {/* Price summary */}
@@ -692,7 +714,7 @@ export default function BookingForm() {
                   {selectedPackage ? (
                     <>
                       <div><div className="pi-label">Package</div><div className="pi-value">{selectedPackage.label}</div></div>
-                      <div><div className="pi-label">{selectedPackage.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{selectedPackage.days > 1 ? selectedPackage.days : hours}</div></div>
+                      <div><div className="pi-label">{isVehicle || selectedPackage.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{isVehicle || selectedPackage.days > 1 ? selectedPackage.days : hours}</div></div>
                     </>
                   ) : (
                     <>
@@ -717,8 +739,8 @@ export default function BookingForm() {
               <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted,#71717a)', marginTop: 10 }}>
                 Your request will be reviewed and you'll receive a confirmation email
               </div>
-            </form>
-          </div>
+            </div>
+          </form>
 
         </div>
       </div>

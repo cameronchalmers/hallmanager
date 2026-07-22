@@ -44,6 +44,7 @@ export default function SiteSettings() {
   const [ratePackages, setRatePackages] = useState<RatePackage[]>([])
   const [siteType, setSiteType] = useState<'hall' | 'vehicle'>('hall')
   const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([])
+  const [termsUrl, setTermsUrl] = useState('')
   const [availability, setAvailability] = useState<WeekAvailability>({ ...DEFAULT_AVAILABILITY })
   const [amenities, setAmenities] = useState<string[]>([])
   const [description, setDescription] = useState('')
@@ -154,7 +155,11 @@ export default function SiteSettings() {
       min_hours: currentSite.min_hours ?? 1,
     })
     setSiteType(currentSite.site_type ?? 'hall')
-    setCustomQuestions(getCustomQuestions(currentSite))
+    {
+      const qs = getCustomQuestions(currentSite)
+      setCustomQuestions(qs.filter(q => q.type !== 'terms'))
+      setTermsUrl(qs.find(q => q.type === 'terms')?.url ?? '')
+    }
     setPricingMode(currentSite.site_type === 'vehicle' ? 'packages' : (currentSite.pricing_mode ?? 'hourly'))
     setRatePackages(getRatePackages(currentSite))
     setAvailability(getAvailability(currentSite.availability))
@@ -206,7 +211,10 @@ export default function SiteSettings() {
     const payload = {
       ...form,
       site_type: siteType,
-      custom_questions: customQuestions.filter(q => q.label.trim()) as unknown as import('../lib/database.types').Json,
+      custom_questions: [
+        ...customQuestions.filter(q => q.label.trim()),
+        ...(termsUrl.trim() ? [{ label: 'I agree to the hiring terms and conditions', required: true, type: 'terms' as const, url: termsUrl.trim() }] : []),
+      ] as unknown as import('../lib/database.types').Json,
       pricing_mode: effectivePricingMode,
       rate_packages: (effectivePricingMode === 'packages' ? ratePackages : getRatePackages(currentSite)) as unknown as import('../lib/database.types').Json,
       availability: availability as unknown as import('../lib/database.types').Json,
@@ -403,7 +411,7 @@ export default function SiteSettings() {
                     <label className="form-label">{siteType === 'vehicle' ? 'Hire packages' : 'Packages'}</label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
                       {ratePackages.map((p, i) => (
-                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr 0.9fr 0.9fr 0.6fr auto', gap: 6, alignItems: 'end', background: 'var(--surface2)', borderRadius: 9, padding: '8px 10px' }}>
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: siteType === 'vehicle' ? '1.6fr 0.9fr 0.9fr 0.7fr auto' : '1.4fr 0.8fr 0.8fr 0.9fr 0.9fr 0.6fr auto', gap: 6, alignItems: 'end', background: 'var(--surface2)', borderRadius: 9, padding: '8px 10px' }}>
                           <div>
                             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Name</div>
                             <input className="form-input" placeholder="Full day" value={p.label}
@@ -420,16 +428,20 @@ export default function SiteSettings() {
                               value={p.deposit == null ? '' : p.deposit / 100}
                               onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, deposit: e.target.value === '' ? null : poundsToPence(Number(e.target.value)) } : x))} />
                           </div>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>{siteType === 'vehicle' ? 'Pickup' : 'From'}</div>
-                            <input className="form-input" type="time" value={p.start_time}
-                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, start_time: e.target.value } : x))} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>{siteType === 'vehicle' ? 'Return' : 'Until'}</div>
-                            <input className="form-input" type="time" value={p.end_time}
-                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, end_time: e.target.value } : x))} />
-                          </div>
+                          {siteType !== 'vehicle' && (
+                            <>
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>From</div>
+                                <input className="form-input" type="time" value={p.start_time}
+                                  onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, start_time: e.target.value } : x))} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Until</div>
+                                <input className="form-input" type="time" value={p.end_time}
+                                  onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, end_time: e.target.value } : x))} />
+                              </div>
+                            </>
+                          )}
                           <div>
                             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Days</div>
                             <input className="form-input" type="number" min="1" max="14" value={p.days}
@@ -440,12 +452,12 @@ export default function SiteSettings() {
                         </div>
                       ))}
                       <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }}
-                        onClick={() => setRatePackages(ps => [...ps, { label: '', price: 0, deposit: null, start_time: '09:00', end_time: '17:00', days: 1 }])}>
+                        onClick={() => setRatePackages(ps => [...ps, { label: '', price: 0, deposit: null, start_time: siteType === 'vehicle' ? '00:00' : '09:00', end_time: siteType === 'vehicle' ? '23:59' : '17:00', days: 1 }])}>
                         + Add package
                       </button>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {siteType === 'vehicle'
-                          ? 'Pickup is on the first day, return on the last. Days = calendar days from pickup to return, e.g. Weekend with pickup Friday 17:00 and return Sunday 17:00 = 3 days. Leave deposit blank to use the default deposit.'
+                          ? 'Days = calendar days the hire covers, e.g. a weekend from Friday to Sunday = 3 days. Pickup and return times are arranged directly with the hirer. Leave deposit blank to use the default deposit.'
                           : 'Each package books a fixed time window. Days > 1 blocks consecutive days (e.g. Weekend = 2 days starting Saturday). Leave deposit blank to use the default deposit.'}
                       </div>
                     </div>
@@ -499,6 +511,13 @@ export default function SiteSettings() {
                   {siteType === 'vehicle'
                     ? 'Asked when someone requests a hire — e.g. driver\'s name, licence number, years held, destination.'
                     : 'Asked when someone requests a booking, in addition to the standard contact and event fields.'}
+                </div>
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+                  <label className="form-label">Terms &amp; conditions link <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+                  <input className="form-input" type="url" placeholder="https://…" value={termsUrl} onChange={e => setTermsUrl(e.target.value)} />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    When set, the booking form adds a required "I agree to the hiring terms and conditions" tickbox linking to this page.
+                  </div>
                 </div>
               </div>
             </div>

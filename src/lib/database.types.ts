@@ -380,10 +380,13 @@ export function getRatePackages(site: Pick<Site, 'rate_packages'> | null | undef
   return (raw as unknown as RatePackage[]).filter(p => p && p.label && p.start_time && p.end_time)
 }
 
-/** Extra booking-form question defined per site (e.g. driver details for a vehicle). */
+/** Extra booking-form question defined per site (e.g. driver details for a vehicle).
+ *  type 'terms' renders as a required agreement checkbox linking to `url`. */
 export interface CustomQuestion {
   label: string
   required: boolean
+  type?: 'text' | 'terms'
+  url?: string
 }
 
 export function getCustomQuestions(site: Pick<Site, 'custom_questions'> | null | undefined): CustomQuestion[] {

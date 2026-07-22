@@ -72,8 +72,9 @@ function bookingTable(b: BookingData) {
   const rows = [
     ['Event', esc(b.event)],
     ['Date', esc(b.date)],
-    ['Time', `${esc(b.start_time)} – ${esc(b.end_time)}`],
-    ['Duration', `${Number(b.hours)} hours`],
+    // Vehicle hires pass time_display (package name) instead of a time window
+    [b.time_display ? 'Package' : 'Time', b.time_display ? esc(b.time_display) : `${esc(b.start_time)} – ${esc(b.end_time)}`],
+    ['Duration', esc(b.duration_display ?? `${Number(b.hours)} hours`)],
     ['Venue', esc(b.site_name)],
     ['Deposit', `£${fp(b.deposit)}`],
     ['Total', `£${fp(b.total)}`],
@@ -106,6 +107,8 @@ export interface BookingData {
   payment_url?: string | null
   whatsapp_number?: string | null
   refunded_amount?: number
+  time_display?: string | null
+  duration_display?: string | null
 }
 
 export interface ExtraSlotData {

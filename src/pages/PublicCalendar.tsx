@@ -290,7 +290,7 @@ export default function PublicCalendar() {
                             textOverflow: 'ellipsis',
                             lineHeight: 1.4,
                           }}>
-                            {s.end_date && s.end_date !== s.date ? 'Booked' : `${fmt12(s.start_time)}–${fmt12(s.end_time)}`}
+                            {(s.end_date && s.end_date !== s.date) || site?.pricing_mode === 'packages' ? 'Booked' : `${fmt12(s.start_time)}–${fmt12(s.end_time)}`}
                           </span>
                         ))}
                         {slots.length > 2 && (
@@ -358,7 +358,9 @@ export default function PublicCalendar() {
                 <div key={i} style={{ padding: '12px 16px', borderBottom: i < selSlots.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span style={{ fontWeight: 700, fontSize: 14, color: '#18181b', fontVariantNumeric: 'tabular-nums' }}>
-                      {s.end_date && s.end_date !== s.date ? 'All day (multi-day hire)' : `${fmt12(s.start_time)} – ${fmt12(s.end_time)}`}
+                      {s.end_date && s.end_date !== s.date ? 'All day (multi-day hire)'
+                        : site?.pricing_mode === 'packages' ? 'All day'
+                        : `${fmt12(s.start_time)} – ${fmt12(s.end_time)}`}
                     </span>
                     <span style={{ fontSize: 10, background: '#fee2e2', color: '#991b1b', borderRadius: 5, padding: '2px 7px', fontWeight: 600 }}>Booked</span>
                   </div>

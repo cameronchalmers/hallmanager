@@ -312,3 +312,9 @@ body {
   .booking-layout { grid-template-columns: 1fr 1fr; }
   .booking-layout-info { position: sticky; top: 32px; }
 }
+/* Three columns (info · event details · questions) on wide screens */
+@media (min-width: 1200px) {
+  .booking-layout-3 { grid-template-columns: 0.9fr 1.1fr 1fr; gap: 24px; }
+}
+/* Generic booking page (no locked venue) stays a narrow single column */
+.booking-narrow { max-width: 640px; margin: 0 auto; }
