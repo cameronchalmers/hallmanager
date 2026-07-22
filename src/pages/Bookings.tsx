@@ -4,7 +4,7 @@ import { sendEmail } from '../lib/email'
 import { useSite } from '../context/SiteContext'
 import type { AppUser, Booking, Site } from '../lib/database.types'
 import { getRatePackages, type RatePackage } from '../lib/database.types'
-import { formatPence, poundsToPence } from '../lib/money'
+import { formatPence, poundsToPence, perDayTotal, DEPOSIT_FRACTION } from '../lib/money'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
 import { format } from 'date-fns'
@@ -94,6 +94,7 @@ const DEFAULT_FORM = {
   status: 'confirmed',
   waive_deposit: false,
   package_label: '',
+  package_end: '',
 }
 
 
@@ -104,16 +105,38 @@ function calcHours(start: string, end: string) {
   return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
 }
 
-// Hours for a package booking: vehicles measure elapsed pickup → return time
-// across the covered days; halls repeat a daily window
-function packageHours(pkg: RatePackage, siteType: string | undefined) {
-  const days = Math.max(1, pkg.days)
+// Hours for a package booking over `days`: vehicles measure elapsed pickup →
+// return time across the covered days; halls repeat a daily window
+function packageHoursForDays(pkg: RatePackage, siteType: string | undefined, days: number) {
+  const d = Math.max(1, days)
   if (siteType === 'vehicle') {
     const [sh, sm] = pkg.start_time.split(':').map(Number)
     const [eh, em] = pkg.end_time.split(':').map(Number)
-    return (days - 1) * 24 + (eh * 60 + em - sh * 60 - sm) / 60
+    return (d - 1) * 24 + (eh * 60 + em - sh * 60 - sm) / 60
   }
-  return calcHours(pkg.start_time, pkg.end_time) * days
+  return calcHours(pkg.start_time, pkg.end_time) * d
+}
+
+// Resolve a package booking's length, end date, hours and total. Fixed
+// packages use pkg.days; per-day packages use the chosen end date and apply
+// the highest qualifying whole-booking discount tier.
+function resolvePackage(pkg: RatePackage, siteType: string | undefined, startDate: string, endDateInput: string) {
+  const isPerDay = pkg.pricing === 'per_day'
+  let days: number, endDate: string | null
+  if (isPerDay) {
+    if (endDateInput && startDate && endDateInput >= startDate) {
+      days = Math.round((new Date(endDateInput + 'T12:00:00').getTime() - new Date(startDate + 'T12:00:00').getTime()) / 86400000) + 1
+      endDate = days > 1 ? endDateInput : null
+    } else {
+      days = 0; endDate = null
+    }
+  } else {
+    days = Math.max(1, pkg.days)
+    endDate = days > 1 && startDate ? addDays(startDate, days - 1) : null
+  }
+  const { total, discountPct } = isPerDay ? perDayTotal(pkg, days) : { total: pkg.price, discountPct: 0 }
+  const hours = days > 0 ? packageHoursForDays(pkg, siteType, days) : 0
+  return { isPerDay, days, endDate, total, discountPct, hours }
 }
 
 
@@ -206,14 +229,18 @@ export default function Bookings() {
   async function markAsPaid(id: string) {
     setActionLoading('paid')
     setActionError(null)
-    const { error } = await supabase.from('bookings').update({ status: 'confirmed', stripe_payment_status: 'paid' }).eq('id', id)
+    const booking = bookings.find(b => b.id === id)
+    const wasDepositPaid = booking?.stripe_payment_status === 'deposit_paid'
+    const patch = { status: 'confirmed', stripe_payment_status: 'paid', amount_paid: booking?.total ?? 0 }
+    const { error } = await supabase.from('bookings').update(patch).eq('id', id)
     if (error) { setActionError(`Failed to mark as paid: ${error.message}`); setActionLoading(null); return }
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'confirmed', stripe_payment_status: 'paid' } : b))
-    if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: 'confirmed', stripe_payment_status: 'paid' } : null)
+    setBookings(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b))
+    if (selected?.id === id) setSelected(prev => prev ? { ...prev, ...patch } : null)
     setActionLoading(null)
     sendEmail('booking_confirmed', id)
-    const booking = bookings.find(b => b.id === id)
-    if (booking?.type === 'oneoff') {
+    // Only create a calendar event if one doesn't exist yet (deposit stage
+    // already created it for split-payment bookings)
+    if (booking?.type === 'oneoff' && !wasDepositPaid && !booking?.google_calendar_event_id) {
       supabase.functions.invoke('manage-calendar-event', { body: { action: 'create', booking_id: id } })
         .catch(() => {/* Calendar not configured */})
     }
@@ -268,6 +295,7 @@ export default function Bookings() {
       status: b.status,
       waive_deposit: false,
       package_label: b.package_label ?? '',
+      package_end: b.end_date ?? '',
     })
     setEditMode(true)
   }
@@ -286,17 +314,21 @@ export default function Bookings() {
       setSaving(false)
       return
     }
-    const hours = editPkg
-      ? packageHours(editPkg, site?.site_type)
-      : calcHours(editForm.start_time, editForm.end_time)
+    const editResolved = editPkg ? resolvePackage(editPkg, site?.site_type, editForm.date, editForm.package_end) : null
+    if (editPkg && editResolved && editResolved.days < 1) {
+      setActionError(editPkg.pricing === 'per_day' ? 'Choose a valid end date for this hire.' : 'Invalid package.')
+      setSaving(false)
+      return
+    }
+    const hours = editResolved ? editResolved.hours : calcHours(editForm.start_time, editForm.end_time)
     // Custom rates only apply to recurring bookings — same rule as createBooking
     const isRecurring = !editPkg && editForm.type === 'recurring'
     const linkedUser = isRecurring && selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
     const customRate = linkedUser ? (linkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
     const effectiveRate = customRate ?? site?.rate ?? 0
-    // Package edits keep the booking's existing deposit
-    const total = editPkg
-      ? editPkg.price + selected.deposit
+    // Package edits keep the booking's existing deposit (0 for package sites)
+    const total = editResolved
+      ? editResolved.total
       : site ? Math.round(hours * effectiveRate) + selected.deposit : selected.total
     const { error } = await supabase.from('bookings').update({
       name: editForm.name,
@@ -306,7 +338,7 @@ export default function Bookings() {
       date: editForm.date,
       start_time: editPkg ? editPkg.start_time : editForm.start_time,
       end_time: editPkg ? editPkg.end_time : editForm.end_time,
-      end_date: editPkg && editPkg.days > 1 ? addDays(editForm.date, editPkg.days - 1) : null,
+      end_date: editResolved ? editResolved.endDate : null,
       package_label: editPkg ? editPkg.label : null,
       hours,
       type: editPkg ? 'oneoff' : editForm.type,
@@ -448,15 +480,18 @@ export default function Bookings() {
       setSaving(false)
       return
     }
-    const hours = pkg
-      ? packageHours(pkg, site.site_type)
-      : calcHours(form.start_time, form.end_time)
+    const resolved = pkg ? resolvePackage(pkg, site.site_type, form.date, form.package_end) : null
+    if (pkg && resolved && resolved.days < 1) {
+      setActionError(pkg.pricing === 'per_day' ? 'Choose a valid end date for this hire.' : 'Invalid package.')
+      setSaving(false)
+      return
+    }
+    const hours = resolved ? resolved.hours : calcHours(form.start_time, form.end_time)
     const isRecurring = !pkg && form.type === 'recurring'
     const linkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
     const effectiveRate = isRecurring && linkedUser
       ? ((linkedUser.custom_rates as Record<string, number> | null)?.[form.site_id] ?? site.rate)
       : site.rate
-    const pkgDeposit = pkg ? (form.waive_deposit ? 0 : (pkg.deposit ?? site.deposit)) : 0
     const { data: newBooking, error: createErr } = await supabase.from('bookings').insert({
       name: form.name,
       email: form.email,
@@ -467,7 +502,7 @@ export default function Bookings() {
       date: form.date,
       start_time: pkg ? pkg.start_time : form.start_time,
       end_time: pkg ? pkg.end_time : form.end_time,
-      end_date: pkg && pkg.days > 1 ? addDays(form.date, pkg.days - 1) : null,
+      end_date: resolved ? resolved.endDate : null,
       package_label: pkg ? pkg.label : null,
       hours,
       type: pkg ? 'oneoff' : form.type,
@@ -475,9 +510,10 @@ export default function Bookings() {
       recurrence_days: isRecurring && form.recurrence === 'Weekly' && form.recurrence_days.length > 0 ? form.recurrence_days : null,
       notes: form.notes || null,
       status: form.status,
-      deposit: pkg ? pkgDeposit : (isRecurring || form.waive_deposit ? 0 : site.deposit),
-      total: pkg
-        ? pkg.price + pkgDeposit
+      // Package sites carry no separate damage deposit (25% split handles it)
+      deposit: pkg ? 0 : (isRecurring || form.waive_deposit ? 0 : site.deposit),
+      total: resolved
+        ? resolved.total
         : (isRecurring || form.waive_deposit ? Math.round(hours * effectiveRate) : Math.round(hours * site.rate) + site.deposit),
     }).select('id').single()
     if (createErr) { setActionError(`Failed to create booking: ${createErr.message}`); setSaving(false); return }
@@ -516,9 +552,8 @@ export default function Bookings() {
   const formIsPackages = formSite?.pricing_mode === 'packages' || formSite?.site_type === 'vehicle'
   const formSitePackages = formIsPackages ? getRatePackages(formSite) : []
   const formPackage = formIsPackages ? formSitePackages.find(p => p.label === form.package_label) ?? null : null
-  const formHours = formPackage
-    ? packageHours(formPackage, formSite?.site_type)
-    : calcHours(form.start_time, form.end_time)
+  const formResolved = formPackage ? resolvePackage(formPackage, formSite?.site_type, form.date, form.package_end) : null
+  const formHours = formResolved ? formResolved.hours : calcHours(form.start_time, form.end_time)
   const formLinkedUser = form.user_id ? regularUsers.find(u => u.id === form.user_id) : null
   const formEffectiveRate = form.type === 'recurring' && formLinkedUser && formSite
     ? ((formLinkedUser.custom_rates as Record<string, number> | null)?.[form.site_id] ?? formSite.rate)
@@ -750,7 +785,7 @@ export default function Bookings() {
             <button
               className="btn btn-primary"
               onClick={createBooking}
-              disabled={saving || !form.site_id || !form.name || !form.email || !form.date || (formIsPackages ? !formPackage : (!form.start_time || !form.end_time))}
+              disabled={saving || !form.site_id || !form.name || !form.email || !form.date || (formIsPackages ? (!formPackage || !formResolved || formResolved.days < 1) : (!form.start_time || !form.end_time))}
             >
               {saving ? 'Creating…' : 'Create Booking'}
             </button>
@@ -797,11 +832,11 @@ export default function Bookings() {
           {formIsPackages ? (
             <div>
               <label className="form-label">Package</label>
-              <select className="form-input" value={form.package_label} onChange={e => setForm(f => ({ ...f, package_label: e.target.value }))}>
+              <select className="form-input" value={form.package_label} onChange={e => setForm(f => ({ ...f, package_label: e.target.value, package_end: '' }))}>
                 <option value="">Select package…</option>
                 {formSitePackages.map(p => (
                   <option key={p.label} value={p.label}>
-                    {p.label} — {formatPence(p.price)}{p.days > 1 ? ` (${p.days} days)` : ''}
+                    {p.label} — {formatPence(p.price)}{p.pricing === 'per_day' ? '/day' : p.days > 1 ? ` (${p.days} days)` : ''}
                   </option>
                 ))}
               </select>
@@ -819,20 +854,27 @@ export default function Bookings() {
             </div>
           )}
           <div>
-            <label className="form-label">{formPackage && formPackage.days > 1 ? 'Start date' : 'Date'}</label>
+            <label className="form-label">{formPackage && (formPackage.pricing === 'per_day' || formPackage.days > 1) ? 'Start date' : 'Date'}</label>
             <input className="form-input" type="date" value={form.date} onChange={e => {
               const d = e.target.value
               const dow = d ? dateDow(d) : null
-              setForm(f => ({ ...f, date: d, recurrence_days: dow !== null ? [dow, ...f.recurrence_days.filter(x => x !== dow)].sort((a, b) => a - b) : f.recurrence_days }))
+              setForm(f => ({ ...f, date: d, package_end: f.package_end && d > f.package_end ? '' : f.package_end, recurrence_days: dow !== null ? [dow, ...f.recurrence_days.filter(x => x !== dow)].sort((a, b) => a - b) : f.recurrence_days }))
             }} />
           </div>
         </div>
-        {formPackage && (
+        {formPackage?.pricing === 'per_day' && (
+          <div className="form-row">
+            <label className="form-label">End date</label>
+            <input className="form-input" type="date" min={form.date || undefined} value={form.package_end} onChange={e => setForm(f => ({ ...f, package_end: e.target.value }))} style={{ maxWidth: 200 }} />
+          </div>
+        )}
+        {formPackage && formResolved && (
           <div className="notice notice-accent" style={{ marginBottom: 8, fontSize: 12 }}>
             {formSite?.site_type === 'vehicle'
-              ? (formPackage.days > 1 ? `${formPackage.days}-day hire` : 'Same-day hire')
+              ? (formResolved.days > 1 ? `${formResolved.days}-day hire` : formResolved.days === 1 ? 'Same-day hire' : 'Select dates')
               : `${formPackage.start_time.slice(0, 5)}–${formPackage.end_time.slice(0, 5)}`}
-            {formPackage.days > 1 && form.date ? ` · covers ${fmtDateRange(form.date, addDays(form.date, formPackage.days - 1))}` : ''}
+            {formResolved.days > 1 && formResolved.endDate ? ` · covers ${fmtDateRange(form.date, formResolved.endDate)}` : ''}
+            {formResolved.discountPct > 0 ? ` · ${formResolved.discountPct}% length discount` : ''}
           </div>
         )}
         {!formIsPackages && form.type === 'recurring' && (
@@ -901,7 +943,7 @@ export default function Bookings() {
           <label className="form-label">Notes <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
           <textarea className="form-input" rows={2} style={{ resize: 'none' }} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
         </div>
-        {form.type === 'oneoff' && (
+        {form.type === 'oneoff' && !formIsPackages && (
           <div className="form-row">
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
               <input
@@ -913,14 +955,13 @@ export default function Bookings() {
             </label>
           </div>
         )}
-        {formSite && formPackage && (
+        {formSite && formPackage && formResolved && formResolved.days > 0 && (
           <div className="price-bar" style={{ marginTop: 4 }}>
             <div><div className="pi-label">Package</div><div className="pi-value">{formPackage.label}</div></div>
-            <div><div className="pi-label">{formPackage.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{formPackage.days > 1 ? formPackage.days : formHours}</div></div>
-            {form.waive_deposit
-              ? <div><div className="pi-label">No Deposit</div><div className="pi-value">—</div></div>
-              : <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(formPackage.deposit ?? formSite.deposit)}</div></div>}
-            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(formPackage.price + (form.waive_deposit ? 0 : (formPackage.deposit ?? formSite.deposit)))}</div></div>
+            <div><div className="pi-label">{formSite.site_type === 'vehicle' || formResolved.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{formSite.site_type === 'vehicle' || formResolved.days > 1 ? formResolved.days : formHours}</div></div>
+            {formResolved.discountPct > 0 && <div><div className="pi-label">Discount</div><div className="pi-value" style={{ color: 'var(--accent)' }}>−{formResolved.discountPct}%</div></div>}
+            <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(formResolved.total)}</div></div>
+            <div><div className="pi-label">25% now</div><div className="pi-value">{formatPence(Math.round(formResolved.total * DEPOSIT_FRACTION))}</div></div>
           </div>
         )}
         {formSite && !formIsPackages && formHours > 0 && (
@@ -982,15 +1023,24 @@ export default function Bookings() {
               </div>
             </div>
           ) : selected?.status === 'confirmed' ? (
-            <div style={{ display: 'flex', gap: 7, width: '100%' }}>
+            <div style={{ display: 'flex', gap: 7, width: '100%', flexWrap: 'wrap' }}>
               <button className="btn btn-danger btn-sm" style={{ marginRight: 'auto' }} onClick={() => cancelBooking(selected.id)} disabled={!!actionLoading}>
                 {actionLoading === 'cancel' ? 'Cancelling…' : 'Cancel Booking'}
               </button>
-              {selected.stripe_payment_status === 'deposit_refunded' ? (
+              {selected.stripe_payment_status === 'deposit_paid' ? (
+                <>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/pay/${selected.id}`); setCopiedPayment(true); setTimeout(() => setCopiedPayment(false), 2000) }}>
+                    {copiedPayment ? '✓ Copied' : 'Copy balance link'}
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={() => markAsPaid(selected.id)} disabled={!!actionLoading}>
+                    {actionLoading === 'paid' ? 'Saving…' : 'Mark balance paid'}
+                  </button>
+                </>
+              ) : selected.stripe_payment_status === 'deposit_refunded' ? (
                 <span className="badge badge-neutral" style={{ alignSelf: 'center' }}>
                   {formatPence((selected as BookingWithSite & { refunded_amount?: number }).refunded_amount ?? selected.deposit)} refunded
                 </span>
-              ) : selected.stripe_payment_status === 'paid' ? (
+              ) : selected.stripe_payment_status === 'paid' && selected.deposit > 0 ? (
                 refundInput !== null ? (
                   <>
                     <span style={{ fontSize: 12, alignSelf: 'center', color: 'var(--text-muted)' }}>£</span>
@@ -1132,26 +1182,39 @@ export default function Bookings() {
                 {resendLoading ? 'Sending…' : resendSent === 'ok' ? '✓ Sent' : resendSent === 'error' ? '✗ Failed' : 'Send'}
               </button>
             </div>
-            <div className="price-bar">
-              <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(selected.sites?.rate ?? 0)}/hr</div></div>
-              <div><div className="pi-label">Hours</div><div className="pi-value">{selected.hours}</div></div>
-              <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(selected.deposit)}</div></div>
-              <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(selected.total)}</div></div>
-            </div>
+            {selected.package_label ? (
+              <div className="price-bar">
+                <div><div className="pi-label">Package</div><div className="pi-value">{selected.package_label}</div></div>
+                {(selected.amount_paid ?? 0) > 0 && <div><div className="pi-label">Paid</div><div className="pi-value">{formatPence(selected.amount_paid)}</div></div>}
+                {selected.stripe_payment_status === 'deposit_paid' && <div><div className="pi-label" style={{ color: '#d97706' }}>Balance due</div><div className="pi-value" style={{ color: '#d97706' }}>{formatPence(selected.total - (selected.amount_paid ?? 0))}</div></div>}
+                <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(selected.total)}</div></div>
+              </div>
+            ) : (
+              <div className="price-bar">
+                <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(selected.sites?.rate ?? 0)}/hr</div></div>
+                <div><div className="pi-label">Hours</div><div className="pi-value">{selected.hours}</div></div>
+                <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(selected.deposit)}</div></div>
+                <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(selected.total)}</div></div>
+              </div>
+            )}
+            {selected.stripe_payment_status === 'deposit_paid' && (
+              <div className="notice notice-warn" style={{ marginTop: 10, fontSize: 12 }}>
+                💳 25% deposit paid ({formatPence(selected.amount_paid ?? 0)}). Balance of {formatPence(selected.total - (selected.amount_paid ?? 0))} due 14 days before the booking — a reminder with a payment link is sent automatically.
+              </div>
+            )}
           </>
         )}
         {selected && editMode && (() => {
           const editIsPackages = selected.sites?.pricing_mode === 'packages' || selected.sites?.site_type === 'vehicle'
           const editSitePackages = editIsPackages ? getRatePackages(selected.sites) : []
           const editSelPkg = editIsPackages ? editSitePackages.find(p => p.label === editForm.package_label) ?? null : null
-          const editHours = editSelPkg
-            ? packageHours(editSelPkg, selected.sites?.site_type)
-            : calcHours(editForm.start_time, editForm.end_time)
+          const editRes = editSelPkg ? resolvePackage(editSelPkg, selected.sites?.site_type, editForm.date, editForm.package_end) : null
+          const editHours = editRes ? editRes.hours : calcHours(editForm.start_time, editForm.end_time)
           const editLinkedUser = !editIsPackages && editForm.type === 'recurring' && selected.user_id ? regularUsers.find(u => u.id === selected.user_id) : null
           const editCustomRate = editLinkedUser ? (editLinkedUser.custom_rates as Record<string, number> | null)?.[selected.site_id] : null
           const editEffectiveRate = editCustomRate ?? selected.sites?.rate ?? 0
-          const editTotal = editSelPkg
-            ? editSelPkg.price + selected.deposit
+          const editTotal = editRes
+            ? editRes.total
             : selected.sites ? Math.round(editHours * editEffectiveRate) + selected.deposit : selected.total
           const totalChanged = editTotal !== selected.total
           return (
@@ -1190,11 +1253,11 @@ export default function Bookings() {
                 {editIsPackages ? (
                   <div>
                     <label className="form-label">Package</label>
-                    <select className="form-input" value={editForm.package_label} onChange={e => setEditForm(f => ({ ...f, package_label: e.target.value }))}>
+                    <select className="form-input" value={editForm.package_label} onChange={e => setEditForm(f => ({ ...f, package_label: e.target.value, package_end: '' }))}>
                       <option value="">Select package…</option>
                       {editSitePackages.map(p => (
                         <option key={p.label} value={p.label}>
-                          {p.label} — {formatPence(p.price)}{p.days > 1 ? ` (${p.days} days)` : ''}
+                          {p.label} — {formatPence(p.price)}{p.pricing === 'per_day' ? '/day' : p.days > 1 ? ` (${p.days} days)` : ''}
                         </option>
                       ))}
                     </select>
@@ -1209,16 +1272,23 @@ export default function Bookings() {
                   </div>
                 )}
                 <div>
-                  <label className="form-label">{editSelPkg && editSelPkg.days > 1 ? 'Start date' : 'Date'}</label>
-                  <input className="form-input" type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
+                  <label className="form-label">{editSelPkg && (editSelPkg.pricing === 'per_day' || editSelPkg.days > 1) ? 'Start date' : 'Date'}</label>
+                  <input className="form-input" type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value, package_end: f.package_end && e.target.value > f.package_end ? '' : f.package_end }))} />
                 </div>
               </div>
-              {editSelPkg && (
+              {editSelPkg?.pricing === 'per_day' && (
+                <div className="form-row">
+                  <label className="form-label">End date</label>
+                  <input className="form-input" type="date" min={editForm.date || undefined} value={editForm.package_end} onChange={e => setEditForm(f => ({ ...f, package_end: e.target.value }))} style={{ maxWidth: 200 }} />
+                </div>
+              )}
+              {editSelPkg && editRes && (
                 <div className="notice notice-accent" style={{ marginBottom: 8, fontSize: 12 }}>
                   {selected.sites?.site_type === 'vehicle'
-                    ? (editSelPkg.days > 1 ? `${editSelPkg.days}-day hire` : 'Same-day hire')
+                    ? (editRes.days > 1 ? `${editRes.days}-day hire` : editRes.days === 1 ? 'Same-day hire' : 'Select dates')
                     : `${editSelPkg.start_time.slice(0, 5)}–${editSelPkg.end_time.slice(0, 5)}`}
-                  {editSelPkg.days > 1 && editForm.date ? ` · covers ${fmtDateRange(editForm.date, addDays(editForm.date, editSelPkg.days - 1))}` : ''}
+                  {editRes.days > 1 && editRes.endDate ? ` · covers ${fmtDateRange(editForm.date, editRes.endDate)}` : ''}
+                  {editRes.discountPct > 0 ? ` · ${editRes.discountPct}% length discount` : ''}
                 </div>
               )}
               {!editIsPackages && editForm.type === 'recurring' && (
@@ -1282,14 +1352,21 @@ export default function Bookings() {
               </div>
               {editHours > 0 && selected.sites && (
                 <div className="price-bar" style={{ marginTop: 4 }}>
-                  {editSelPkg ? (
-                    <div><div className="pi-label">Package</div><div className="pi-value">{editSelPkg.label}</div></div>
+                  {editSelPkg && editRes ? (
+                    <>
+                      <div><div className="pi-label">Package</div><div className="pi-value">{editSelPkg.label}</div></div>
+                      <div><div className="pi-label">{selected.sites.site_type === 'vehicle' || editRes.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{selected.sites.site_type === 'vehicle' || editRes.days > 1 ? editRes.days : editHours}</div></div>
+                      {editRes.discountPct > 0 && <div><div className="pi-label">Discount</div><div className="pi-value" style={{ color: 'var(--accent)' }}>−{editRes.discountPct}%</div></div>}
+                      <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(editTotal)}</div></div>
+                    </>
                   ) : (
-                    <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(editEffectiveRate)}/hr{editCustomRate ? ' ✦' : ''}</div></div>
+                    <>
+                      <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(editEffectiveRate)}/hr{editCustomRate ? ' ✦' : ''}</div></div>
+                      <div><div className="pi-label">Hours</div><div className="pi-value">{editHours}</div></div>
+                      <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(selected.deposit)}</div></div>
+                      <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(editTotal)}</div></div>
+                    </>
                   )}
-                  <div><div className="pi-label">{editSelPkg && editSelPkg.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{editSelPkg && editSelPkg.days > 1 ? editSelPkg.days : editHours}</div></div>
-                  <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(selected.deposit)}</div></div>
-                  <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(editTotal)}</div></div>
                 </div>
               )}
             </>

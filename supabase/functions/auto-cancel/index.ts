@@ -95,7 +95,7 @@ serve(async (req) => {
     .select('*, sites(name)')
     .eq('status', 'approved')
     .neq('type', 'recurring')
-    .or('stripe_payment_status.is.null,stripe_payment_status.neq.paid')
+    .or('stripe_payment_status.is.null,stripe_payment_status.not.in.(paid,deposit_paid)')
     .lt('approved_at', cutoff.toISOString())
 
   if (error) {

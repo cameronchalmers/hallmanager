@@ -11,3 +11,18 @@ export function formatPence(pence: number): string {
 export function poundsToPence(pounds: number): number {
   return Math.round(pounds * 100)
 }
+
+import type { RatePackage } from './database.types'
+
+/** Fraction of the total taken upfront to confirm a package-site booking. */
+export const DEPOSIT_FRACTION = 0.25
+
+/** Total (pence) for a per-day package over `days`, applying the highest
+ *  whole-booking discount tier the length qualifies for. */
+export function perDayTotal(pkg: RatePackage, days: number): { total: number; discountPct: number } {
+  let pct = 0
+  for (const t of pkg.tiers ?? []) {
+    if (days >= t.min_days && t.discount_pct > pct) pct = t.discount_pct
+  }
+  return { total: Math.round(days * pkg.price * (100 - pct) / 100), discountPct: pct }
+}

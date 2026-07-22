@@ -10,11 +10,21 @@ interface BookingSummary {
   name: string
   event: string
   date: string
+  end_date: string | null
   start_time: string
   end_time: string
   site_name: string
+  site_type: string
   total: number
   deposit: number
+}
+
+interface StageInfo {
+  stage: 'full' | 'deposit' | 'balance'
+  amount_due: number
+  amount_paid: number
+  total: number
+  balance_due_date: string | null
 }
 
 function formatPence(p: number) {
@@ -22,7 +32,7 @@ function formatPence(p: number) {
   return `£${v % 1 === 0 ? v.toFixed(0) : v.toFixed(2)}`
 }
 
-function CheckoutForm({ booking, bookingId }: { booking: BookingSummary; bookingId: string }) {
+function CheckoutForm({ bookingId, amountDue }: { bookingId: string; amountDue: number }) {
   const stripe = useStripe()
   const elements = useElements()
   const [submitting, setSubmitting] = useState(false)
@@ -85,7 +95,7 @@ function CheckoutForm({ booking, bookingId }: { booking: BookingSummary; booking
           transition: 'background 0.15s',
         }}
       >
-        {submitting ? 'Processing…' : `Pay ${formatPence(booking.total)}`}
+        {submitting ? 'Processing…' : `Pay ${formatPence(amountDue)}`}
       </button>
 
       <p style={{ margin: '12px 0 0', textAlign: 'center', fontSize: 12, color: '#9ca3af' }}>
@@ -103,6 +113,7 @@ export default function PayBooking() {
   const [clientSecret, setClientSecret] = useState<string>('')
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null)
   const [booking, setBooking] = useState<BookingSummary | null>(null)
+  const [stageInfo, setStageInfo] = useState<StageInfo | null>(null)
 
   const init = useCallback(async () => {
     if (!bookingId) return
@@ -132,6 +143,13 @@ export default function PayBooking() {
     setClientSecret(data.client_secret)
     setStripePromise(loadStripe(data.publishable_key))
     setBooking(data.booking)
+    setStageInfo({
+      stage: data.stage ?? 'full',
+      amount_due: data.amount_due ?? data.booking?.total ?? 0,
+      amount_paid: data.amount_paid ?? 0,
+      total: data.total ?? data.booking?.total ?? 0,
+      balance_due_date: data.balance_due_date ?? null,
+    })
     setState('ready')
   }, [bookingId])
 
@@ -211,32 +229,48 @@ export default function PayBooking() {
     )
   }
 
-  if (state === 'ready' && clientSecret && stripePromise && booking) {
+  if (state === 'ready' && clientSecret && stripePromise && booking && stageInfo) {
+    const isVehicle = booking.site_type === 'vehicle'
+    const heading = stageInfo.stage === 'balance' ? 'Pay your remaining balance'
+      : stageInfo.stage === 'deposit' ? 'Confirm your booking'
+      : 'Complete your booking'
+    const fmtDue = stageInfo.balance_due_date
+      ? new Date(stageInfo.balance_due_date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+      : null
+    const rows: [string, string][] = [
+      ['Date', booking.end_date ? `${booking.date} – ${booking.end_date}` : booking.date],
+      ...(isVehicle ? [] : [['Time', `${booking.start_time.slice(0, 5)} – ${booking.end_time.slice(0, 5)}`] as [string, string]]),
+      ...(booking.deposit > 0 ? [['Deposit', formatPence(booking.deposit)] as [string, string]] : []),
+      ['Total', formatPence(stageInfo.total)],
+      ...(stageInfo.amount_paid > 0 ? [['Already paid', formatPence(stageInfo.amount_paid)] as [string, string]] : []),
+      [stageInfo.stage === 'deposit' ? 'Due now (25% deposit)' : stageInfo.stage === 'balance' ? 'Balance due now' : 'Due now', formatPence(stageInfo.amount_due)],
+    ]
     return (
       <div style={pageStyle}>
         {header}
         <div style={cardStyle}>
           <div style={{ height: 5, background: ACCENT }} />
           <div style={{ padding: '32px 32px 0' }}>
-            <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: ACCENT, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Complete your booking</p>
+            <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: ACCENT, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{heading}</p>
             <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: '#111827' }}>{booking.event}</h1>
             <p style={{ margin: '0 0 20px', color: '#6b7280', fontSize: 14 }}>{booking.site_name}</p>
           </div>
 
           {/* Booking summary */}
-          <div style={{ margin: '0 32px 24px', background: '#f9fafb', borderRadius: 10, overflow: 'hidden', border: '1px solid #f3f4f6' }}>
-            {[
-              ['Date', booking.date],
-              ['Time', `${booking.start_time.slice(0, 5)} – ${booking.end_time.slice(0, 5)}`],
-              ['Deposit', formatPence(booking.deposit)],
-              ['Total', formatPence(booking.total)],
-            ].map(([label, value], i) => (
+          <div style={{ margin: '0 32px 16px', background: '#f9fafb', borderRadius: 10, overflow: 'hidden', border: '1px solid #f3f4f6' }}>
+            {rows.map(([label, value], i) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: i % 2 === 0 ? '#f9fafb' : '#fff', fontSize: 14 }}>
                 <span style={{ color: '#6b7280', fontWeight: 500 }}>{label}</span>
-                <span style={{ color: '#111827', fontWeight: 600 }}>{value}</span>
+                <span style={{ color: '#111827', fontWeight: i === rows.length - 1 ? 800 : 600 }}>{value}</span>
               </div>
             ))}
           </div>
+
+          {stageInfo.stage === 'deposit' && fmtDue && (
+            <div style={{ margin: '0 32px 20px', padding: '10px 14px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 10, fontSize: 13, color: '#5b21b6' }}>
+              The remaining {formatPence(stageInfo.total - stageInfo.amount_due)} balance is due by <strong>{fmtDue}</strong> — we'll email you a payment link nearer the time.
+            </div>
+          )}
 
           <div style={{ padding: '0 32px 32px' }}>
             <Elements
@@ -254,7 +288,7 @@ export default function PayBooking() {
                 },
               }}
             >
-              <CheckoutForm booking={booking} bookingId={bookingId!} />
+              <CheckoutForm bookingId={bookingId!} amountDue={stageInfo.amount_due} />
             </Elements>
           </div>
         </div>

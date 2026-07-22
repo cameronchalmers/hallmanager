@@ -140,11 +140,12 @@ serve(async (req) => {
 
       const { data: site } = await supabase
         .from('sites')
-        .select('name, whatsapp_number, site_type')
+        .select('name, whatsapp_number, site_type, pricing_mode')
         .eq('id', booking.site_id)
         .single()
 
       const isVehicle = site?.site_type === 'vehicle'
+      const isSplitSite = site?.pricing_mode === 'packages' || isVehicle
       const hireDays = booking.end_date
         ? Math.round((new Date(booking.end_date).getTime() - new Date(booking.date).getTime()) / 86400000) + 1
         : 1
@@ -165,6 +166,34 @@ serve(async (req) => {
         notes: booking.notes,
         payment_url: `${SITE_URL}/pay/${booking.id}`,
         whatsapp_number: site?.whatsapp_number ?? null,
+      }
+
+      // Split-payment context for package sites: 25% now, balance 14 days before
+      if (isSplitSite && ['booking_approved', 'booking_confirmed'].includes(type)) {
+        const total = Math.round(Number(booking.total))
+        const paid = Math.round(Number(booking.amount_paid ?? 0))
+        const fp = (p: number) => `£${(p / 100).toLocaleString('en-GB', { maximumFractionDigits: 2 })}`
+        const balDue = new Date(booking.date + 'T12:00:00')
+        balDue.setDate(balDue.getDate() - 14)
+        const balDueStr = balDue.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+        const daysAway = Math.floor((new Date(booking.date + 'T12:00:00').getTime() - Date.now()) / 86400000)
+        if (type === 'booking_approved') {
+          if (paid > 0 && paid < total) {
+            b.payment_note = `${fp(paid)} deposit already received. The remaining balance of ${fp(total - paid)} is due by ${balDueStr}.`
+            b.pay_now_amount = total - paid
+          } else if (daysAway > 14) {
+            b.pay_now_amount = Math.round(total * 0.25)
+            b.payment_note = `A ${fp(b.pay_now_amount)} deposit (25%) confirms your booking. The remaining ${fp(total - b.pay_now_amount)} is due by ${balDueStr} — we'll email you a payment link nearer the time.`
+          } else {
+            b.payment_note = `As your booking is less than 14 days away, full payment of ${fp(total)} is due to confirm.`
+          }
+        } else if (type === 'booking_confirmed') {
+          if (paid > 0 && paid < total) {
+            b.payment_note = `${fp(paid)} deposit received. The remaining balance of ${fp(total - paid)} is due by ${balDueStr}.`
+          } else {
+            b.payment_note = `Paid in full — nothing more to pay.`
+          }
+        }
       }
 
       if (type === 'booking_submitted') {

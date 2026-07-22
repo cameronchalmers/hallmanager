@@ -76,7 +76,8 @@ function bookingTable(b: BookingData) {
     [b.time_display ? 'Package' : 'Time', b.time_display ? esc(b.time_display) : `${esc(b.start_time)} – ${esc(b.end_time)}`],
     ['Duration', esc(b.duration_display ?? `${Number(b.hours)} hours`)],
     ['Venue', esc(b.site_name)],
-    ['Deposit', `£${fp(b.deposit)}`],
+    // Package sites have no separate damage deposit — hide the £0 row
+    ...(Number(b.deposit) > 0 ? [['Deposit', `£${fp(b.deposit)}`]] : []),
     ['Total', `£${fp(b.total)}`],
   ]
   return `
@@ -109,6 +110,19 @@ export interface BookingData {
   refunded_amount?: number
   time_display?: string | null
   duration_display?: string | null
+  /** Extra payment context (split payments): shown highlighted under the table */
+  payment_note?: string | null
+  /** Overrides the "Pay now" button amount (e.g. 25% deposit) */
+  pay_now_amount?: number | null
+}
+
+function paymentNoteBox(b: BookingData) {
+  if (!b.payment_note) return ''
+  return `
+    <div style="margin-top:16px;padding:14px 16px;background:#f5f3ff;border-radius:10px;border:1px solid #ddd6fe;">
+      <p style="margin:0;font-size:13px;color:#5b21b6;">${esc(b.payment_note)}</p>
+    </div>
+  `
 }
 
 export interface ExtraSlotData {
@@ -179,13 +193,14 @@ export function bookingApproved(b: BookingData): { subject: string; html: string
       <div style="padding:24px 32px;">
         ${pill('Awaiting Payment', '#92400e', '#fffbeb')}
         ${bookingTable(b)}
+        ${paymentNoteBox(b)}
         <div style="margin-top:24px;padding:16px;background:#fffbeb;border-radius:10px;border:1px solid #fcd34d;">
           <p style="margin:0 0 6px;font-size:14px;color:#92400e;font-weight:700;">⚠️ Your booking is not confirmed until payment is received</p>
           <p style="margin:0;font-size:13px;color:#92400e;">Payment must be made within <strong>14 days</strong> to secure your slot. If payment is not received within this time, your booking will be automatically cancelled.</p>
         </div>
         ${b.payment_url ? `
         <div style="margin-top:24px;text-align:center;">
-          <a href="${b.payment_url}" style="display:inline-block;background:${ACCENT};color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">Pay now — £${fp(b.total)}</a>
+          <a href="${b.payment_url}" style="display:inline-block;background:${ACCENT};color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">Pay now — £${fp(b.pay_now_amount ?? b.total)}</a>
           <p style="margin:10px 0 0;font-size:12px;color:#9ca3af;">Secure payment powered by Stripe</p>
         </div>
         ` : `
@@ -326,6 +341,7 @@ export function bookingConfirmed(b: BookingData): { subject: string; html: strin
       <div style="padding:24px 32px;">
         ${pill('Confirmed', '#065f46', '#ecfdf5')}
         ${bookingTable(b)}
+        ${paymentNoteBox(b)}
         ${b.notes ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-radius:8px;border-left:3px solid #e5e7eb;"><p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Notes</p><p style="margin:4px 0 0;font-size:14px;color:#374151;">${esc(b.notes)}</p></div>` : ''}
         <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;">If you need to make any changes or have questions, please get in touch.</p>
       </div>

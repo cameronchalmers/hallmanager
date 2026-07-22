@@ -4,7 +4,7 @@ import { useSite } from '../context/SiteContext'
 import { useAuth } from '../context/AuthContext'
 import type { AppUser, SiteCredentials, RatePackage, CustomQuestion } from '../lib/database.types'
 import { DEFAULT_AVAILABILITY, getRatePackages, getCustomQuestions, type WeekAvailability } from '../lib/database.types'
-import { poundsToPence } from '../lib/money'
+import { poundsToPence, perDayTotal, formatPence } from '../lib/money'
 
 const EMOJI_OPTIONS = ['🏛️', '🎭', '🏫', '⛪', '🏢', '🎪', '🏟️', '🏗️', '🎵', '🌿', '🚐']
 const AMENITY_OPTIONS = ['WiFi', 'Parking', 'Kitchen', 'Toilets', 'Disabled Access', 'PA System', 'Stage', 'Projector & Screen', 'Tables & Chairs', 'Outdoor Space', 'Bar', 'Air Conditioning', 'Changing Rooms', 'CCTV']
@@ -393,11 +393,18 @@ export default function SiteSettings() {
                       <input className="form-input" type="number" min="0" step="0.01" value={form.rate / 100} onChange={e => setForm(f => ({ ...f, rate: poundsToPence(Number(e.target.value)) }))} />
                     </div>
                   )}
-                  <div>
-                    <label className="form-label">{pricingMode === 'packages' ? 'Default deposit (£)' : 'Deposit (£)'}</label>
-                    <input className="form-input" type="number" min="0" step="0.01" value={form.deposit / 100} onChange={e => setForm(f => ({ ...f, deposit: poundsToPence(Number(e.target.value)) }))} />
-                  </div>
+                  {pricingMode === 'hourly' && siteType === 'hall' && (
+                    <div>
+                      <label className="form-label">Deposit (£)</label>
+                      <input className="form-input" type="number" min="0" step="0.01" value={form.deposit / 100} onChange={e => setForm(f => ({ ...f, deposit: poundsToPence(Number(e.target.value)) }))} />
+                    </div>
+                  )}
                 </div>
+                {(pricingMode === 'packages' || siteType === 'vehicle') && (
+                  <div className="notice notice-accent" style={{ fontSize: 12 }}>
+                    💳 Package bookings take a <strong>25% deposit</strong> to confirm, with the balance due 14 days before the booking — no separate damage deposit.
+                  </div>
+                )}
                 {pricingMode === 'hourly' && (
                   <div>
                     <label className="form-label">Minimum booking duration (hours)</label>
@@ -410,55 +417,112 @@ export default function SiteSettings() {
                   <div>
                     <label className="form-label">{siteType === 'vehicle' ? 'Hire packages' : 'Packages'}</label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-                      {ratePackages.map((p, i) => (
-                        <div key={i} style={{ display: 'grid', gridTemplateColumns: siteType === 'vehicle' ? '1.6fr 0.9fr 0.9fr 0.7fr auto' : '1.4fr 0.8fr 0.8fr 0.9fr 0.9fr 0.6fr auto', gap: 6, alignItems: 'end', background: 'var(--surface2)', borderRadius: 9, padding: '8px 10px' }}>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Name</div>
-                            <input className="form-input" placeholder="Full day" value={p.label}
-                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, label: e.target.value } : x))} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Price £</div>
-                            <input className="form-input" type="number" min="0" step="0.01" value={p.price / 100}
-                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, price: poundsToPence(Number(e.target.value)) } : x))} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Deposit £</div>
-                            <input className="form-input" type="number" min="0" step="0.01" placeholder={String(form.deposit / 100)}
-                              value={p.deposit == null ? '' : p.deposit / 100}
-                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, deposit: e.target.value === '' ? null : poundsToPence(Number(e.target.value)) } : x))} />
-                          </div>
-                          {siteType !== 'vehicle' && (
-                            <>
+                      {ratePackages.map((p, i) => {
+                        const pd = p.pricing === 'per_day'
+                        const upd = (patch: Partial<typeof p>) => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, ...patch } : x))
+                        const cellLabel = (t: string) => <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>{t}</div>
+                        return (
+                          <div key={i} style={{ background: 'var(--surface2)', borderRadius: 9, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: siteType === 'vehicle' ? '1.4fr auto 0.9fr 0.7fr auto' : '1.2fr auto 0.9fr 0.8fr 0.8fr 0.7fr auto', gap: 6, alignItems: 'end' }}>
                               <div>
-                                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>From</div>
-                                <input className="form-input" type="time" value={p.start_time}
-                                  onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, start_time: e.target.value } : x))} />
+                                {cellLabel('Name')}
+                                <input className="form-input" placeholder="Full day" value={p.label} onChange={e => upd({ label: e.target.value })} />
                               </div>
                               <div>
-                                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Until</div>
-                                <input className="form-input" type="time" value={p.end_time}
-                                  onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, end_time: e.target.value } : x))} />
+                                {cellLabel('Type')}
+                                <div style={{ display: 'flex', gap: 2, background: 'var(--surface)', borderRadius: 7, padding: 2 }}>
+                                  {([['fixed', 'Fixed'], ['per_day', 'Per day']] as const).map(([v, l]) => (
+                                    <button key={v} type="button" onClick={() => upd({ pricing: v })}
+                                      style={{ padding: '4px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600,
+                                        background: (p.pricing ?? 'fixed') === v ? 'var(--accent)' : 'transparent',
+                                        color: (p.pricing ?? 'fixed') === v ? '#fff' : 'var(--text-muted)' }}>
+                                      {l}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
-                            </>
-                          )}
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>Days</div>
-                            <input className="form-input" type="number" min="1" max="14" value={p.days}
-                              onChange={e => setRatePackages(ps => ps.map((x, xi) => xi === i ? { ...x, days: Math.max(1, Number(e.target.value) || 1) } : x))} />
+                              <div>
+                                {cellLabel(pd ? '£ / day' : 'Price £')}
+                                <input className="form-input" type="number" min="0" step="0.01" value={p.price / 100}
+                                  onChange={e => upd({ price: poundsToPence(Number(e.target.value)) })} />
+                              </div>
+                              {siteType !== 'vehicle' && (
+                                <>
+                                  <div>
+                                    {cellLabel('From')}
+                                    <input className="form-input" type="time" value={p.start_time} onChange={e => upd({ start_time: e.target.value })} />
+                                  </div>
+                                  <div>
+                                    {cellLabel('Until')}
+                                    <input className="form-input" type="time" value={p.end_time} onChange={e => upd({ end_time: e.target.value })} />
+                                  </div>
+                                </>
+                              )}
+                              {pd ? (
+                                <div>
+                                  {cellLabel('Min days')}
+                                  <input className="form-input" type="number" min="1" max="60" value={p.min_days ?? 1}
+                                    onChange={e => upd({ min_days: Math.max(1, Number(e.target.value) || 1) })} />
+                                </div>
+                              ) : (
+                                <div>
+                                  {cellLabel('Days')}
+                                  <input className="form-input" type="number" min="1" max="14" value={p.days}
+                                    onChange={e => upd({ days: Math.max(1, Number(e.target.value) || 1) })} />
+                                </div>
+                              )}
+                              <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#ef4444', marginBottom: 2 }}
+                                onClick={() => setRatePackages(ps => ps.filter((_, xi) => xi !== i))}>✕</button>
+                            </div>
+                            {pd && (
+                              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', paddingTop: 2 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Discounts:</span>
+                                {(p.tiers ?? []).map((t, ti) => (
+                                  <span key={ti} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, background: 'var(--surface)', borderRadius: 7, padding: '3px 8px', border: '1px solid var(--border)' }}>
+                                    <input className="form-input" type="number" min="2" max="60" value={t.min_days} style={{ width: 52, padding: '2px 6px', fontSize: 12 }}
+                                      onChange={e => upd({ tiers: (p.tiers ?? []).map((x, xi) => xi === ti ? { ...x, min_days: Math.max(2, Number(e.target.value) || 2) } : x) })} />
+                                    <span>+ days →</span>
+                                    <input className="form-input" type="number" min="1" max="90" value={t.discount_pct} style={{ width: 48, padding: '2px 6px', fontSize: 12 }}
+                                      onChange={e => upd({ tiers: (p.tiers ?? []).map((x, xi) => xi === ti ? { ...x, discount_pct: Math.max(0, Number(e.target.value) || 0) } : x) })} />
+                                    <span>% off</span>
+                                    <button type="button" style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 12, padding: 0 }}
+                                      onClick={() => upd({ tiers: (p.tiers ?? []).filter((_, xi) => xi !== ti) })}>✕</button>
+                                  </span>
+                                ))}
+                                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }}
+                                  onClick={() => upd({ tiers: [...(p.tiers ?? []), { min_days: 4, discount_pct: 10 }] })}>
+                                  + Add discount
+                                </button>
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                  Max days:
+                                  <input className="form-input" type="number" min="1" max="90" value={p.max_days ?? 30} style={{ width: 56, padding: '2px 6px', fontSize: 12, marginLeft: 4, display: 'inline-block' }}
+                                    onChange={e => upd({ max_days: Math.max(1, Number(e.target.value) || 30) })} />
+                                </span>
+                              </div>
+                            )}
+                            {pd && p.price > 0 && (
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                Preview: {[p.min_days ?? 1, ...(p.tiers ?? []).map(t => t.min_days)]
+                                  .filter((v, ix, a) => v >= (p.min_days ?? 1) && a.indexOf(v) === ix)
+                                  .sort((a, b) => a - b)
+                                  .slice(0, 4)
+                                  .map(d => {
+                                    const { total } = perDayTotal(p, d)
+                                    return `${d}d = ${formatPence(total)}`
+                                  }).join(' · ')}
+                              </div>
+                            )}
                           </div>
-                          <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#ef4444', marginBottom: 2 }}
-                            onClick={() => setRatePackages(ps => ps.filter((_, xi) => xi !== i))}>✕</button>
-                        </div>
-                      ))}
+                        )
+                      })}
                       <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }}
-                        onClick={() => setRatePackages(ps => [...ps, { label: '', price: 0, deposit: null, start_time: siteType === 'vehicle' ? '00:00' : '09:00', end_time: siteType === 'vehicle' ? '23:59' : '17:00', days: 1 }])}>
+                        onClick={() => setRatePackages(ps => [...ps, { label: '', price: 0, deposit: null, start_time: siteType === 'vehicle' ? '00:00' : '09:00', end_time: siteType === 'vehicle' ? '23:59' : '17:00', days: 1, pricing: 'fixed' }])}>
                         + Add package
                       </button>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {siteType === 'vehicle'
-                          ? 'Days = calendar days the hire covers, e.g. a weekend from Friday to Sunday = 3 days. Pickup and return times are arranged directly with the hirer. Leave deposit blank to use the default deposit.'
-                          : 'Each package books a fixed time window. Days > 1 blocks consecutive days (e.g. Weekend = 2 days starting Saturday). Leave deposit blank to use the default deposit.'}
+                          ? 'Fixed packages cover a set number of days (weekend Fri–Sun = 3). Per-day packages let the hirer pick their own dates — price is days × daily rate, with the highest qualifying discount applied to the whole hire.'
+                          : 'Fixed packages book a set time window; Days > 1 blocks consecutive days. Per-day packages let the customer pick a date range.'}
                       </div>
                     </div>
                   </div>

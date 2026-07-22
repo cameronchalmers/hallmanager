@@ -146,6 +146,8 @@ export interface Database {
           package_label: string | null
           end_date: string | null
           custom_answers: Record<string, string> | null
+          amount_paid: number
+          google_calendar_event_id: string | null
         }
         Insert: {
           id?: string
@@ -178,6 +180,8 @@ export interface Database {
           package_label?: string | null
           end_date?: string | null
           custom_answers?: Record<string, string> | null
+          amount_paid?: number
+          google_calendar_event_id?: string | null
         }
         Update: {
           id?: string
@@ -210,6 +214,8 @@ export interface Database {
           package_label?: string | null
           end_date?: string | null
           custom_answers?: Record<string, string> | null
+          amount_paid?: number
+          google_calendar_event_id?: string | null
         }
         Relationships: []
       }
@@ -362,9 +368,16 @@ export interface DaySchedule {
   until: string
 }
 
-/** Fixed-price package for sites with pricing_mode 'packages' (e.g. minibus hire).
- *  price/deposit in pence; deposit null falls back to the site deposit;
- *  days = consecutive days covered (weekend = 2). */
+/** Package for sites with pricing_mode 'packages' (e.g. minibus hire).
+ *  pricing 'fixed' (default): price = total, days = length covered.
+ *  pricing 'per_day': price = daily rate; customer picks the end date within
+ *  min_days..max_days; tiers give whole-booking % discounts by length.
+ *  All amounts in pence. deposit is legacy — package sites use a 25% split. */
+export interface PerDayTier {
+  min_days: number
+  discount_pct: number
+}
+
 export interface RatePackage {
   label: string
   price: number
@@ -372,6 +385,10 @@ export interface RatePackage {
   start_time: string
   end_time: string
   days: number
+  pricing?: 'fixed' | 'per_day'
+  min_days?: number
+  max_days?: number
+  tiers?: PerDayTier[]
 }
 
 export function getRatePackages(site: Pick<Site, 'rate_packages'> | null | undefined): RatePackage[] {

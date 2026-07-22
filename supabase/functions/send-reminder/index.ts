@@ -3,6 +3,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
 const FROM = Deno.env.get('RESEND_FROM') ?? 'HallManager <noreply@hallmanager.co.uk>'
+const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://hallmanager.co.uk'
+// Balance reminders go out when the booking is this many days away
+const BALANCE_REMINDER_DAYS = [14, 7]
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -133,6 +136,68 @@ function reminderEmail(name: string, event: string, date: string, time: string, 
     <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;line-height:1.6;">
       ${whatsappNumber ? `<p style="margin:0 0 8px;"><a href="https://wa.me/${whatsappNumber.replace(/\D/g, '')}" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: ${esc(whatsappNumber)}</a></p>` : ''}
       <p style="margin:0;">HallManager · This email was sent automatically.</p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+function fp(pence: number): string {
+  return `£${(pence / 100).toLocaleString('en-GB', { maximumFractionDigits: 2 })}`
+}
+
+function balanceDueEmail(name: string, event: string, dateRange: string, siteName: string, balance: number, dueDate: string, payUrl: string, whatsappNumber?: string | null): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet" />
+</head>
+<body style="font-family:'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f9fc;margin:0;padding:0;">
+  <div style="max-width:600px;margin:32px auto;padding:0 16px;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="display:inline-flex;align-items:center;gap:10px;">
+        <div style="width:36px;height:36px;background:#7c3aed;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;">
+          <span style="color:white;font-weight:700;font-size:18px;line-height:1;">H</span>
+        </div>
+        <span style="font-size:20px;font-weight:700;color:#111827;letter-spacing:-0.3px;">HallManager</span>
+      </div>
+    </div>
+    <div style="background:#fff;border-radius:16px;border:1px solid #e5e7eb;overflow:hidden;">
+      <div style="padding:32px 32px 0;border-bottom:3px solid #d97706;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#d97706;letter-spacing:0.5px;text-transform:uppercase;">Balance Due</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Your remaining balance is due</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">Hi ${esc(name)}, your booking is coming up — please pay the remaining balance by <strong>${esc(dueDate)}</strong> to complete your booking.</p>
+      </div>
+      <div style="padding:24px 32px;">
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <tr style="background:#f9fafb;">
+            <td style="padding:10px 14px;color:#6b7280;font-weight:500;width:40%;">Booking</td>
+            <td style="padding:10px 14px;color:#111827;font-weight:600;">${esc(event)}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;color:#6b7280;font-weight:500;">Date</td>
+            <td style="padding:10px 14px;color:#111827;font-weight:600;">${esc(dateRange)}</td>
+          </tr>
+          <tr style="background:#f9fafb;">
+            <td style="padding:10px 14px;color:#6b7280;font-weight:500;">Venue</td>
+            <td style="padding:10px 14px;color:#111827;font-weight:600;">${esc(siteName)}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;color:#6b7280;font-weight:500;">Balance due</td>
+            <td style="padding:10px 14px;color:#111827;font-weight:700;">${esc(fp(balance))}</td>
+          </tr>
+        </table>
+        <div style="margin-top:24px;text-align:center;">
+          <a href="${payUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">Pay balance — ${esc(fp(balance))}</a>
+          <p style="margin:10px 0 0;font-size:12px;color:#9ca3af;">Secure payment powered by Stripe</p>
+        </div>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:24px;color:#9ca3af;font-size:12px;line-height:1.6;">
+      ${whatsappNumber ? `<p style="margin:0 0 8px;"><a href="https://wa.me/${whatsappNumber.replace(/\D/g, '')}" style="color:#25d366;font-weight:600;text-decoration:none;">💬 WhatsApp us: ${esc(whatsappNumber)}</a></p>` : ''}
+      <p style="margin:0;">HallManager · This email was sent automatically — please do not reply.</p>
     </div>
   </div>
 </body>
@@ -286,7 +351,57 @@ serve(async (req) => {
   }
 
   console.log(`send-reminder: sent ${sent}, errors: ${errors.length}`)
-  return new Response(JSON.stringify({ ok: true, sent, errors }), {
+
+  // ── Balance-due reminders (split payments on package sites) ─────────────────
+  let balanceSent = 0
+  try {
+    const targetDates = BALANCE_REMINDER_DAYS.map(n => {
+      const d = new Date()
+      d.setDate(d.getDate() + n)
+      return d.toISOString().split('T')[0]
+    })
+    const { data: dueBookings } = await supabase
+      .from('bookings')
+      .select('*, sites(name, whatsapp_number)')
+      .eq('status', 'confirmed')
+      .eq('stripe_payment_status', 'deposit_paid')
+      .in('date', targetDates)
+
+    for (const booking of dueBookings ?? []) {
+      const total = Math.round(Number(booking.total))
+      const paid = Math.round(Number(booking.amount_paid ?? 0))
+      const balance = total - paid
+      if (balance <= 0) continue
+      const fmtD = (ds: string) => new Date(ds + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      const dateRange = booking.end_date && booking.end_date !== booking.date
+        ? `${fmtD(booking.date)} – ${fmtD(booking.end_date)}`
+        : fmtD(booking.date)
+      const due = new Date(booking.date + 'T12:00:00')
+      due.setDate(due.getDate() - 14)
+      const siteData = booking.sites as { name: string; whatsapp_number: string | null } | null
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: FROM,
+          to: booking.email,
+          subject: `Balance due — ${booking.event} at ${siteData?.name ?? 'venue'}`,
+          html: balanceDueEmail(
+            booking.name, booking.event, dateRange, siteData?.name ?? 'Unknown venue',
+            balance, fmtD(due.toISOString().split('T')[0]),
+            `${SITE_URL}/pay/${booking.id}`, siteData?.whatsapp_number,
+          ),
+        }),
+      })
+      if (res.ok) balanceSent++
+      else errors.push(`Balance email for ${booking.id}: ${await res.text()}`)
+    }
+  } catch (e) {
+    errors.push(`Balance reminders: ${String(e)}`)
+  }
+
+  console.log(`send-reminder: balance reminders sent ${balanceSent}`)
+  return new Response(JSON.stringify({ ok: true, sent, balance_sent: balanceSent, errors }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 })

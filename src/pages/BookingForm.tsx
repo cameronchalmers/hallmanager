@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 import { useForceLightMode } from '../hooks/useForceLightMode'
 import type { Site, WeekAvailability } from '../lib/database.types'
 import { getRatePackages, getCustomQuestions, type RatePackage } from '../lib/database.types'
-import { formatPence } from '../lib/money'
+import { formatPence, perDayTotal, DEPOSIT_FRACTION } from '../lib/money'
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
 
@@ -207,6 +207,7 @@ export default function BookingForm() {
   const [photoIndex, setPhotoIndex] = useState(0)
   const [siteBookings, setSiteBookings] = useState<SlotBooking[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [perDayEnd, setPerDayEnd] = useState('')
 
   useEffect(() => {
     supabase.from('sites').select('*').then(({ data }) => {
@@ -242,21 +243,33 @@ export default function BookingForm() {
   const isPackages = activeSite?.pricing_mode === 'packages' || isVehicle
   const packages = isPackages ? getRatePackages(activeSite) : []
   const selectedPackage: RatePackage | null = isPackages ? packages.find(p => p.label === form.package_label) ?? null : null
+  const isPerDay = selectedPackage?.pricing === 'per_day'
   const customQuestions = getCustomQuestions(activeSite)
   const textQuestions = customQuestions.filter(q => q.type !== 'terms')
   const termsQuestion = customQuestions.find(q => q.type === 'terms') ?? null
+
+  // Length of the hire in days. Fixed packages define it; per-day packages
+  // take it from the customer's chosen end date.
+  const perDayDays = isPerDay && form.date && perDayEnd && perDayEnd >= form.date
+    ? Math.round((new Date(perDayEnd + 'T12:00:00').getTime() - new Date(form.date + 'T12:00:00').getTime()) / 86400000) + 1
+    : 0
+  const packageDays = selectedPackage ? (isPerDay ? perDayDays : Math.max(1, selectedPackage.days)) : 0
+
   const hours = selectedPackage
     ? (isVehicle
-        ? (Math.max(1, selectedPackage.days) - 1) * 24 + calcHoursSigned(selectedPackage.start_time, selectedPackage.end_time)
-        : calcHours(selectedPackage.start_time, selectedPackage.end_time) * Math.max(1, selectedPackage.days))
+        ? Math.max(0, packageDays - 1) * 24 + calcHoursSigned(selectedPackage.start_time, selectedPackage.end_time)
+        : calcHours(selectedPackage.start_time, selectedPackage.end_time) * Math.max(1, packageDays))
     : calcHours(form.start_time, form.end_time)
-  const deposit = selectedPackage ? (selectedPackage.deposit ?? activeSite?.deposit ?? 0) : (activeSite?.deposit ?? 0)
+  // Package sites have no separate damage deposit — 25% of the total confirms
+  const deposit = isPackages ? 0 : (activeSite?.deposit ?? 0)
+  const perDayPricing = selectedPackage && isPerDay && packageDays > 0 ? perDayTotal(selectedPackage, packageDays) : null
   const total = selectedPackage
-    ? selectedPackage.price + deposit
+    ? (isPerDay ? (perDayPricing?.total ?? 0) : selectedPackage.price)
     : activeSite ? Math.round(hours * activeSite.rate) + deposit : 0
-  const packageEndDate = selectedPackage && selectedPackage.days > 1 && form.date
-    ? addDays(form.date, selectedPackage.days - 1)
+  const packageEndDate = selectedPackage && form.date && packageDays > 1
+    ? (isPerDay ? perDayEnd : addDays(form.date, packageDays - 1))
     : null
+  const payNow = isPackages && total > 0 ? Math.round(total * DEPOSIT_FRACTION) : total
 
   function set(key: keyof typeof form, value: string) {
     setForm(f => ({ ...f, [key]: value }))
@@ -268,6 +281,13 @@ export default function BookingForm() {
 
     if (isPackages) {
       if (!selectedPackage) { setError('Please choose a package.'); return }
+      if (isPerDay) {
+        if (!perDayEnd || packageDays < 1) { setError('Please choose your end date.'); return }
+        const minD = Math.max(1, selectedPackage.min_days ?? 1)
+        const maxD = selectedPackage.max_days ?? 60
+        if (packageDays < minD) { setError(`Minimum hire for ${selectedPackage.label} is ${minD} days.`); return }
+        if (packageDays > maxD) { setError(`Maximum hire for ${selectedPackage.label} is ${maxD} days.`); return }
+      }
     } else {
       if (hours <= 0) { setError('Please check your times — end must be after start.'); return }
 
@@ -355,11 +375,11 @@ export default function BookingForm() {
             <div style={{ color: 'var(--text-muted,#71717a)' }}>
               {activeSite?.name} · {form.date}{packageEndDate ? ` – ${packageEndDate}` : ''} · {selectedPackage ? selectedPackage.label : `${form.start_time}–${form.end_time}`}
             </div>
-            <div style={{ marginTop: 6, fontWeight: 700, color: 'var(--text,#111)' }}>Total: {formatPence(total)} <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(deposit: {formatPence(deposit)})</span></div>
+            <div style={{ marginTop: 6, fontWeight: 700, color: 'var(--text,#111)' }}>Total: {formatPence(total)} <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>{isPackages ? `(${formatPence(payNow)} to confirm)` : `(deposit: ${formatPence(deposit)})`}</span></div>
           </div>
           <button
             style={{ background: 'var(--accent,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 22px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-            onClick={() => { setForm(f => ({ ...f, name: '', email: '', phone: '', event: '', date: '', start_time: '', end_time: '', notes: '', package_label: '' })); setAnswers({}); setSubmitted(false) }}
+            onClick={() => { setForm(f => ({ ...f, name: '', email: '', phone: '', event: '', date: '', start_time: '', end_time: '', notes: '', package_label: '' })); setAnswers({}); setPerDayEnd(''); setSubmitted(false) }}
           >
             Submit another request
           </button>
@@ -408,7 +428,9 @@ export default function BookingForm() {
                   ) : (
                     <span className="badge badge-accent">{formatPence(lockedSite.rate)}/hr</span>
                   )}
-                  <span className="badge badge-neutral">{formatPence(lockedSite.deposit)} deposit</span>
+                  {lockedSite.pricing_mode === 'packages' || lockedSite.site_type === 'vehicle'
+                    ? <span className="badge badge-neutral">25% deposit to book</span>
+                    : <span className="badge badge-neutral">{formatPence(lockedSite.deposit)} deposit</span>}
                   <span className="badge badge-neutral">{lockedSite.site_type === 'vehicle' ? `${lockedSite.capacity} seats` : `Up to ${lockedSite.capacity} guests`}</span>
                   {lockedSite.pricing_mode !== 'packages' && lockedSite.min_hours && <span className="badge badge-neutral">Min. {lockedSite.min_hours}hr booking</span>}
                 </div>
@@ -495,7 +517,9 @@ export default function BookingForm() {
                       ) : (
                         <span className="badge badge-accent">{formatPence(activeSite.rate)}/hr</span>
                       )}
-                      <span className="badge badge-neutral">{formatPence(activeSite.deposit)} deposit</span>
+                      {isPackages
+                        ? <span className="badge badge-neutral">25% deposit to book</span>
+                        : <span className="badge badge-neutral">{formatPence(activeSite.deposit)} deposit</span>}
                       <span className="badge badge-neutral">{isVehicle ? `${activeSite.capacity} seats` : `Up to ${activeSite.capacity} guests`}</span>
                       {!isPackages && activeSite.min_hours && <span className="badge badge-neutral">Min. {activeSite.min_hours}hr</span>}
                       {activeSite.available_from && activeSite.available_until && (
@@ -525,19 +549,36 @@ export default function BookingForm() {
                     </div>
                   )}
                   <div>
-                    <label className="form-label">{isPackages && selectedPackage && selectedPackage.days > 1 ? 'Start date' : 'Date'}</label>
-                    <input className="form-input" type="date" required value={form.date} onChange={e => set('date', e.target.value)} />
+                    <label className="form-label">{isPackages && (isPerDay || (selectedPackage && selectedPackage.days > 1)) ? 'Start date' : 'Date'}</label>
+                    <input className="form-input" type="date" required value={form.date} onChange={e => { set('date', e.target.value); if (perDayEnd && e.target.value > perDayEnd) setPerDayEnd('') }} />
                   </div>
+                  {isPerDay && (
+                    <div>
+                      <label className="form-label">End date</label>
+                      <input className="form-input" type="date" required min={form.date || undefined} value={perDayEnd} onChange={e => setPerDayEnd(e.target.value)} />
+                    </div>
+                  )}
                 </div>
                 {isPackages && (
                   <div className="form-row">
-                    <label className="form-label">Availability <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(tap a date to select it)</span></label>
+                    <label className="form-label">Availability <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>{isPerDay ? '(tap your start date, then your end date)' : '(tap a date to select it)'}</span></label>
                     <AvailabilityCalendar
                       bookings={siteBookings}
                       blockedDates={activeSite?.blocked_dates ?? []}
                       selectedStart={form.date}
-                      spanDays={selectedPackage?.days ?? 1}
-                      onSelect={ds => set('date', ds)}
+                      spanDays={Math.max(1, packageDays)}
+                      onSelect={ds => {
+                        if (isPerDay) {
+                          if (!form.date || ds < form.date || (perDayEnd && form.date)) {
+                            set('date', ds)
+                            setPerDayEnd('')
+                          } else {
+                            setPerDayEnd(ds)
+                          }
+                        } else {
+                          set('date', ds)
+                        }
+                      }}
                     />
                   </div>
                 )}
@@ -547,12 +588,15 @@ export default function BookingForm() {
                     <div style={{ display: 'grid', gap: 8 }}>
                       {packages.map(p => {
                         const sel = form.package_label === p.label
-                        const dep = p.deposit ?? activeSite?.deposit ?? 0
+                        const pd = p.pricing === 'per_day'
+                        const tierText = pd && p.tiers?.length
+                          ? [...p.tiers].sort((a, b) => a.min_days - b.min_days).map(t => `${t.discount_pct}% off ${t.min_days}+ days`).join(' · ')
+                          : null
                         return (
                           <button
                             type="button"
                             key={p.label}
-                            onClick={() => set('package_label', sel ? '' : p.label)}
+                            onClick={() => { set('package_label', sel ? '' : p.label); setPerDayEnd('') }}
                             style={{
                               display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
                               padding: '12px 16px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
@@ -564,24 +608,24 @@ export default function BookingForm() {
                             <div>
                               <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text,#111827)' }}>{p.label}</div>
                               <div style={{ fontSize: 12, color: 'var(--text-muted,#71717a)', marginTop: 2 }}>
-                                {isVehicle
+                                {pd
+                                  ? `Choose your dates${(p.min_days ?? 1) > 1 ? ` · min ${p.min_days} days` : ''}`
+                                  : isVehicle
                                   ? (p.days > 1 ? `${p.days}-day hire` : 'Same-day hire')
                                   : `${fmt(p.start_time)}–${fmt(p.end_time)}${p.days > 1 ? ` · ${p.days} days` : ''}`}
                               </div>
+                              {tierText && <div style={{ fontSize: 11, color: 'var(--accent,#7c3aed)', fontWeight: 600, marginTop: 2 }}>{tierText}</div>}
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text,#111827)' }}>{formatPence(p.price)}</div>
-                              {dep > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted,#71717a)' }}>+ {formatPence(dep)} deposit</div>}
+                              <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text,#111827)' }}>{formatPence(p.price)}{pd ? <span style={{ fontWeight: 500, fontSize: 12, color: 'var(--text-muted,#71717a)' }}>/day</span> : null}</div>
                             </div>
                           </button>
                         )
                       })}
                     </div>
-                    {selectedPackage && selectedPackage.days > 1 && form.date && packageEndDate && (
+                    {selectedPackage && packageDays > 1 && form.date && packageEndDate && (
                       <div className="notice notice-accent" style={{ marginTop: 8 }}>
-                        {isVehicle
-                          ? <>🚐 Covers {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} – {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</>
-                          : <>📅 Covers {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} – {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</>}
+                        {isVehicle ? '🚐' : '📅'} Covers {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} – {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} ({packageDays} days)
                       </div>
                     )}
                   </div>
@@ -609,8 +653,8 @@ export default function BookingForm() {
                 })()}
                 {(() => {
                   if (!form.date) return null
-                  const coveredDates = selectedPackage && selectedPackage.days > 1 && packageEndDate
-                    ? Array.from({ length: selectedPackage.days }, (_, i) => addDays(form.date, i))
+                  const coveredDates = selectedPackage && packageDays > 1 && packageEndDate
+                    ? Array.from({ length: packageDays }, (_, i) => addDays(form.date, i))
                     : [form.date]
                   const booked = coveredDates.flatMap(d =>
                     getBookingsOnDate(siteBookings, d).filter(b => b.type !== 'recurring').map(b => ({ day: d, b })))
@@ -719,22 +763,32 @@ export default function BookingForm() {
               </div>
 
               {/* Price summary */}
-              {activeSite && (selectedPackage || (!isPackages && hours > 0)) && (
-                <div className="price-bar" style={{ marginBottom: 14 }}>
-                  {selectedPackage ? (
-                    <>
-                      <div><div className="pi-label">Package</div><div className="pi-value">{selectedPackage.label}</div></div>
-                      <div><div className="pi-label">{isVehicle || selectedPackage.days > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{isVehicle || selectedPackage.days > 1 ? selectedPackage.days : hours}</div></div>
-                    </>
-                  ) : (
-                    <>
-                      <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(activeSite.rate)}/hr</div></div>
-                      <div><div className="pi-label">Hours</div><div className="pi-value">{hours}</div></div>
-                    </>
+              {activeSite && ((selectedPackage && total > 0) || (!isPackages && hours > 0)) && (
+                <>
+                  <div className="price-bar" style={{ marginBottom: isPackages ? 8 : 14 }}>
+                    {selectedPackage ? (
+                      <>
+                        <div><div className="pi-label">Package</div><div className="pi-value">{selectedPackage.label}</div></div>
+                        <div><div className="pi-label">{isVehicle || packageDays > 1 ? 'Days' : 'Hours'}</div><div className="pi-value">{isVehicle || packageDays > 1 ? packageDays : hours}</div></div>
+                        {perDayPricing && perDayPricing.discountPct > 0 && (
+                          <div><div className="pi-label">Discount</div><div className="pi-value" style={{ color: 'var(--accent,#7c3aed)' }}>−{perDayPricing.discountPct}%</div></div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div><div className="pi-label">Rate</div><div className="pi-value">{formatPence(activeSite.rate)}/hr</div></div>
+                        <div><div className="pi-label">Hours</div><div className="pi-value">{hours}</div></div>
+                      </>
+                    )}
+                    {!isPackages && <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(deposit)}</div></div>}
+                    <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(total)}</div></div>
+                  </div>
+                  {isPackages && total > 0 && (
+                    <div style={{ background: 'var(--accent-light,#f5f3ff)', border: '1px solid #ddd6fe', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#5b21b6' }}>
+                      💳 Pay <strong>{formatPence(payNow)}</strong> (25%) to confirm — the remaining {formatPence(total - payNow)} is due 14 days before your booking.
+                    </div>
                   )}
-                  <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(deposit)}</div></div>
-                  <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(total)}</div></div>
-                </div>
+                </>
               )}
 
               {error && <div className="notice notice-warn" style={{ marginBottom: 12 }}>{error}</div>}

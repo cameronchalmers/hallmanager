@@ -72,7 +72,8 @@ serve(async (req) => {
       console.error('No booking_id in payment intent metadata')
       return new Response(JSON.stringify({ received: true }), { status: 200 })
     }
-    await confirmBooking(supabase, bookingId, paymentIntent.id)
+    const paymentType = (paymentIntent.metadata?.payment_type ?? 'full') as 'full' | 'deposit' | 'balance'
+    await confirmBooking(supabase, bookingId, paymentIntent.id, paymentType, paymentIntent.amount_received ?? paymentIntent.amount)
     return new Response(JSON.stringify({ received: true }), { status: 200 })
   }
 
@@ -80,7 +81,7 @@ serve(async (req) => {
 })
 
 // deno-lint-ignore no-explicit-any
-async function confirmBooking(supabase: any, bookingId: string, paymentIntentId: string | null) {
+async function confirmBooking(supabase: any, bookingId: string, paymentIntentId: string | null, paymentType: 'full' | 'deposit' | 'balance', amountReceived: number) {
   const { data: booking, error: bookingErr } = await supabase
     .from('bookings')
     .select('*, sites(name)')
@@ -92,7 +93,36 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
     return
   }
 
-  // Stripe retries deliveries — don't re-confirm (and re-email) a booking
+  const total = Math.round(Number(booking.total))
+
+  // Balance payment: booking is already confirmed with the deposit paid.
+  // Idempotent — Stripe retries are skipped once the status is 'paid'.
+  if (paymentType === 'balance') {
+    if (booking.stripe_payment_status === 'paid') {
+      console.log(`Booking ${bookingId} already fully paid — skipping`)
+      return
+    }
+    if (booking.status !== 'confirmed' || booking.stripe_payment_status !== 'deposit_paid') {
+      console.error(
+        `BALANCE PAYMENT ON UNEXPECTED BOOKING STATE — needs manual review. ` +
+        `booking=${bookingId} status=${booking.status}/${booking.stripe_payment_status} payment_intent=${paymentIntentId}`,
+      )
+    }
+    const { error: balErr } = await supabase.from('bookings').update({
+      stripe_payment_status: 'paid',
+      amount_paid: total,
+      ...(paymentIntentId ? { stripe_payment_intent_id: paymentIntentId } : {}),
+    }).eq('id', bookingId)
+    if (balErr) {
+      console.error('Failed to record balance payment:', bookingId, JSON.stringify(balErr))
+      return
+    }
+    console.log(`Booking ${bookingId} balance paid — fully paid`)
+    await sendPaymentEmail(supabase, booking, 'balance', total)
+    return
+  }
+
+  // Deposit or full payment: booking must still be awaiting its first payment
   if (booking.status === 'confirmed') {
     console.log(`Booking ${bookingId} already confirmed — skipping`)
     return
@@ -112,9 +142,11 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
     return
   }
 
+  const isDeposit = paymentType === 'deposit'
   const updateData: Record<string, unknown> = {
     status: 'confirmed',
-    stripe_payment_status: 'paid',
+    stripe_payment_status: isDeposit ? 'deposit_paid' : 'paid',
+    amount_paid: isDeposit ? amountReceived : total,
   }
   if (paymentIntentId) updateData.stripe_payment_intent_id = paymentIntentId
 
@@ -123,46 +155,11 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
     console.error('Failed to confirm booking:', bookingId, JSON.stringify(updateErr))
     return
   }
-  console.log(`Booking ${bookingId} confirmed`)
+  console.log(`Booking ${bookingId} confirmed (${paymentType})`)
 
-  // Send confirmation email — fire-and-forget
-  try {
-    const resendKey = Deno.env.get('RESEND_API_KEY')
-    const from = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
-    if (resendKey) {
-      const { data: site } = await supabase.from('sites').select('name, whatsapp_number, site_type').eq('id', booking.site_id).single()
-      const fmtD = (ds: string) => new Date(ds + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-      const isVehicle = site?.site_type === 'vehicle'
-      const hireDays = booking.end_date
-        ? Math.round((new Date(booking.end_date).getTime() - new Date(booking.date).getTime()) / 86400000) + 1
-        : 1
-      const email = bookingConfirmed({
-        name: booking.name,
-        email: booking.email,
-        event: booking.event,
-        date: booking.end_date && booking.end_date !== booking.date ? `${fmtD(booking.date)} – ${fmtD(booking.end_date)}` : fmtD(booking.date),
-        start_time: booking.start_time,
-        end_time: booking.end_time,
-        time_display: isVehicle ? (booking.package_label ?? 'Vehicle hire') : null,
-        duration_display: isVehicle ? `${hireDays} day${hireDays !== 1 ? 's' : ''}` : null,
-        hours: booking.hours,
-        site_name: site?.name ?? (booking.sites as { name: string } | null)?.name ?? 'Unknown venue',
-        deposit: booking.deposit,
-        total: booking.total,
-        notes: booking.notes,
-        whatsapp_number: site?.whatsapp_number ?? null,
-      })
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, to: booking.email, subject: email.subject, html: email.html }),
-      })
-    }
-  } catch (emailErr) {
-    console.error('Failed to send confirmation email:', emailErr)
-  }
+  await sendPaymentEmail(supabase, booking, paymentType, amountReceived)
 
-  if (booking.type === 'oneoff') {
+  if (booking.type === 'oneoff' && !booking.google_calendar_event_id) {
     try {
       const serviceAccountKeyRaw = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_KEY')
       if (serviceAccountKeyRaw) {
@@ -191,5 +188,59 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
     } catch (calErr) {
       console.error('Calendar event creation failed (non-fatal):', calErr)
     }
+  }
+}
+
+// Confirmation / receipt email for each payment stage — fire-and-forget
+// deno-lint-ignore no-explicit-any
+async function sendPaymentEmail(supabase: any, booking: any, stage: 'full' | 'deposit' | 'balance', amountReceived: number) {
+  try {
+    const resendKey = Deno.env.get('RESEND_API_KEY')
+    const from = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
+    if (!resendKey) return
+
+    const { data: site } = await supabase.from('sites').select('name, whatsapp_number, site_type').eq('id', booking.site_id).single()
+    const fmtD = (ds: string) => new Date(ds + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    const isVehicle = site?.site_type === 'vehicle'
+    const total = Math.round(Number(booking.total))
+    const hireDays = booking.end_date
+      ? Math.round((new Date(booking.end_date).getTime() - new Date(booking.date).getTime()) / 86400000) + 1
+      : 1
+    const fp = (p: number) => `£${(p / 100).toLocaleString('en-GB', { minimumFractionDigits: p % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 })}`
+
+    let paymentNote: string | null = null
+    if (stage === 'deposit') {
+      const balDue = new Date(booking.date + 'T12:00:00')
+      balDue.setDate(balDue.getDate() - 14)
+      const balance = total - amountReceived
+      paymentNote = `${fp(amountReceived)} deposit received. The remaining balance of ${fp(balance)} is due by ${fmtD(balDue.toISOString().split('T')[0])} — we'll email you a payment link nearer the time.`
+    } else if (stage === 'balance') {
+      paymentNote = `Balance received — your booking is now paid in full (${fp(total)}). Nothing more to pay.`
+    }
+
+    const email = bookingConfirmed({
+      name: booking.name,
+      email: booking.email,
+      event: booking.event,
+      date: booking.end_date && booking.end_date !== booking.date ? `${fmtD(booking.date)} – ${fmtD(booking.end_date)}` : fmtD(booking.date),
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      time_display: isVehicle ? (booking.package_label ?? 'Vehicle hire') : null,
+      duration_display: isVehicle ? `${hireDays} day${hireDays !== 1 ? 's' : ''}` : null,
+      hours: booking.hours,
+      site_name: site?.name ?? (booking.sites as { name: string } | null)?.name ?? 'Unknown venue',
+      deposit: booking.deposit,
+      total: booking.total,
+      notes: booking.notes,
+      whatsapp_number: site?.whatsapp_number ?? null,
+      payment_note: paymentNote,
+    })
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: booking.email, subject: email.subject, html: email.html }),
+    })
+  } catch (emailErr) {
+    console.error('Failed to send confirmation email:', emailErr)
   }
 }
