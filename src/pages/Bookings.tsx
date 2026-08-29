@@ -99,11 +99,17 @@ const DEFAULT_FORM = {
 }
 
 
+function toMins(t: string) {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+// An end earlier than the start means the booking runs past midnight
+// (20:00 – 00:30), so it belongs to the following day.
 function calcHours(start: string, end: string) {
   if (!start || !end) return 0
-  const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
-  return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
+  const s = toMins(start), e = toMins(end)
+  return ((e < s ? e + 1440 : e) - s) / 60
 }
 
 // Hours for a package booking over `days`: vehicles measure elapsed pickup →
@@ -111,9 +117,7 @@ function calcHours(start: string, end: string) {
 function packageHoursForDays(pkg: RatePackage, siteType: string | undefined, days: number) {
   const d = Math.max(1, days)
   if (siteType === 'vehicle') {
-    const [sh, sm] = pkg.start_time.split(':').map(Number)
-    const [eh, em] = pkg.end_time.split(':').map(Number)
-    return (d - 1) * 24 + (eh * 60 + em - sh * 60 - sm) / 60
+    return (d - 1) * 24 + (toMins(pkg.end_time) - toMins(pkg.start_time)) / 60
   }
   return calcHours(pkg.start_time, pkg.end_time) * d
 }

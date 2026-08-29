@@ -14,6 +14,17 @@ export interface BookingDetails {
   notes?: string | null
 }
 
+/** The calendar day the booking ends on. Multi-day (package) bookings carry an
+ *  explicit end_date; otherwise an end time earlier than the start means the
+ *  booking runs past midnight (20:00 – 00:30), so it ends the next day. */
+function eventEndDate(booking: BookingDetails): string {
+  if (booking.end_date) return booking.end_date
+  if (booking.end_time >= booking.start_time) return booking.date
+  const d = new Date(booking.date + 'T12:00:00Z')
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 function base64url(data: string | Uint8Array): string {
   let binary = ''
   if (typeof data === 'string') {
@@ -89,7 +100,7 @@ export async function createCalendarEvent(
     location: booking.site_name,
     description: booking.notes || undefined,
     start: { dateTime: `${booking.date}T${booking.start_time}:00`, timeZone: 'Europe/London' },
-    end:   { dateTime: `${booking.end_date ?? booking.date}T${booking.end_time}:00`, timeZone: 'Europe/London' },
+    end:   { dateTime: `${eventEndDate(booking)}T${booking.end_time}:00`, timeZone: 'Europe/London' },
   }
 
   const res = await fetch(

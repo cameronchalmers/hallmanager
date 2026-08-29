@@ -35,11 +35,14 @@ const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
   return `${h}:${m}`
 })
 
+// An end earlier than the start means the slot runs past midnight
+// (20:00 – 00:30), so it belongs to the following day.
 function calcHours(start: string, end: string) {
   if (!start || !end) return 0
   const [sh, sm] = start.split(':').map(Number)
   const [eh, em] = end.split(':').map(Number)
-  return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
+  const s = sh * 60 + sm, e = eh * 60 + em
+  return ((e < s ? e + 1440 : e) - s) / 60
 }
 
 export default function Portal() {

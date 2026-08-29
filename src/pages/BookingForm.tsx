@@ -173,20 +173,29 @@ function toSlug(name: string) {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 }
 
+function toMins(t: string) {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+// End-of-booking in minutes from midnight on the start day. An end earlier
+// than the start means the booking runs past midnight (20:00 – 00:30), so it
+// belongs to the following day.
+function endMins(start: string, end: string) {
+  const s = toMins(start), e = toMins(end)
+  return e < s ? e + 1440 : e
+}
+
 function calcHours(start: string, end: string) {
   if (!start || !end) return 0
-  const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
-  return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
+  return (endMins(start, end) - toMins(start)) / 60
 }
 
 // Signed variant — a vehicle can be returned earlier in the day than it was
 // picked up (e.g. pickup Fri 17:00, return Sun 09:00)
 function calcHoursSigned(start: string, end: string) {
   if (!start || !end) return 0
-  const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
-  return (eh * 60 + em - sh * 60 - sm) / 60
+  return (toMins(end) - toMins(start)) / 60
 }
 
 function fmt(t: string) {
@@ -312,7 +321,9 @@ export default function BookingForm() {
           setError(`${activeSite.name} doesn't open until ${sched.from} on this day.`)
           return
         }
-        if (form.end_time > sched.until) {
+        // Compared as minutes, not strings, so a booking ending at 00:00
+        // counts as midnight rather than as the earliest time of the day
+        if (endMins(form.start_time, form.end_time) > endMins(form.start_time, sched.until)) {
           setError(`${activeSite.name} closes at ${sched.until} on this day.`)
           return
         }
