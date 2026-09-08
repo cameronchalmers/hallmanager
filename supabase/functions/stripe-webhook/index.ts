@@ -77,8 +77,76 @@ serve(async (req) => {
     return new Response(JSON.stringify({ received: true }), { status: 200 })
   }
 
-  return new Response(JSON.stringify({ received: true }), { status: 200 })
+  // A refund issued from the Stripe dashboard rather than from Bookings.
+  // stripe-action writes the booking back itself when the refund is made in
+  // the app; a refund made directly in Stripe never reached the booking at
+  // all, so it kept showing as paid in full.
+  if (event.type === 'charge.refunded') {
+    const charge = event.data.object as Stripe.Charge
+    const paymentIntentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null
+    if (!paymentIntentId) return received()
+
+    const { data: booking } = await supabase
+      .from('bookings').select('id, refunded_amount')
+      .eq('stripe_payment_intent_id', paymentIntentId).maybeSingle()
+    if (!booking) {
+      console.error('Refund for unknown payment intent:', paymentIntentId)
+      return received()
+    }
+    // Already recorded by stripe-action, so this is the same refund arriving
+    // by a second route. Writing the same number again is harmless, but
+    // saying so in the log saves somebody working that out later.
+    if (Number(booking.refunded_amount ?? 0) === charge.amount_refunded) {
+      console.log(`Booking ${booking.id} refund already recorded — skipping`)
+      return received()
+    }
+    // 'deposit_refunded' is the value the app already writes and the Bookings
+    // page already renders. A truer name for a full refund would be a new
+    // status the UI does not know how to show.
+    const { error } = await supabase.from('bookings').update({
+      stripe_payment_status: 'deposit_refunded',
+      refunded_amount: charge.amount_refunded,
+    }).eq('id', booking.id)
+    if (error) console.error('Failed to record refund:', booking.id, JSON.stringify(error))
+    else console.log(`Booking ${booking.id} refunded ${charge.amount_refunded}`)
+    return received()
+  }
+
+  // Somebody has charged back. Nothing is decided automatically — the money is
+  // already held by Stripe and the booking may still be going ahead — but it
+  // must not be something you find out from a bank letter.
+  if (event.type === 'charge.dispute.created') {
+    const dispute = event.data.object as Stripe.Dispute
+    const paymentIntentId = typeof dispute.payment_intent === 'string' ? dispute.payment_intent : null
+    const { data: booking } = paymentIntentId
+      ? await supabase.from('bookings').select('id, event, name')
+          .eq('stripe_payment_intent_id', paymentIntentId).maybeSingle()
+      : { data: null }
+    console.error(
+      `DISPUTE OPENED — needs attention. amount=${dispute.amount} reason=${dispute.reason} ` +
+      `payment_intent=${paymentIntentId} booking=${booking?.id ?? 'unknown'}`,
+    )
+    return received()
+  }
+
+  // Not acted on: the booking stays approved so it can be paid again, which is
+  // already what happens. Subscribed so that a run of failures is visible in
+  // the Stripe delivery log rather than only to the person whose card bounced.
+  if (event.type === 'payment_intent.payment_failed') {
+    const paymentIntent = event.data.object as Stripe.PaymentIntent
+    console.log(
+      `Payment failed: booking=${paymentIntent.metadata?.booking_id ?? 'unknown'} ` +
+      `reason=${paymentIntent.last_payment_error?.message ?? 'unknown'}`,
+    )
+    return received()
+  }
+
+  return received()
 })
+
+function received() {
+  return new Response(JSON.stringify({ received: true }), { status: 200 })
+}
 
 // deno-lint-ignore no-explicit-any
 async function confirmBooking(supabase: any, bookingId: string, paymentIntentId: string | null, paymentType: 'full' | 'deposit' | 'balance', amountReceived: number) {

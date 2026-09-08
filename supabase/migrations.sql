@@ -221,3 +221,4 @@ do $$ begin
   end if;
 end $$;
 grant all on public.site_credentials to authenticated, service_role;
+
