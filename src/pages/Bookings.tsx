@@ -384,6 +384,15 @@ export default function Bookings() {
     setSaving(false)
   }
 
+  /// What is still owed on a booking that has been part paid. Zero for
+  /// anything untouched, unpaid, or still legitimately awaiting its balance.
+  function outstandingOn(b: { total: number; amount_paid?: number | null; stripe_payment_status?: string | null }) {
+    const paid = Math.round(Number(b.amount_paid ?? 0))
+    if (paid <= 0) return 0
+    if (b.stripe_payment_status !== 'paid') return 0   // a deposit awaiting its balance is normal
+    return Math.max(0, Math.round(Number(b.total)) - paid)
+  }
+
   /// A sentence for the email saying what actually moved, so the hirer is not
   /// left guessing why they owe more.
   function describeChange(
@@ -1265,6 +1274,33 @@ export default function Bookings() {
                 {resendLoading ? 'Sending…' : resendSent === 'ok' ? '✓ Sent' : resendSent === 'error' ? '✗ Failed' : 'Send'}
               </button>
             </div>
+            {/* A booking can be short of money at any time, not only in the
+                moment after somebody edits it. Ciara's booking sat £20 short
+                for a fortnight with nothing on screen saying so, because the
+                only prompt lived in a dialog that had long since closed. */}
+            {outstandingOn(selected) > 0 && (
+              <div className="notice notice-warn" style={{ marginBottom: 12, display: 'flex',
+                                                           alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13 }}>
+                  <strong>{formatPence(outstandingOn(selected))} outstanding.</strong>{' '}
+                  Paid {formatPence(selected.amount_paid ?? 0)} of {formatPence(selected.total)}, so the
+                  booking changed after it was settled.
+                </span>
+                <button
+                  className="btn btn-primary btn-sm"
+                  style={{ marginLeft: 'auto' }}
+                  onClick={() => setTopUp({
+                    bookingId: selected.id,
+                    previousTotal: Math.round(Number(selected.amount_paid ?? 0)),
+                    newTotal: selected.total,
+                    paid: Math.round(Number(selected.amount_paid ?? 0)),
+                    summary: '',
+                  })}
+                >
+                  Request the difference
+                </button>
+              </div>
+            )}
             {selected.package_label ? (
               <div className="price-bar">
                 <div><div className="pi-label">Package</div><div className="pi-value">{selected.package_label}</div></div>
