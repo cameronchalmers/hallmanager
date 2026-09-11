@@ -425,7 +425,17 @@ export default function Bookings() {
       },
     })
     setTopUpSending(false)
-    if (error) { setActionError('Could not send the payment request. Try again.'); return }
+    if (error) {
+      // Say what the server said. "Try again" hid a ReferenceError in the
+      // function for a whole round trip, and told nobody anything.
+      let message = 'Could not send the payment request.'
+      try {
+        const body = await (error as unknown as { context: Response }).context.json()
+        if (body?.error) message = body.error
+      } catch { /* not a JSON body; the generic message stands */ }
+      setActionError(message)
+      return
+    }
     setTopUp(null)
     setTopUpNote('')
   }

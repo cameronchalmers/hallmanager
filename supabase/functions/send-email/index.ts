@@ -222,11 +222,17 @@ serve(async (req) => {
           : null
         const outstanding = Math.round(Number(booking.total)) - (b.already_paid ?? 0)
         if (outstanding <= 0) {
-          return json({ ok: false, error: 'Nothing outstanding on that booking.' }, 400)
+          return new Response(
+            JSON.stringify({ error: 'Nothing outstanding on that booking.' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
         }
         const email = paymentTopUp(b)
         await sendEmail(booking.email, email.subject, email.html)
-        return json({ ok: true, sent: 1, outstanding })
+        return new Response(
+          JSON.stringify({ ok: true, sent: 1, outstanding }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
       } else if (type === 'booking_approved') {
         const email = bookingApproved(b)
         await sendEmail(b.email, email.subject, email.html)
