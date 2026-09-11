@@ -161,6 +161,13 @@ export default function Bookings() {
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState(DEFAULT_FORM)
   const [saving, setSaving] = useState(false)
+  /// Set when an edit made a paid booking dearer, which is the moment to ask
+  /// for the difference rather than hoping somebody remembers to.
+  const [topUp, setTopUp] = useState<{
+    bookingId: string; previousTotal: number; newTotal: number; paid: number; summary: string
+  } | null>(null)
+  const [topUpNote, setTopUpNote] = useState('')
+  const [topUpSending, setTopUpSending] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [refundInput, setRefundInput] = useState<string | null>(null)
   const [refundError, setRefundError] = useState<string | null>(null)
@@ -356,9 +363,62 @@ export default function Bookings() {
     }).eq('id', selected.id)
     if (error) { setActionError(`Failed to save changes: ${error.message}`); setSaving(false); return }
 
+    // The booking got dearer and they have already paid something. Until now
+    // this went unnoticed: the notice told whoever was editing to "send a new
+    // payment link manually", which nobody does, and the money was simply
+    // never asked for.
+    const paidAlready = Math.round(Number(selected.amount_paid ?? 0))
+    const wasPaid = paidAlready > 0 || selected.stripe_payment_status === 'paid'
+    if (wasPaid && total > selected.total) {
+      setTopUp({
+        bookingId: selected.id,
+        previousTotal: selected.total,
+        newTotal: total,
+        paid: paidAlready || selected.total,
+        summary: describeChange(selected, editForm, hours),
+      })
+    }
+
     await fetchBookings()
     setEditMode(false)
     setSaving(false)
+  }
+
+  /// A sentence for the email saying what actually moved, so the hirer is not
+  /// left guessing why they owe more.
+  function describeChange(
+    before: { date: string; start_time: string; end_time: string; hours: number },
+    after: { date: string; start_time: string; end_time: string },
+    newHours: number,
+  ) {
+    const bits: string[] = []
+    if (before.date !== after.date) bits.push(`the date moved to ${after.date}`)
+    if (before.start_time !== after.start_time || before.end_time !== after.end_time) {
+      bits.push(`the time changed to ${after.start_time}–${after.end_time}`)
+    }
+    if (before.hours !== newHours) {
+      const dir = newHours > before.hours ? 'extended' : 'shortened'
+      bits.push(`the booking was ${dir} from ${before.hours} to ${newHours} hours`)
+    }
+    if (!bits.length) return ''
+    return bits.join(', ').replace(/^./, (c) => c.toUpperCase()) + '.'
+  }
+
+  async function sendTopUp() {
+    if (!topUp) return
+    setTopUpSending(true)
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: {
+        type: 'payment_topup',
+        id: topUp.bookingId,
+        previous_total: topUp.previousTotal,
+        change_summary: topUpNote.trim() || topUp.summary,
+      },
+    })
+    setTopUpSending(false)
+    if (error) { setActionError('Could not send the payment request. Try again.'); return }
+    setTopUp(null)
+    setTopUpNote('')
   }
 
   async function linkUser(bookingId: string, userId: string | null) {
@@ -1244,7 +1304,9 @@ export default function Bookings() {
             <>
               {selected.status === 'confirmed' && totalChanged && (
                 <div className="notice notice-warn" style={{ marginBottom: 12, fontSize: 12 }}>
-                  Total has changed from {formatPence(selected.total)} to {formatPence(editTotal)}. Since this booking is already paid, send a new payment link manually if additional payment is needed.
+                  Total will change from {formatPence(selected.total)} to {formatPence(editTotal)}.
+                  This booking is already paid, so you will be offered a payment request for the
+                  difference when you save.
                 </div>
               )}
               {selected.status === 'approved' && totalChanged && (
@@ -1442,6 +1504,70 @@ export default function Bookings() {
             <option value="overdue">Overdue</option>
           </select>
         </div>
+      </Modal>
+
+      {/* Asked for at the moment the booking changes, because that is the only
+          moment anybody is thinking about it. The alternative was a notice
+          telling staff to send a link by hand, which is the same as not
+          asking. */}
+      <Modal
+        open={Boolean(topUp)}
+        onClose={() => { setTopUp(null); setTopUpNote('') }}
+        title="Ask for the difference?"
+        sub={topUp ? `This booking is already paid, and the change makes it ${formatPence(topUp.newTotal - topUp.paid)} dearer.` : ''}
+        footer={
+          <>
+            <button className="btn btn-ghost"
+                    onClick={() => { setTopUp(null); setTopUpNote('') }}>
+              Not now
+            </button>
+            <button className="btn btn-primary" onClick={sendTopUp} disabled={topUpSending}>
+              {topUpSending ? 'Sending…' : 'Send payment request'}
+            </button>
+          </>
+        }
+      >
+        {topUp && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '5px 0', color: 'var(--text-muted)' }}>Was</td>
+                  <td style={{ padding: '5px 0', textAlign: 'right' }}>{formatPence(topUp.previousTotal)}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '5px 0', color: 'var(--text-muted)' }}>Now</td>
+                  <td style={{ padding: '5px 0', textAlign: 'right' }}>{formatPence(topUp.newTotal)}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '5px 0', color: 'var(--text-muted)' }}>Already paid</td>
+                  <td style={{ padding: '5px 0', textAlign: 'right', color: 'var(--text-muted)' }}>
+                    − {formatPence(topUp.paid)}
+                  </td>
+                </tr>
+                <tr style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 0 0', fontWeight: 700 }}>Left to pay</td>
+                  <td style={{ padding: '8px 0 0', textAlign: 'right', fontWeight: 700 }}>
+                    {formatPence(topUp.newTotal - topUp.paid)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div>
+              <label className="form-label">What changed</label>
+              <input
+                className="form-input"
+                value={topUpNote}
+                placeholder={topUp.summary || 'e.g. extended by an hour at your request'}
+                onChange={(e) => setTopUpNote(e.target.value)}
+              />
+              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+                Goes in the email. Somebody who has already paid needs telling why there is more
+                to pay, or they will assume they are being charged twice.
+              </p>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   )

@@ -11,6 +11,7 @@ import {
   extraSlotDenied,
   bookingSubmittedAdmin,
   bookingReview,
+  paymentTopUp,
   type BookingData,
   type ExtraSlotData,
 } from './templates.ts'
@@ -81,7 +82,11 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    const { type, id, data: inlineData, template } = await req.json() as { type: string; id?: string; data?: Partial<BookingData>; template?: string }
+    const { type, id, data: inlineData, template, previous_total: previousTotal,
+            change_summary: changeSummary } = await req.json() as {
+      type: string; id?: string; data?: Partial<BookingData>; template?: string
+      previous_total?: number; change_summary?: string
+    }
 
     // Staff (admin/site_admin/manager) can send any email type. Unauthenticated
     // callers can only trigger 'booking_submitted', and even then the email is
@@ -103,7 +108,7 @@ serve(async (req) => {
 
     // ── Booking emails ────────────────────────────────────────────────────────
 
-    if (['booking_submitted', 'booking_approved', 'booking_confirmed', 'booking_denied', 'booking_cancelled'].includes(type)) {
+    if (['booking_submitted', 'booking_approved', 'booking_confirmed', 'booking_denied', 'booking_cancelled', 'payment_topup'].includes(type)) {
       // deno-lint-ignore no-explicit-any
       let booking: any = null
 
@@ -206,6 +211,22 @@ serve(async (req) => {
             await Promise.all(adminEmails.map(email => sendEmail(email, adminEmail.subject, adminEmail.html)))
           }
         }
+      } else if (type === 'payment_topup') {
+        // The booking grew after it was settled. Everything the email needs is
+        // read from the booking rather than trusted from the caller, except
+        // the sentence about what changed, which only a person knows.
+        b.already_paid = Math.round(Number(booking.amount_paid ?? 0))
+        b.previous_total = typeof previousTotal === 'number' ? previousTotal : null
+        b.change_summary = typeof changeSummary === 'string' && changeSummary.trim()
+          ? changeSummary.trim().slice(0, 300)
+          : null
+        const outstanding = Math.round(Number(booking.total)) - (b.already_paid ?? 0)
+        if (outstanding <= 0) {
+          return json({ ok: false, error: 'Nothing outstanding on that booking.' }, 400)
+        }
+        const email = paymentTopUp(b)
+        await sendEmail(booking.email, email.subject, email.html)
+        return json({ ok: true, sent: 1, outstanding })
       } else if (type === 'booking_approved') {
         const email = bookingApproved(b)
         await sendEmail(b.email, email.subject, email.html)

@@ -114,6 +114,12 @@ export interface BookingData {
   payment_note?: string | null
   /** Overrides the "Pay now" button amount (e.g. 25% deposit) */
   pay_now_amount?: number | null
+  /** What the booking cost before it was changed, for the top-up email. */
+  previous_total?: number | null
+  /** What has already been paid, for the top-up email. */
+  already_paid?: number | null
+  /** A sentence saying what actually changed, written by whoever changed it. */
+  change_summary?: string | null
 }
 
 function paymentNoteBox(b: BookingData) {
@@ -209,6 +215,65 @@ export function bookingApproved(b: BookingData): { subject: string; html: string
         </div>
         `}
         <p style="margin:20px 0 0;font-size:13px;color:#9ca3af;">Once payment is received you'll receive a confirmation email. If you have any questions please get in touch.</p>
+      </div>
+    `, b.whatsapp_number),
+  }
+}
+
+// ── Booking changed, and now costs more ───────────────────────────────────────
+//
+// Sent when a booking somebody has already paid for is extended or moved to a
+// dearer slot. Their instinct on seeing an unexpected payment request is that
+// they are being charged twice, so the numbers have to be laid out: what it
+// was, what it is now, what they have paid, what is left.
+
+export function paymentTopUp(b: BookingData): { subject: string; html: string } {
+  const outstanding = (b.total ?? 0) - (b.already_paid ?? 0)
+  return {
+    subject: `Your booking has changed — £${fp(outstanding)} left to pay`,
+    html: layout(`
+      <div style="padding:32px 32px 0;border-bottom:3px solid #d97706;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#d97706;letter-spacing:0.5px;text-transform:uppercase;">Amount Due</p>
+        <h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#111827;">Your booking has been updated</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">
+          Hi ${esc(b.name)}, your booking has changed and there is a little left to pay.
+          You are not being charged again for what you have already paid.
+        </p>
+      </div>
+      <div style="padding:24px 32px;">
+        ${pill('Part Paid', '#92400e', '#fffbeb')}
+        ${bookingTable(b)}
+        ${b.change_summary ? `
+        <div style="margin-top:20px;padding:14px 16px;background:#f9fafb;border-radius:10px;border:1px solid #e5e7eb;">
+          <p style="margin:0;font-size:13px;color:#374151;"><strong>What changed:</strong> ${esc(b.change_summary)}</p>
+        </div>` : ''}
+        <table style="width:100%;margin-top:20px;border-collapse:collapse;font-size:14px;">
+          ${b.previous_total != null ? `
+          <tr>
+            <td style="padding:8px 0;color:#6b7280;">Previous total</td>
+            <td style="padding:8px 0;text-align:right;color:#6b7280;">£${fp(b.previous_total)}</td>
+          </tr>` : ''}
+          <tr>
+            <td style="padding:8px 0;color:#374151;">New total</td>
+            <td style="padding:8px 0;text-align:right;color:#374151;">£${fp(b.total)}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;color:#374151;">Already paid</td>
+            <td style="padding:8px 0;text-align:right;color:#16a34a;">− £${fp(b.already_paid ?? 0)}</td>
+          </tr>
+          <tr style="border-top:2px solid #e5e7eb;">
+            <td style="padding:10px 0 0;font-weight:700;color:#111827;">Left to pay</td>
+            <td style="padding:10px 0 0;text-align:right;font-weight:700;color:#111827;">£${fp(outstanding)}</td>
+          </tr>
+        </table>
+        ${b.payment_url ? `
+        <div style="margin-top:24px;text-align:center;">
+          <a href="${b.payment_url}" style="display:inline-block;background:${ACCENT};color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;">Pay the difference — £${fp(outstanding)}</a>
+          <p style="margin:10px 0 0;font-size:12px;color:#9ca3af;">Secure payment powered by Stripe</p>
+        </div>` : ''}
+        <p style="margin:20px 0 0;font-size:13px;color:#9ca3af;">
+          If this change is not what you expected, reply to this email before paying and we will sort it out.
+        </p>
       </div>
     `, b.whatsapp_number),
   }

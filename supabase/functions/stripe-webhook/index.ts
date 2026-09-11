@@ -72,7 +72,7 @@ serve(async (req) => {
       console.error('No booking_id in payment intent metadata')
       return new Response(JSON.stringify({ received: true }), { status: 200 })
     }
-    const paymentType = (paymentIntent.metadata?.payment_type ?? 'full') as 'full' | 'deposit' | 'balance'
+    const paymentType = (paymentIntent.metadata?.payment_type ?? 'full') as 'full' | 'deposit' | 'balance' | 'topup'
     await confirmBooking(supabase, bookingId, paymentIntent.id, paymentType, paymentIntent.amount_received ?? paymentIntent.amount)
     return new Response(JSON.stringify({ received: true }), { status: 200 })
   }
@@ -149,7 +149,7 @@ function received() {
 }
 
 // deno-lint-ignore no-explicit-any
-async function confirmBooking(supabase: any, bookingId: string, paymentIntentId: string | null, paymentType: 'full' | 'deposit' | 'balance', amountReceived: number) {
+async function confirmBooking(supabase: any, bookingId: string, paymentIntentId: string | null, paymentType: 'full' | 'deposit' | 'balance' | 'topup', amountReceived: number) {
   const { data: booking, error: bookingErr } = await supabase
     .from('bookings')
     .select('*, sites(name)')
@@ -162,6 +162,28 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
   }
 
   const total = Math.round(Number(booking.total))
+
+  // A top-up on a booking that was settled and then grew. It is already
+  // confirmed and stays confirmed; only the money moves. Idempotent on retries
+  // because a second delivery finds amount_paid already at the total.
+  if (paymentType === 'topup') {
+    if (Math.round(Number(booking.amount_paid ?? 0)) >= total) {
+      console.log(`Booking ${bookingId} top-up already recorded — skipping`)
+      return
+    }
+    const { error } = await supabase.from('bookings').update({
+      amount_paid: total,
+      stripe_payment_status: 'paid',
+      ...(paymentIntentId ? { stripe_payment_intent_id: paymentIntentId } : {}),
+    }).eq('id', bookingId)
+    if (error) {
+      console.error('Failed to record top-up:', bookingId, JSON.stringify(error))
+      return
+    }
+    console.log(`Booking ${bookingId} topped up by ${amountReceived}`)
+    await sendPaymentEmail(supabase, booking, 'topup', amountReceived)
+    return
+  }
 
   // Balance payment: booking is already confirmed with the deposit paid.
   // Idempotent — Stripe retries are skipped once the status is 'paid'.
@@ -261,7 +283,7 @@ async function confirmBooking(supabase: any, bookingId: string, paymentIntentId:
 
 // Confirmation / receipt email for each payment stage — fire-and-forget
 // deno-lint-ignore no-explicit-any
-async function sendPaymentEmail(supabase: any, booking: any, stage: 'full' | 'deposit' | 'balance', amountReceived: number) {
+async function sendPaymentEmail(supabase: any, booking: any, stage: 'full' | 'deposit' | 'balance' | 'topup', amountReceived: number) {
   try {
     const resendKey = Deno.env.get('RESEND_API_KEY')
     const from = Deno.env.get('RESEND_FROM') ?? 'HallManager <onboarding@resend.dev>'
@@ -284,6 +306,10 @@ async function sendPaymentEmail(supabase: any, booking: any, stage: 'full' | 'de
       paymentNote = `${fp(amountReceived)} deposit received. The remaining balance of ${fp(balance)} is due by ${fmtD(balDue.toISOString().split('T')[0])} — we'll email you a payment link nearer the time.`
     } else if (stage === 'balance') {
       paymentNote = `Balance received — your booking is now paid in full (${fp(total)}). Nothing more to pay.`
+    } else if (stage === 'topup') {
+      // Their booking changed after they had already settled it, so the
+      // receipt has to say what the extra was for, not just thank them.
+      paymentNote = `${fp(amountReceived)} received for the change to your booking. It is now paid in full (${fp(total)}). Nothing more to pay.`
     }
 
     const email = bookingConfirmed({

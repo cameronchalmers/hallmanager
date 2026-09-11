@@ -57,7 +57,12 @@ serve(async (req) => {
     const total = Math.round(Number(booking.total))
     const amountPaid = Math.round(Number(booking.amount_paid ?? 0))
 
-    if (booking.stripe_payment_status === 'paid' || amountPaid >= total) {
+    // Nothing owed is the only reason to refuse. This used to also refuse any
+    // booking marked paid, which meant that extending a booking somebody had
+    // already paid for left them with a payment link that answered
+    // "already_paid" while the hall was owed the difference. The page even
+    // promised the link would update itself.
+    if (amountPaid >= total) {
       return json({ error: 'already_paid' }, 409)
     }
 
@@ -65,9 +70,16 @@ serve(async (req) => {
     //  - full:    hall booking, or a package booking made inside the balance window
     //  - deposit: first 25% payment on a package booking
     //  - balance: the remainder once the deposit is in
-    let stage: 'full' | 'deposit' | 'balance'
+    //  - topup:   the booking grew after it was settled, so the difference is owed
+    let stage: 'full' | 'deposit' | 'balance' | 'topup'
     let amountDue: number
-    if (!isSplitSite) {
+    if (booking.stripe_payment_status === 'paid' && amountPaid > 0) {
+      // Settled, then changed. Charge what changed, not the whole thing again:
+      // the old code would have taken the full new total from somebody who had
+      // already paid most of it.
+      stage = 'topup'
+      amountDue = total - amountPaid
+    } else if (!isSplitSite) {
       stage = 'full'
       amountDue = total
       if (booking.status !== 'approved') {
@@ -134,6 +146,9 @@ serve(async (req) => {
       amount_paid: amountPaid,
       total,
       balance_due_date: stage === 'deposit' ? balanceDueDate(booking.date) : null,
+      // What the booking cost when they last paid, so the page can explain
+      // why there is anything left to pay at all.
+      previously_paid: stage === 'topup' ? amountPaid : null,
     }
 
     // Reuse a pending PaymentIntent only if it matches this stage's amount
