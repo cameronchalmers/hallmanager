@@ -227,6 +227,12 @@ export default function BookingForm() {
   const [siteBookings, setSiteBookings] = useState<SlotBooking[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [perDayEnd, setPerDayEnd] = useState('')
+  /// Two steps, but only where there is enough to warrant one. A hall with no
+  /// extra questions is a short form and splitting it would be ceremony; the
+  /// minibus asks for a licence number, a DVLA check code and five history
+  /// questions, and putting those under the date picker made the page look
+  /// like a job application.
+  const [step, setStep] = useState<1 | 2>(1)
   const [isDistrict, setIsDistrict] = useState(false)
 
   useEffect(() => {
@@ -271,6 +277,9 @@ export default function BookingForm() {
   const customQuestions = getCustomQuestions(activeSite)
   const textQuestions = customQuestions.filter(q => q.type !== 'terms')
   const termsQuestion = customQuestions.find(q => q.type === 'terms') ?? null
+  /// Worth two steps only when the second one has something substantial on it.
+  const isTwoStep = textQuestions.length >= 3
+  const onDetailsStep = !isTwoStep || step === 2
 
   // Length of the hire in days. Fixed packages define it; per-day packages
   // take it from the customer's chosen end date.
@@ -822,7 +831,20 @@ export default function BookingForm() {
             {/* Column: your details + questions + submit */}
             <div>
               <div className="card" style={{ marginBottom: 14, padding: '18px 20px' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>Your details</div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted,#71717a)', marginBottom: 10 }}>
+                  {isTwoStep ? (step === 1 ? 'Your details — step 1 of 2' : 'Driver details — step 2 of 2') : 'Your details'}
+                </div>
+                {isTwoStep && step === 2 && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ marginBottom: 12 }}
+                    onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                  >
+                    ‹ Back to your booking
+                  </button>
+                )}
+                <div data-step="1" style={{ display: onDetailsStep && isTwoStep ? 'none' : 'contents' }}>
                 <div className="form-row">
                   <label className="form-label">{isVehicle ? 'Group name' : 'Full name'}</label>
                   <input className="form-input" required placeholder={isVehicle ? 'e.g. 1st Anytown Scouts' : 'Jane Smith'} value={form.name} onChange={e => set('name', e.target.value)} />
@@ -837,7 +859,28 @@ export default function BookingForm() {
                     <input className="form-input" type="tel" required placeholder="07700 900000" value={form.phone} onChange={e => set('phone', e.target.value)} />
                   </div>
                 </div>
-                {textQuestions.map(q => (
+                </div>
+                {isTwoStep && step === 1 && (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ width: '100%', marginTop: 14 }}
+                    onClick={() => {
+                      // Let the browser say which field is missing rather than
+                      // inventing a second set of validation messages.
+                      const form = document.querySelector('form')
+                      const firstStep = form?.querySelectorAll<HTMLInputElement>('[data-step="1"] :is(input,select,textarea)')
+                      for (const el of Array.from(firstStep ?? [])) {
+                        if (!el.checkValidity()) { el.reportValidity(); return }
+                      }
+                      setStep(2)
+                      window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                  >
+                    Next: {isVehicle ? 'driver details' : 'a few more questions'}
+                  </button>
+                )}
+                {onDetailsStep && textQuestions.map(q => (
                   <div className="form-row" key={q.label}>
                     <label className="form-label">{q.label}{!q.required && <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}> (optional)</span>}</label>
                     <input
@@ -848,11 +891,13 @@ export default function BookingForm() {
                     />
                   </div>
                 ))}
+                {onDetailsStep && (
                 <div className="form-row">
                   <label className="form-label">Additional notes <span style={{ fontWeight: 400, color: 'var(--text-muted,#71717a)' }}>(optional)</span></label>
                   <textarea className="form-input" rows={3} style={{ resize: 'none' }} placeholder="Any special requirements…" value={form.notes} onChange={e => set('notes', e.target.value)} />
                 </div>
-                {termsQuestion && (
+                )}
+                {onDetailsStep && termsQuestion && (
                   <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, cursor: 'pointer', marginTop: 4, lineHeight: 1.5 }}>
                     <input
                       type="checkbox"
@@ -933,6 +978,11 @@ export default function BookingForm() {
 
               {error && <div className="notice notice-warn" style={{ marginBottom: 12 }}>{error}</div>}
 
+              {/* Only on the last step. A submit button under a form that is
+                  half hidden invites somebody to send an incomplete request
+                  and then wonder why they were asked for a licence number by
+                  email a day later. */}
+              {onDetailsStep && (
               <button
                 type="submit"
                 disabled={submitting || (!lockedSite && !form.site_id) || !form.name || !form.email}
@@ -940,6 +990,7 @@ export default function BookingForm() {
               >
                 {submitting ? 'Submitting…' : 'Submit Booking Request'}
               </button>
+              )}
               <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted,#71717a)', marginTop: 10 }}>
                 Your request will be reviewed and you'll receive a confirmation email
               </div>
