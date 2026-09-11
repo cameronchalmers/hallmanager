@@ -84,6 +84,16 @@ function AvailabilityCalendar({ bookings, blockedDates, selectedStart, spanDays,
   const [cal, setCal] = useState({ y: today.getFullYear(), m: today.getMonth() })
   const isCurrentMonth = cal.y === today.getFullYear() && cal.m === today.getMonth()
 
+  // Follow the start date. Typing 2 November into the date field left the
+  // calendar sitting on this month, so the highlighted dates were somewhere
+  // the customer could not see and the grid looked like it had ignored them.
+  useEffect(() => {
+    if (!selectedStart) return
+    const [y, m] = selectedStart.split('-').map(Number)
+    if (!y || !m) return
+    setCal((c) => (c.y === y && c.m === m - 1 ? c : { y, m: m - 1 }))
+  }, [selectedStart])
+
   const offset = (new Date(cal.y, cal.m, 1).getDay() + 6) % 7
   const totalDays = new Date(cal.y, cal.m + 1, 0).getDate()
   const selEnd = selectedStart ? addDays(selectedStart, Math.max(0, spanDays - 1)) : ''
@@ -601,14 +611,29 @@ export default function BookingForm() {
                 )}
                 {isPackages && (
                   <div className="form-row">
-                    <label className="form-label">Choose a package</label>
+                    {/* "Package" is what the database calls these, but for the
+                        minibus they are not packages, they are which rate you
+                        qualify for. Asking somebody to "choose a package" when
+                        the choice is really "who are you" is most of why this
+                        page confused people. */}
+                    <label className="form-label">
+                      {isPerDay ? 'Which rate applies to you?' : 'Choose a package'}
+                    </label>
+                    {isPerDay && (
+                      <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text-muted,#71717a)' }}>
+                        Pick the one that describes your group. We check this when we review the
+                        request, so choose honestly rather than hopefully.
+                      </p>
+                    )}
                     <div style={{ display: 'grid', gap: 8 }}>
                       {packages.map(p => {
                         const sel = form.package_label === p.label
                         const pd = p.pricing === 'per_day'
-                        const tierText = pd && p.tiers?.length
-                          ? [...p.tiers].sort((a, b) => a.min_days - b.min_days).map(t => `${t.discount_pct}% off ${t.min_days}+ days`).join(' · ')
-                          : null
+                        const rate = packageBaseRate(p, applyDistrict)
+                        // The cheapest day rate this option can reach, so the
+                        // card can say what the discounts are actually worth
+                        // rather than listing percentages.
+                        const best = [...(p.tiers ?? [])].sort((a, b) => b.discount_pct - a.discount_pct)[0]
                         return (
                           <button
                             type="button"
@@ -616,7 +641,7 @@ export default function BookingForm() {
                             onClick={() => { set('package_label', sel ? '' : p.label); setPerDayEnd('') }}
                             style={{
                               display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
-                              padding: '12px 16px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                              padding: '13px 16px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
                               border: `2px solid ${sel ? 'var(--accent,#7c3aed)' : 'var(--border,#e5e7eb)'}`,
                               background: sel ? 'var(--accent-light,#f5f3ff)' : 'var(--surface,#fff)',
                               fontFamily: 'inherit',
@@ -626,20 +651,78 @@ export default function BookingForm() {
                               <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text,#111827)' }}>{p.label}</div>
                               <div style={{ fontSize: 12, color: 'var(--text-muted,#71717a)', marginTop: 2 }}>
                                 {pd
-                                  ? `Choose your dates${(p.min_days ?? 1) > 1 ? ` · min ${p.min_days} days` : ''}`
+                                  ? `${fmt(p.start_time)}–${fmt(p.end_time)} each day${(p.min_days ?? 1) > 1 ? ` · min ${p.min_days} days` : ''}`
                                   : isVehicle
                                   ? (p.days > 1 ? `${p.days}-day hire` : 'Same-day hire')
                                   : `${fmt(p.start_time)}–${fmt(p.end_time)}${p.days > 1 ? ` · ${p.days} days` : ''}`}
                               </div>
-                              {tierText && <div style={{ fontSize: 11, color: 'var(--accent,#7c3aed)', fontWeight: 600, marginTop: 2 }}>{tierText}</div>}
+                              {pd && best && (
+                                <div style={{ fontSize: 12, color: 'var(--accent,#7c3aed)', fontWeight: 600, marginTop: 3 }}>
+                                  Longer hires cost less per day, down to{' '}
+                                  {formatPence(Math.round(rate * (100 - best.discount_pct) / 100))}/day
+                                </div>
+                              )}
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text,#111827)' }}>{formatPence(p.price)}{pd ? <span style={{ fontWeight: 500, fontSize: 12, color: 'var(--text-muted,#71717a)' }}>/day</span> : null}</div>
+                              <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text,#111827)' }}>
+                                {formatPence(rate)}
+                                {pd ? <span style={{ fontWeight: 500, fontSize: 12, color: 'var(--text-muted,#71717a)' }}>/day</span> : null}
+                              </div>
                             </div>
                           </button>
                         )
                       })}
                     </div>
+
+                    {/* What the discount tiers mean in money, shown once a rate
+                        is chosen. A run-on of percentages told nobody what
+                        their own hire would cost. */}
+                    {selectedPackage && isPerDay && (selectedPackage.tiers ?? []).length > 0 && (
+                      <div style={{ marginTop: 10, border: '1px solid var(--border,#e5e7eb)', borderRadius: 10, overflow: 'hidden' }}>
+                        <div style={{ padding: '8px 12px', background: 'var(--surface2,#f4f4f6)', fontSize: 12,
+                                      fontWeight: 600, color: 'var(--text,#111827)' }}>
+                          How the rate drops with longer hires
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <tbody>
+                            {[{ min_days: 1, discount_pct: 0 }, ...(selectedPackage.tiers ?? [])]
+                              .sort((a, b) => a.min_days - b.min_days)
+                              .map((t, i, all) => {
+                                const rate = packageBaseRate(selectedPackage, applyDistrict)
+                                const per = Math.round(rate * (100 - t.discount_pct) / 100)
+                                const next = all[i + 1]
+                                const upper = next ? next.min_days - 1 : null
+                                const active = packageDays > 0 && packageDays >= t.min_days
+                                  && (upper === null || packageDays <= upper)
+                                const range = t.min_days === upper ? `${t.min_days} day${t.min_days === 1 ? '' : 's'}`
+                                  : upper ? `${t.min_days}–${upper} days`
+                                  : `${t.min_days} days or more`
+                                return (
+                                  <tr key={t.min_days} style={{
+                                    background: active ? 'var(--accent-light,#f5f3ff)' : 'transparent',
+                                    borderTop: '1px solid var(--border,#e5e7eb)',
+                                  }}>
+                                    <td style={{ padding: '7px 12px', color: active ? 'var(--accent-text,#6d28d9)' : 'var(--text-muted,#71717a)',
+                                                 fontWeight: active ? 700 : 400 }}>
+                                      {range}{active ? ' — yours' : ''}
+                                    </td>
+                                    <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: active ? 800 : 600,
+                                                 color: active ? 'var(--accent-text,#6d28d9)' : 'var(--text,#111827)' }}>
+                                      {formatPence(per)}/day
+                                      {t.discount_pct > 0 && (
+                                        <span style={{ fontWeight: 500, fontSize: 11, color: 'var(--text-muted,#71717a)' }}>
+                                          {' '}(−{t.discount_pct}%)
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
                     {selectedPackage && packageDays > 1 && form.date && packageEndDate && (
                       <div className="notice notice-accent" style={{ marginTop: 8 }}>
                         {isVehicle ? '🚐' : '📅'} Covers {new Date(form.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} – {new Date(packageEndDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} ({packageDays} days)
@@ -800,7 +883,13 @@ export default function BookingForm() {
                           <div><div className="pi-label">Rate</div><div className="pi-value" style={{ color: 'var(--accent,#7c3aed)' }}>District</div></div>
                         )}
                         {perDayPricing && perDayPricing.discountPct > 0 && (
-                          <div><div className="pi-label">Discount</div><div className="pi-value" style={{ color: 'var(--accent,#7c3aed)' }}>−{perDayPricing.discountPct}%</div></div>
+                          <div>
+                            <div className="pi-label">You save</div>
+                            <div className="pi-value" style={{ color: 'var(--accent,#7c3aed)' }}>
+                              {formatPence(packageDays * packageBaseRate(selectedPackage, applyDistrict) - perDayPricing.total)}
+                              <span style={{ fontWeight: 500, fontSize: 11 }}> (−{perDayPricing.discountPct}%)</span>
+                            </div>
+                          </div>
                         )}
                       </>
                     ) : (
@@ -812,6 +901,28 @@ export default function BookingForm() {
                     {!isPackages && <div><div className="pi-label">Deposit</div><div className="pi-value">{formatPence(deposit)}</div></div>}
                     <div><div className="pi-label" style={{ fontWeight: 700 }}>Total</div><div className="pi-value" style={{ fontWeight: 800 }}>{formatPence(total)}</div></div>
                   </div>
+                  {/* Somebody booking four days has no idea a fifth costs
+                      less per day than the fourth did. The tier table above
+                      shows the ladder; this points at the next rung. */}
+                  {selectedPackage && isPerDay && packageDays > 0 && (() => {
+                    const rate = packageBaseRate(selectedPackage, applyDistrict)
+                    const upcoming = [...(selectedPackage.tiers ?? [])]
+                      .filter(t => t.min_days > packageDays)
+                      .sort((a, b) => a.min_days - b.min_days)[0]
+                    if (!upcoming) return null
+                    const more = upcoming.min_days - packageDays
+                    const then = Math.round(upcoming.min_days * rate * (100 - upcoming.discount_pct) / 100)
+                    const now = perDayPricing?.total ?? 0
+                    return (
+                      <div className="notice notice-accent" style={{ marginBottom: 8, fontSize: 12 }}>
+                        {more} more day{more === 1 ? '' : 's'} would take you to {upcoming.discount_pct}% off:
+                        {' '}{upcoming.min_days} days for {formatPence(then)}
+                        {then <= now
+                          ? ', which is less than you are paying now.'
+                          : `, ${formatPence(then - now)} more for ${more} extra day${more === 1 ? '' : 's'}.`}
+                      </div>
+                    )
+                  })()}
                   {isPackages && total > 0 && (
                     <div style={{ background: 'var(--accent-light,#f5f3ff)', border: '1px solid #ddd6fe', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#5b21b6' }}>
                       💳 Pay <strong>{formatPence(payNow)}</strong> (25%) to confirm — the remaining {formatPence(total - payNow)} is due 14 days before your booking.
