@@ -11,7 +11,6 @@ import Dashboard from './pages/Dashboard'
 import Bookings from './pages/Bookings'
 import ExtraSlots from './pages/ExtraSlots'
 import CalendarView from './pages/CalendarView'
-import QuickFile from './pages/QuickFile'
 import Users from './pages/Users'
 import Portal from './pages/Portal'
 import Sites from './pages/Sites'
@@ -94,7 +93,6 @@ function SiteLoader() {
       <Route path="slots" element={<ProtectedRoute><ExtraSlots /></ProtectedRoute>} />
       <Route path="calendar" element={<ProtectedRoute><CalendarView /></ProtectedRoute>} />
       <Route path="insights" element={<ProtectedRoute minRole="site_admin"><Insights /></ProtectedRoute>} />
-      <Route path="invoices" element={<ProtectedRoute minRole="site_admin"><QuickFile /></ProtectedRoute>} />
       <Route path="site-settings" element={<ProtectedRoute minRole="site_admin"><SiteSettings /></ProtectedRoute>} />
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="*" element={<Navigate to="dashboard" replace />} />

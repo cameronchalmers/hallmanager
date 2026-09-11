@@ -24,9 +24,6 @@ verify_jwt = false
 [functions.update-user]
 verify_jwt = false
 
-[functions.quickfile]
-verify_jwt = false
-
 [functions.manage-calendar-event]
 verify_jwt = false
 

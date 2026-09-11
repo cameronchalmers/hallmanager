@@ -709,7 +709,7 @@ export default function SiteSettings() {
 
           </div>
 
-          {/* Right column — Stripe & QuickFile */}
+          {/* Right column: Stripe */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             <div className="card">
@@ -758,29 +758,6 @@ export default function SiteSettings() {
                     </div>
                   </div>
                 )}
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">QuickFile</span>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Invoicing & accounts</span>
-              </div>
-              <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div className="form-grid-3">
-                  <div>
-                    <label className="form-label">Account no.</label>
-                    <input className="form-input" placeholder={creds.qf_account_num ? '••••••••' : '12345678'} value={creds.qf_account_num ?? ''} onChange={e => setCreds(c => ({ ...c, qf_account_num: e.target.value || null }))} />
-                  </div>
-                  <div>
-                    <label className="form-label">App ID</label>
-                    <input className="form-input" placeholder={creds.qf_app_id ? '••••••••' : 'app-id'} value={creds.qf_app_id ?? ''} onChange={e => setCreds(c => ({ ...c, qf_app_id: e.target.value || null }))} />
-                  </div>
-                  <div>
-                    <label className="form-label">API key</label>
-                    <input className="form-input" type="password" placeholder={secretStatus.qf_api_key ? '•••••••• (saved — type to replace)' : 'api-key'} value={creds.qf_api_key ?? ''} onChange={e => setCreds(c => ({ ...c, qf_api_key: e.target.value || null }))} autoComplete="new-password" />
-                  </div>
-                </div>
               </div>
             </div>
 

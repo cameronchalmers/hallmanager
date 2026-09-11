@@ -97,7 +97,6 @@ export default function Layout({ children, pageTitle, actions }: {
     slots: 'Extra Slot Requests',
     calendar: 'Calendar',
     insights: 'Insights',
-    invoices: 'QuickFile Invoices',
     'site-settings': 'Site Settings',
     users: 'Users & Access',
     sites: 'Sites & Venues',
@@ -115,7 +114,6 @@ export default function Layout({ children, pageTitle, actions }: {
       ...(isSiteAdmin ? [{ to: `/${currentSite.id}/insights`, icon: 'chart', label: 'Insights' }] : []),
     ],
     ...(isSiteAdmin ? [
-      [{ to: `/${currentSite.id}/invoices`, icon: 'inv', label: 'Invoices' }],
       [{ to: `/${currentSite.id}/site-settings`, icon: 'cog', label: 'Site Settings' }],
     ] : []),
   ] : []

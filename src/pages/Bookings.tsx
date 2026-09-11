@@ -263,8 +263,6 @@ export default function Bookings() {
       setBookings(prev => prev.map(b => b.id === id ? { ...b, stripe_payment_status: 'deposit_refunded', refunded_amount: amountPence } : b))
       if (selected?.id === id) setSelected(prev => prev ? { ...prev, stripe_payment_status: 'deposit_refunded', refunded_amount: amountPence } : null)
       setRefundInput(null)
-      supabase.functions.invoke('quickfile', { body: { action: 'refund_deposit', booking_id: id } })
-        .catch(() => {/* QF not configured — ignore */})
     } else {
       let msg = 'Refund failed'
       try {
