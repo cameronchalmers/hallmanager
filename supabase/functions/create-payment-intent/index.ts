@@ -166,12 +166,19 @@ serve(async (req) => {
         // Stale (wrong stage/amount) — cancel it and create a fresh one
         try { await stripe.paymentIntents.cancel(existing.id) } catch { /* already unusable */ }
       }
-      if (existing.status === 'succeeded' && stage !== 'balance') {
+      // A succeeded intent means the last payment went through. That is a
+      // reason to refuse a repeat of the same payment, and not a reason to
+      // refuse the next one: a balance follows a succeeded deposit, and a
+      // top-up follows a succeeded settlement. Both need a new intent.
+      if (existing.status === 'succeeded' && stage !== 'balance' && stage !== 'topup') {
         return json({ error: 'already_paid' }, 409)
       }
     }
 
-    const stageLabel = stage === 'deposit' ? '25% deposit' : stage === 'balance' ? 'balance' : 'payment'
+    const stageLabel = stage === 'deposit' ? '25% deposit'
+      : stage === 'balance' ? 'balance'
+      : stage === 'topup' ? 'additional payment after a change'
+      : 'payment'
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountDue,
       currency: 'gbp',
