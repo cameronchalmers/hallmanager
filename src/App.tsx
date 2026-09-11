@@ -13,6 +13,9 @@ import ExtraSlots from './pages/ExtraSlots'
 import CalendarView from './pages/CalendarView'
 import Users from './pages/Users'
 import Portal from './pages/Portal'
+import Landing from './pages/Landing'
+import Features from './pages/Features'
+import Pricing from './pages/Pricing'
 import Sites from './pages/Sites'
 import Settings from './pages/Settings'
 import Insights from './pages/Insights'
@@ -38,6 +41,24 @@ function ProtectedRoute({ children, minRole = 'manager' }: { children: React.Rea
   if (role === 'regular') return <Navigate to="/portal" replace />
   if ((ROLE_LEVEL[role] ?? 0) < ROLE_LEVEL[minRole]) return <Navigate to="/" replace />
   return <>{children}</>
+}
+
+/// What "/" does depends on who is asking.
+///
+/// It used to be inside the protected tree, so a stranger arriving at the bare
+/// domain was bounced to a login form with no explanation of what they were
+/// logging in to. Now they get the front door, and anybody with a session goes
+/// where they were going before.
+function Home() {
+  const { user, loading } = useAuth()
+  // An invite or recovery link puts its token in the hash and must reach the
+  // login page to be exchanged, whoever is holding it.
+  if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
+    return <Navigate to={`/login${window.location.hash}`} replace />
+  }
+  if (loading) return <Spinner />
+  if (!user) return <Landing />
+  return <RootRedirect />
 }
 
 function RootRedirect() {
@@ -105,6 +126,9 @@ export default function App() {
     <SiteProvider>
       <Routes>
         {/* Public routes */}
+        <Route path="/" element={<Home />} />
+        <Route path="/features" element={<Features />} />
+        <Route path="/pricing" element={<Pricing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/book" element={<BookingForm />} />
         <Route path="/book/:slug" element={<BookingForm />} />
