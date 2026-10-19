@@ -127,7 +127,7 @@ function AvailabilityCalendar({ bookings, blockedDates, selectedStart, spanDays,
           const clickable = !isPast && !isBlocked && !isBooked
           let bg = 'var(--surface2,#f0fdf4)'
           let color = 'var(--text,#111827)'
-          if (isPast) { bg = 'transparent'; color = '#d1d5db' }
+          if (isPast) { bg = 'transparent'; color = 'var(--border-strong)' }
           else if (isBlocked) { bg = '#f3f4f6'; color = '#c4c4c4' }
           else if (isBooked) { bg = '#fee2e2'; color = '#b91c1c' }
           else bg = '#f0fdf4'
@@ -387,7 +387,7 @@ export default function BookingForm() {
 
   if (notFound) {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--bg,#f4f4f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Figtree', sans-serif" }}>
+      <div className="app-gradient" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>🏛️</div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6, color: 'var(--text,#111)' }}>Venue not found</div>
@@ -399,7 +399,7 @@ export default function BookingForm() {
 
   if (submitted) {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--bg,#f4f4f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Figtree', sans-serif" }}>
+      <div className="app-gradient" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
         <div style={{ background: 'var(--surface,#fff)', borderRadius: 16, padding: 40, maxWidth: 420, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
           <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8, color: 'var(--text,#111)' }}>Request submitted!</div>
@@ -425,16 +425,14 @@ export default function BookingForm() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg,#f4f4f6)', padding: '32px 16px', fontFamily: "'Figtree', sans-serif" }}>
+    <div className="app-gradient" style={{ minHeight: '100vh', padding: '32px 16px' }}>
       <div style={{ maxWidth: lockedSite ? 1360 : 1100, margin: '0 auto' }}>
 
         {/* Header — only shown on the generic (no locked site) page */}
         {!lockedSite && (
           <div style={{ textAlign: 'center', marginBottom: 28, maxWidth: 640, marginLeft: 'auto', marginRight: 'auto' }}>
-            <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-              H
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>Request a Booking</div>
+            <img src="/favicon.svg" alt="" width={48} height={48} className="mx-auto mb-3 h-12 w-12" />
+            <h1 className="text-2xl font-semibold text-slate-900">Request a booking</h1>
             <div style={{ fontSize: 13, color: 'var(--text-muted,#71717a)', marginTop: 4 }}>Fill in the details below and we'll be in touch to confirm</div>
             <a href="/availability" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: 'var(--accent,#7c3aed)', fontWeight: 600, textDecoration: 'none' }}>📅 View availability calendar →</a>
           </div>

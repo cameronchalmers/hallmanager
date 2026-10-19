@@ -25,9 +25,8 @@ import BookingPaid from './pages/BookingPaid'
 import PayBooking from './pages/PayBooking'
 
 const Spinner = () => (
-  <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: "'Figtree', sans-serif" }}>
-    <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--accent,#7c3aed)', color: '#fff', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>H</div>
-    <p style={{ fontSize: 13, color: '#71717a' }}>Loading…</p>
+  <div className="app-gradient flex min-h-screen items-center justify-center">
+    <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600 dark:border-slate-700" />
   </div>
 )
 

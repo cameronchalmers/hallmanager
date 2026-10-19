@@ -20,8 +20,6 @@ export default function BookingPaid() {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: '#f8f9fc',
-    fontFamily: "'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     padding: '24px',
   }
 
@@ -37,7 +35,7 @@ export default function BookingPaid() {
 
   if (failed) {
     return (
-      <div style={pageStyle}>
+      <div className="app-gradient" style={pageStyle}>
         <div style={cardStyle}>
           <div style={{ height: 6, background: '#ef4444' }} />
           <div style={{ padding: '40px 40px 36px', textAlign: 'center' }}>
@@ -77,7 +75,7 @@ export default function BookingPaid() {
   }
 
   return (
-    <div style={pageStyle}>
+    <div className="app-gradient" style={pageStyle}>
       <div style={cardStyle}>
         <div style={{ height: 6, background: ACCENT }} />
         <div style={{ padding: '40px 40px 36px', textAlign: 'center' }}>

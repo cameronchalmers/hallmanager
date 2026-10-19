@@ -626,7 +626,7 @@ export default function SiteSettings() {
                   <div key={day} style={{ display: 'grid', gridTemplateColumns: '90px 44px 1fr 1fr', alignItems: 'center', padding: '8px 14px', borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: sched.open ? 'var(--surface)' : 'var(--surface2)' }}>
                     <span style={{ fontSize: 12, fontWeight: 600, textTransform: 'capitalize' }}>{day.slice(0,3)}</span>
                     <div>
-                      <button className="toggle" style={{ background: sched.open ? 'var(--accent)' : '#d1d5db' }} onClick={() => setDay(day, 'open', !sched.open)}>
+                      <button className="toggle" style={{ background: sched.open ? 'var(--accent)' : 'var(--border-strong)' }} onClick={() => setDay(day, 'open', !sched.open)}>
                         <span className="toggle-thumb" style={{ left: sched.open ? 18 : 3 }} />
                       </button>
                     </div>

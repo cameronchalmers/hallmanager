@@ -20,7 +20,7 @@ interface NotifToggle {
 }
 
 export default function Settings() {
-  const { accentKey, setAccentKey, accentColors, darkMode, setDarkMode } = useTheme()
+  const { accentKey, setAccentKey, accentColors, preference, setPreference } = useTheme()
   const { profile } = useAuth()
   const isRegular = profile?.role === 'regular'
 
@@ -107,7 +107,7 @@ export default function Settings() {
               </div>
               <button
                 className="toggle"
-                style={{ background: n.value ? 'var(--accent)' : '#d1d5db' }}
+                style={{ background: n.value ? 'var(--accent)' : 'var(--border-strong)' }}
                 onClick={() => toggleNotification(n.key)}
               >
                 <span
@@ -177,7 +177,7 @@ export default function Settings() {
               </div>
               <button
                 className="toggle"
-                style={{ background: remindersEnabled ? 'var(--accent)' : '#d1d5db', flexShrink: 0 }}
+                style={{ background: remindersEnabled ? 'var(--accent)' : 'var(--border-strong)', flexShrink: 0 }}
                 onClick={() => toggleReminders(!remindersEnabled)}
               >
                 <span className="toggle-thumb" style={{ left: remindersEnabled ? 18 : 3 }} />
@@ -218,16 +218,23 @@ export default function Settings() {
           </div>
           <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Dark mode</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Switch between light and dark interface</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Theme</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Light, dark, or follow your device</div>
             </div>
-            <button
-              className="toggle"
-              style={{ background: darkMode ? 'var(--accent)' : '#d1d5db' }}
-              onClick={() => setDarkMode(!darkMode)}
-            >
-              <span className="toggle-thumb" style={{ left: darkMode ? 18 : 3 }} />
-            </button>
+            <div className="flex rounded-lg border border-slate-300 p-0.5 dark:border-slate-700" role="group" aria-label="Theme">
+              {(['light', 'dark', 'system'] as const).map(value => (
+                <button
+                  key={value}
+                  onClick={() => setPreference(value)}
+                  aria-pressed={preference === value}
+                  className={preference === value
+                    ? 'rounded-md bg-brand-50 px-3 py-1 text-sm font-medium text-brand-800 dark:bg-brand-950/40 dark:text-brand-300'
+                    : 'rounded-md px-3 py-1 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}
+                >
+                  {value === 'system' ? 'System' : value === 'light' ? 'Light' : 'Dark'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

@@ -74,12 +74,12 @@ export default function Login() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: "'Figtree', sans-serif" }}>
+    <div className="app-gradient" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ width: '100%', maxWidth: 360 }}>
 
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--accent,#7c3aed)', color: '#fff', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>H</div>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px' }}>HallManager</div>
+          <img src="/favicon.svg" alt="" width={48} height={48} className="mx-auto mb-3 h-12 w-12" />
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">HallManager</h1>
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
             {mode === 'set-password' ? (hashType === 'invite' ? 'Set a password to activate your account' : 'Choose a new password') : mode === 'login' ? 'Sign in to your account' : 'Reset your password'}
           </div>

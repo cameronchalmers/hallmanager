@@ -157,8 +157,6 @@ export default function PayBooking() {
 
   const pageStyle: React.CSSProperties = {
     minHeight: '100vh',
-    background: '#f8f9fc',
-    fontFamily: "'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     padding: '32px 16px',
   }
 
@@ -176,10 +174,8 @@ export default function PayBooking() {
   const header = (
     <div style={{ textAlign: 'center', marginBottom: 28 }}>
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ width: 36, height: 36, background: ACCENT, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ color: 'white', fontWeight: 700, fontSize: 18, lineHeight: 1 }}>H</span>
-        </div>
-        <span style={{ fontSize: 20, fontWeight: 700, color: '#111827', letterSpacing: '-0.3px' }}>HallManager</span>
+        <img src="/favicon.svg" alt="" width={36} height={36} className="h-9 w-9" />
+        <span className="text-xl font-semibold text-slate-900">HallManager</span>
       </div>
     </div>
   )
@@ -199,7 +195,7 @@ export default function PayBooking() {
 
   if (state === 'paid') {
     return (
-      <div style={pageStyle}>
+      <div className="app-gradient" style={pageStyle}>
         {header}
         <div style={cardStyle}>
           <div style={{ height: 5, background: '#22c55e' }} />
@@ -215,7 +211,7 @@ export default function PayBooking() {
 
   if (state === 'error') {
     return (
-      <div style={pageStyle}>
+      <div className="app-gradient" style={pageStyle}>
         {header}
         <div style={cardStyle}>
           <div style={{ height: 5, background: '#ef4444' }} />
@@ -246,7 +242,7 @@ export default function PayBooking() {
       [stageInfo.stage === 'deposit' ? 'Due now (25% deposit)' : stageInfo.stage === 'balance' ? 'Balance due now' : 'Due now', formatPence(stageInfo.amount_due)],
     ]
     return (
-      <div style={pageStyle}>
+      <div className="app-gradient" style={pageStyle}>
         {header}
         <div style={cardStyle}>
           <div style={{ height: 5, background: ACCENT }} />
@@ -281,7 +277,6 @@ export default function PayBooking() {
                   theme: 'stripe',
                   variables: {
                     colorPrimary: ACCENT,
-                    fontFamily: "'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                     borderRadius: '8px',
                     colorBackground: '#ffffff',
                   },

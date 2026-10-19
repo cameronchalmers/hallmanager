@@ -144,12 +144,12 @@ export default function PublicCalendar() {
   const nextMonth = () => setCal(c => { const d = new Date(c.year, c.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8f7ff', fontFamily: "'Figtree', 'Inter', sans-serif" }}>
+    <div className="app-gradient" style={{ minHeight: '100vh' }}>
       {/* Header */}
-      <div style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 24px' }}>
+      <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/70 backdrop-blur-md" style={{ padding: '0 24px' }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 9, background: accentColor, color: '#fff', fontWeight: 800, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>H</div>
+            <img src="/favicon.svg" alt="" width={32} height={32} className="h-8 w-8" />
             <div>
               <span style={{ fontWeight: 700, fontSize: 15, color: '#18181b' }}>{site?.name ?? 'Availability'}</span>
               <span style={{ fontSize: 13, color: '#71717a', marginLeft: 8 }}>Availability Calendar</span>
@@ -274,7 +274,7 @@ export default function PublicCalendar() {
                       display: 'block',
                       fontSize: 13,
                       fontWeight: isToday ? 800 : d.curr ? 500 : 400,
-                      color: isToday ? '#fff' : !d.curr || isPast ? '#d1d5db' : isClosed ? '#c4c4c4' : '#18181b',
+                      color: isToday ? '#fff' : !d.curr || isPast ? 'var(--border-strong)' : isClosed ? '#c4c4c4' : '#18181b',
                     }}>
                       {d.date.getDate()}
                     </span>
